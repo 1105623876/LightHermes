@@ -1,0 +1,6 @@
+openai>=1.0.0
+pyyaml>=6.0
+
+# Optional dependencies
+sentence-transformers>=2.0.0
+colorama>=0.4.0

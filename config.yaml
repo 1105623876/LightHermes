@@ -1,0 +1,63 @@
+# LightHermes 配置文件
+
+# 模型配置
+model:
+  provider: openai
+  model_name: gpt-4o-mini
+  api_key: ${OPENAI_API_KEY}
+  base_url: https://api.openai.com/v1
+
+# 记忆配置
+memory:
+  enabled: true
+  storage_dir: memory
+  embedding:
+    provider: openai              # openai 或 local
+    model: text-embedding-3-small
+  retention:
+    short_term_turns: 50
+    working_memory_days: 7
+    episodic_auto_archive: true
+    semantic_max_entries: 1000
+
+# 进化配置
+evolution:
+  enabled: true
+  auto_generate_skills: true
+  skill_validation: sandbox
+  triggers:
+    min_success_count: 3
+    min_failure_count: 2
+  sandbox:
+    timeout: 30
+    max_memory_mb: 512
+
+# 技能配置
+skills:
+  enabled: true
+  auto_load: true
+  dirs:
+    - skills/core
+    - skills/user
+    - skills/generated
+  disabled: []
+
+# 插件配置
+plugins:
+  dirs:
+    - plugins/tools
+    - plugins/memory
+
+# CLI 配置
+cli:
+  prompt_symbol: ">"
+  show_banner: true
+  stream_output: true
+  show_skill_usage: true
+  color_enabled: true
+
+# 日志配置
+logging:
+  level: INFO
+  file: logs/lightherrmes.log
+  debug: false
