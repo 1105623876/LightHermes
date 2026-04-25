@@ -23,11 +23,12 @@
 - ✅ 使用示例 (example.py)
 
 ### 代码统计
-- `memory.py`: ~450 行
+- `memory.py`: ~480 行
 - `core.py`: ~360 行
 - `cli.py`: ~200 行
 - `evolution.py`: ~350 行
-- 总计: ~1360 行 (Phase 1+2 完成)
+- `retrieval.py`: ~200 行
+- 总计: ~1590 行 (Phase 1+2+3 核心功能完成)
 
 ### Phase 2 完成
 - [x] `evolution.py` - 自进化系统
@@ -38,10 +39,14 @@
 - [x] 技能自动生成
 - [x] 集成到 core.py
 
-### 下一步 (Phase 3)
-- [ ] 混合检索 (TF-IDF + 嵌入)
-- [ ] Python 插件支持
-- [ ] CLI 增强 (彩色输出)
+### Phase 3 完成
+- [x] 混合检索 (TF-IDF + 嵌入)
+  - TFIDFRetriever (快速初筛)
+  - EmbeddingRetriever (精确重排)
+  - HybridRetriever (统一接口)
+- [x] 集成到 SemanticMemory
+- [ ] Python 插件支持 (可选)
+- [ ] CLI 增强 (可选)
 
 ## 使用说明
 

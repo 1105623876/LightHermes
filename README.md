@@ -77,32 +77,46 @@ LightHermes/
 
 ## 配置说明
 
-### 嵌入模型配置
+### 混合检索配置 (可选)
 
-在 `config.yaml` 中配置记忆检索的嵌入模型:
+**默认行为**: LightHermes 使用简单的关键词匹配进行记忆检索,**无需任何额外依赖**。
+
+**可选增强**: 如果需要更精确的语义检索,可以启用混合检索:
 
 ```yaml
 memory:
-  embedding:
-    provider: openai              # 使用 OpenAI API
+  hybrid_retrieval:
+    enabled: true                 # 启用混合检索
+    provider: openai              # 使用 OpenAI API (推荐)
     model: text-embedding-3-small
     
-    # 或切换到本地模型:
+    # 或使用本地模型 (需要: pip install sentence-transformers)
     # provider: local
-    # local_model: all-MiniLM-L6-v2
+    # model: all-MiniLM-L6-v2
 ```
+
+**权衡**:
+- 关键词匹配: 快速、零依赖、适合大多数场景
+- 混合检索: 更精确、需要 API 调用或本地模型(~80MB)
 
 ## 开发状态
 
-当前版本: **0.1.0** (Phase 1 开发中)
+当前版本: **0.1.0** (Phase 1+2+3 完成)
 
+**Phase 1 - 核心功能** ✅
 - [x] 项目基础结构
-- [ ] core.py 基础框架
-- [ ] memory.py 四级记忆系统
-- [ ] 基础技能加载
-- [ ] cli.py 命令行界面
-- [ ] Phase 2: 进化系统
-- [ ] Phase 3: 增强功能
+- [x] core.py 基础框架
+- [x] memory.py 四级记忆系统
+- [x] 基础技能加载
+- [x] cli.py 命令行界面
+
+**Phase 2 - 自进化系统** ✅
+- [x] evolution.py (轨迹分析、技能生成、验证)
+- [x] 集成到 core.py
+
+**Phase 3 - 增强功能** ✅
+- [x] 混合检索 (TF-IDF + 嵌入)
+- [x] 集成到记忆系统
 
 ## 许可证
 

@@ -110,7 +110,7 @@ class SkillGenerator:
         pattern: Dict[str, Any],
         pattern_type: str
     ) -> Optional[Dict[str, Any]]:
-        """从模式生成技能"""
+        """从模式生成技能 - 优先生成 Markdown 技能"""
         task_type = pattern["task_type"]
         trajectories = pattern["trajectories"]
 
@@ -119,11 +119,14 @@ class SkillGenerator:
             tools = [tc.get("tool") for tc in traj.get("tool_calls", [])]
             tool_sequences.append(tools)
 
-        prompt = f"""基于以下{'成功' if pattern_type == 'success' else '失败'}的对话轨迹,生成一个可复用的技能。
+        prompt = f"""基于以下{'成功' if pattern_type == 'success' else '失败'}的对话轨迹,生成一个可复用的 Markdown 技能。
 
 任务类型: {task_type}
 轨迹数量: {len(trajectories)}
 工具使用序列: {tool_sequences}
+
+**重要**: 请生成 Markdown 格式的技能(type: skill),而不是 Python 插件(type: plugin)。
+Markdown 技能是提示词模板,指导 Agent 的思维流程,无需编写代码。
 
 请生成一个 Markdown 格式的技能文件,包含:
 1. 技能名称 (简短的英文标识符)
@@ -131,9 +134,10 @@ class SkillGenerator:
 3. 技能内容 (指导 Agent 如何处理这类任务的步骤)
 
 格式要求:
-- 使用 YAML frontmatter 定义元数据
+- 使用 YAML frontmatter,设置 type: skill
 - 内容部分用清晰的步骤列表
 - 保持简洁,避免过度细节
+- 不要生成 Python 代码
 
 只返回技能文件内容,不要有其他解释。"""
 

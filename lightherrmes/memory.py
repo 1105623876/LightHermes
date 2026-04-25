@@ -215,9 +215,10 @@ class SemanticMemory:
         content = file_path.read_text(encoding="utf-8")
         return self._parse_memory(content)
 
-    def search(self, query: str, limit: int = 5, use_hybrid: bool = False) -> List[Dict[str, Any]]:
-        """搜索语义记忆 - 支持简单关键词匹配或混合检索"""
-        if use_hybrid and hasattr(self, 'hybrid_retriever'):
+    def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """搜索语义记忆 - 自动选择最佳检索方式"""
+        # 如果启用了混合检索,使用混合检索
+        if hasattr(self, 'hybrid_retriever') and self.hybrid_retriever:
             documents = []
             for file_path in self.storage_dir.glob("*.md"):
                 content = file_path.read_text(encoding="utf-8")
@@ -227,10 +228,13 @@ class SemanticMemory:
                     documents.append(memory)
 
             if documents:
-                self.hybrid_retriever.index_documents(documents)
-                return self.hybrid_retriever.search(query, top_k=limit)
+                try:
+                    self.hybrid_retriever.index_documents(documents)
+                    return self.hybrid_retriever.search(query, top_k=limit)
+                except Exception as e:
+                    print(f"混合检索失败,回退到关键词匹配: {e}")
 
-        # 简单关键词匹配
+        # 默认使用简单关键词匹配
         results = []
         query_lower = query.lower()
         query_words = set(query_lower.split())
@@ -290,7 +294,11 @@ class MemoryManager:
         memory_dir: str = "memory",
         short_term_turns: int = 50,
         working_memory_days: int = 7,
-        semantic_max_entries: int = 1000
+        semantic_max_entries: int = 1000,
+        use_hybrid_retrieval: bool = False,
+        embedding_provider: str = "openai",
+        embedding_model: str = "text-embedding-3-small",
+        api_key: str = None
     ):
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +314,11 @@ class MemoryManager:
         )
         self.semantic = SemanticMemory(
             storage_dir=str(self.memory_dir / "semantic"),
-            max_entries=semantic_max_entries
+            max_entries=semantic_max_entries,
+            use_hybrid_retrieval=use_hybrid_retrieval,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            api_key=api_key
         )
 
     def add_message(self, role: str, content: str):

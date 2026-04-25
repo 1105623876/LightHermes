@@ -201,7 +201,11 @@ class LightHermes:
 
         self.memory_enabled = memory_enabled
         if memory_enabled:
-            self.memory = MemoryManager(memory_dir=memory_dir)
+            # 默认不启用混合检索,避免引入大依赖
+            self.memory = MemoryManager(
+                memory_dir=memory_dir,
+                use_hybrid_retrieval=False  # 可通过配置文件启用
+            )
         else:
             self.memory = None
 

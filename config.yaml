@@ -11,9 +11,15 @@ model:
 memory:
   enabled: true
   storage_dir: memory
-  embedding:
+
+  # 混合检索配置 (可选 - 提升记忆检索精度)
+  # 默认使用简单关键词匹配,无需额外依赖
+  # 启用混合检索需要: pip install sentence-transformers (本地) 或使用 OpenAI API
+  hybrid_retrieval:
+    enabled: false                # 是否启用混合检索 (默认 false)
     provider: openai              # openai 或 local
-    model: text-embedding-3-small
+    model: text-embedding-3-small # OpenAI 模型或本地模型名
+
   retention:
     short_term_turns: 50
     working_memory_days: 7
