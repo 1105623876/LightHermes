@@ -4,7 +4,8 @@
       "Bash(git add *)",
       "Bash(git commit -m 'feat: Phase 2 完成 - 自进化系统 *)",
       "Bash(git commit -m 'feat: Phase 3 完成 - 增强功能 *)",
-      "Bash(git commit -m 'refactor: 优化设计 - 轻量化改进 *)"
+      "Bash(git commit -m 'refactor: 优化设计 - 轻量化改进 *)",
+      "Bash(git commit -m 'docs: 添加设计对比分析文档 *)"
     ]
   }
 }
