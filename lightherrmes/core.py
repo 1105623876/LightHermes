@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Callable, Optional, Generator, Union
 from openai import OpenAI
 
 from lightherrmes.memory import MemoryManager
+from lightherrmes.evolution import EvolutionEngine
 
 
 class SkillLoader:
@@ -214,6 +215,15 @@ class LightHermes:
         if tools:
             for tool in tools:
                 self.tool_dispatcher.register_tool(tool)
+
+        if evolution_enabled:
+            self.evolution = EvolutionEngine(
+                client=self.client,
+                model=model,
+                skill_validation=skill_validation
+            )
+        else:
+            self.evolution = None
 
     def run(
         self,

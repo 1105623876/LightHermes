@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: Phase 2 完成 - 自进化系统 *)"
+    ]
+  }
+}

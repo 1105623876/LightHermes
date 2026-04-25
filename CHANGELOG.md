@@ -24,17 +24,19 @@
 
 ### 代码统计
 - `memory.py`: ~450 行
-- `core.py`: ~350 行
+- `core.py`: ~360 行
 - `cli.py`: ~200 行
-- 总计: ~1000 行 (Phase 1 目标达成)
+- `evolution.py`: ~350 行
+- 总计: ~1360 行 (Phase 1+2 完成)
 
-### 下一步 (Phase 2)
-- [ ] `evolution.py` - 自进化系统
+### Phase 2 完成
+- [x] `evolution.py` - 自进化系统
   - TrajectoryAnalyzer (轨迹分析器)
   - SkillGenerator (技能生成器)
   - SkillValidator (技能验证器)
-- [ ] 轨迹记录和存储
-- [ ] 技能自动生成
+- [x] 轨迹记录和存储
+- [x] 技能自动生成
+- [x] 集成到 core.py
 
 ### 下一步 (Phase 3)
 - [ ] 混合检索 (TF-IDF + 嵌入)
