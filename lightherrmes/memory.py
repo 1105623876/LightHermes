@@ -170,10 +170,25 @@ class EpisodicMemory:
 class SemanticMemory:
     """语义记忆 - 抽象知识和用户偏好"""
 
-    def __init__(self, storage_dir: str, max_entries: int = 1000):
+    def __init__(self, storage_dir: str, max_entries: int = 1000, use_hybrid_retrieval: bool = False,
+                 embedding_provider: str = "openai", embedding_model: str = "text-embedding-3-small", api_key: str = None):
         self.storage_dir = Path(storage_dir)
         self.max_entries = max_entries
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+        if use_hybrid_retrieval:
+            try:
+                from lightherrmes.retrieval import HybridRetriever
+                self.hybrid_retriever = HybridRetriever(
+                    embedding_provider=embedding_provider,
+                    embedding_model=embedding_model,
+                    api_key=api_key
+                )
+            except ImportError:
+                print("混合检索不可用,使用简单关键词匹配")
+                self.hybrid_retriever = None
+        else:
+            self.hybrid_retriever = None
 
     def save(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存语义记忆"""
@@ -200,8 +215,22 @@ class SemanticMemory:
         content = file_path.read_text(encoding="utf-8")
         return self._parse_memory(content)
 
-    def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """搜索语义记忆 - 使用简单的关键词匹配"""
+    def search(self, query: str, limit: int = 5, use_hybrid: bool = False) -> List[Dict[str, Any]]:
+        """搜索语义记忆 - 支持简单关键词匹配或混合检索"""
+        if use_hybrid and hasattr(self, 'hybrid_retriever'):
+            documents = []
+            for file_path in self.storage_dir.glob("*.md"):
+                content = file_path.read_text(encoding="utf-8")
+                memory = self._parse_memory(content)
+                if memory:
+                    memory["name"] = file_path.stem
+                    documents.append(memory)
+
+            if documents:
+                self.hybrid_retriever.index_documents(documents)
+                return self.hybrid_retriever.search(query, top_k=limit)
+
+        # 简单关键词匹配
         results = []
         query_lower = query.lower()
         query_words = set(query_lower.split())
@@ -214,14 +243,12 @@ class SemanticMemory:
                 content_lower = memory["content"].lower()
                 content_words = set(content_lower.split())
 
-                # 计算关键词匹配度
                 matches = len(query_words & content_words)
                 if matches > 0:
                     memory["name"] = file_path.stem
                     memory["score"] = matches
                     results.append(memory)
 
-        # 按匹配度排序
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
         return results[:limit]
 
