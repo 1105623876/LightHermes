@@ -1,4 +1,40 @@
-CLAUDE.md
+# Python 虚拟环境
+venv/
+.venv/
+env/
+ENV/
 
+# 测试文件(包含 API key)
+test_minimax.py
+diagnose_api.py
+test_anthropic_api.py
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 记忆和日志
+memory/
+logs/
+trajectories/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.bak
+
+# 项目特定
+CLAUDE.md
 LightAgent/
 hermes-agent/
