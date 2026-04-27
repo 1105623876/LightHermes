@@ -358,6 +358,13 @@ class MemoryManager:
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
+        self.use_hybrid_retrieval = use_hybrid_retrieval
+        self.logger = setup_logger("lightherrmes.memory")
+
+        # 初始化统计系统
+        stats_file = str(self.memory_dir / "stats.json")
+        self.stats = MemoryStats(stats_file)
+
         # 初始化四级记忆
         self.short_term = ShortTermMemory(max_turns=short_term_turns)
         self.working = WorkingMemory(
@@ -390,6 +397,9 @@ class MemoryManager:
 
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆"""
+        import time
+        start_time = time.time()
+
         context_parts = []
 
         # 1. 从工作记忆中召回最近的会话
@@ -398,6 +408,7 @@ class MemoryManager:
             context_parts.append("## 最近的对话")
             for session in recent_sessions[:2]:
                 context_parts.append(f"- {session['summary']}")
+        self.stats.record_hit("working", 1 if recent_sessions else 0, time.time() - start_time)
 
         # 2. 从情景记忆中召回相关项目/任务
         episodic_results = self.episodic.search(query, limit=2)
@@ -407,6 +418,7 @@ class MemoryManager:
                 name = memory.get("name", "unknown")
                 content = memory["content"][:200]
                 context_parts.append(f"- {name}: {content}...")
+        self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
         # 3. 从语义记忆中召回相关知识
         semantic_results = self.semantic.search(query, limit=3)
@@ -416,6 +428,7 @@ class MemoryManager:
                 name = memory.get("name", "unknown")
                 content = memory["content"][:150]
                 context_parts.append(f"- {name}: {content}...")
+        self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
 
         return "\n".join(context_parts) if context_parts else ""
 
@@ -430,3 +443,97 @@ class MemoryManager:
     def clear_short_term(self):
         """清空短期记忆"""
         self.short_term.clear()
+
+    def adapt_weights(self):
+        """根据命中率自适应调整记忆层级权重"""
+        # 短期记忆自适应
+        short_term_rate = self.stats.get_hit_rate("short_term")
+        if short_term_rate > 0.7 and self.short_term.max_turns < 100:
+            old_max = self.short_term.max_turns
+            self.short_term.max_turns = min(100, self.short_term.max_turns + 10)
+            self.logger.info(
+                f"短期记忆容量增加: {old_max} → {self.short_term.max_turns} "
+                f"(命中率: {short_term_rate:.2%})"
+            )
+        elif short_term_rate < 0.3 and self.short_term.max_turns > 30:
+            old_max = self.short_term.max_turns
+            self.short_term.max_turns = max(30, self.short_term.max_turns - 10)
+            self.logger.info(
+                f"短期记忆容量减少: {old_max} → {self.short_term.max_turns} "
+                f"(命中率: {short_term_rate:.2%})"
+            )
+
+        # 工作记忆自适应
+        working_rate = self.stats.get_hit_rate("working")
+        if working_rate < 0.3 and self.working.retention_days > 3:
+            old_days = self.working.retention_days
+            self.working.retention_days = max(3, self.working.retention_days - 1)
+            self.logger.info(
+                f"工作记忆保留期缩短: {old_days} → {self.working.retention_days} 天 "
+                f"(命中率: {working_rate:.2%})"
+            )
+        elif working_rate > 0.6 and self.working.retention_days < 14:
+            old_days = self.working.retention_days
+            self.working.retention_days = min(14, self.working.retention_days + 1)
+            self.logger.info(
+                f"工作记忆保留期延长: {old_days} → {self.working.retention_days} 天 "
+                f"(命中率: {working_rate:.2%})"
+            )
+
+        # 语义记忆自适应
+        if self.use_hybrid_retrieval:
+            semantic_rate = self.stats.get_hit_rate("semantic")
+            if semantic_rate < 0.2:
+                self.use_hybrid_retrieval = False
+                self.logger.warning(
+                    f"语义记忆命中率过低 ({semantic_rate:.2%})，暂时禁用"
+                )
+
+        # 定期归档低频记忆
+        archived_count = self.archive_old_memories(days_threshold=30)
+
+    def archive_old_memories(self, days_threshold: int = 30) -> int:
+        """归档低频记忆"""
+        cutoff = (datetime.now() - timedelta(days=days_threshold)).isoformat()
+
+        try:
+            # 检查 episodic 是否使用数据库存储
+            episodic_db = str(self.memory_dir / "episodic.db")
+            if not os.path.exists(episodic_db):
+                # 如果使用文件存储，跳过归档
+                return 0
+
+            conn = sqlite3.connect(episodic_db)
+            cursor = conn.cursor()
+
+            # 检查表是否存在 archived 字段
+            cursor.execute("PRAGMA table_info(episodes)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "archived" not in columns:
+                conn.close()
+                return 0
+
+            cursor.execute("""
+                SELECT id, summary FROM episodes
+                WHERE last_accessed < ? AND archived = 0
+            """, (cutoff,))
+
+            to_archive = cursor.fetchall()
+
+            for episode_id, summary in to_archive:
+                cursor.execute("""
+                    UPDATE episodes
+                    SET content = ?, archived = 1
+                    WHERE id = ?
+                """, (f"[已归档] {summary}", episode_id))
+
+            conn.commit()
+            conn.close()
+
+            if to_archive:
+                self.logger.info(f"归档了 {len(to_archive)} 条低频记忆")
+
+            return len(to_archive)
+        except Exception as e:
+            self.logger.error(f"归档记忆失败: {e}")
+            return 0

@@ -6,11 +6,19 @@ model:
   model_name: gpt-4o-mini
   api_key: ${OPENAI_API_KEY}
   base_url: https://api.openai.com/v1
+  fallback_models:
+    - gpt-3.5-turbo  # API 失败时自动切换
 
 # 记忆配置
 memory:
   enabled: true
   storage_dir: memory
+
+  # 自适应记忆配置
+  adaptive:
+    enabled: true
+    adapt_interval: 100  # 每 100 次查询评估一次
+    archive_days: 30     # 30 天未访问则归档
 
   # 混合检索配置 (可选 - 提升记忆检索精度)
   # 默认使用简单关键词匹配,无需额外依赖

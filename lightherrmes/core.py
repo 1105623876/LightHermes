@@ -185,6 +185,26 @@ class LightHermes:
         log_file: str = None,
         fallback_models: List[str] = None,
     ):
+        # 读取配置文件
+        config = {}
+        config_path = "config.yaml"
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f) or {}
+            except Exception as e:
+                print(f"警告: 读取配置文件失败: {e}")
+
+        # 应用配置（参数优先级高于配置文件）
+        if not fallback_models and config.get("model", {}).get("fallback_models"):
+            fallback_models = config["model"]["fallback_models"]
+
+        if not log_level and config.get("logging", {}).get("level"):
+            log_level = config["logging"]["level"]
+
+        if not log_file and config.get("logging", {}).get("file"):
+            log_file = config["logging"]["file"]
+
         self.name = name or f"LightHermes-{uuid.uuid4().hex[:8]}"
         self.role = role or "你是一个有用的AI助手"
         self.model = model
@@ -365,6 +385,12 @@ class LightHermes:
 
                 if self.memory_enabled:
                     self.memory.add_message("assistant", reply)
+
+                # 自适应记忆调整
+                self.query_count += 1
+                if self.query_count % 100 == 0:
+                    self.memory.adapt_weights()
+                    self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
 
                 return reply
 
