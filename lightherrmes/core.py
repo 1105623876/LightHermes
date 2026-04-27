@@ -183,11 +183,22 @@ class LightHermes:
         debug: bool = False,
         log_level: str = "INFO",
         log_file: str = None,
+        fallback_models: List[str] = None,
     ):
         self.name = name or f"LightHermes-{uuid.uuid4().hex[:8]}"
         self.role = role or "你是一个有用的AI助手"
         self.model = model
         self.debug = debug
+
+        from lightherrmes.logger import setup_logger
+        self.logger = setup_logger(
+            name="lightherrmes",
+            level=log_level,
+            log_file=log_file
+        )
+
+        self.fallback_models = fallback_models or []
+        self.query_count = 0
 
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY")
@@ -228,6 +239,36 @@ class LightHermes:
             )
         else:
             self.evolution = None
+
+    def _call_api_with_fallback(
+        self,
+        messages: List[Dict],
+        **kwargs
+    ) -> Any:
+        """
+        带降级机制的 API 调用
+        """
+        models = [self.model] + self.fallback_models
+        last_error = None
+
+        for i, model in enumerate(models):
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **kwargs
+                )
+                if i > 0:
+                    self.logger.warning(f"降级到模型 {model}")
+                return response
+            except Exception as e:
+                last_error = e
+                if i == len(models) - 1:
+                    self.logger.error(f"所有模型失败: {e}")
+                    raise
+                self.logger.warning(f"模型 {model} 失败，尝试降级: {e}")
+
+        raise last_error
 
     def run(
         self,
@@ -294,7 +335,12 @@ class LightHermes:
     ) -> str:
         """非流式运行"""
         for _ in range(max_iterations):
-            response = self.client.chat.completions.create(**params)
+            response = self._call_api_with_fallback(
+                messages=params["messages"],
+                stream=params.get("stream", False),
+                tools=params.get("tools"),
+                tool_choice=params.get("tool_choice")
+            )
             message = response.choices[0].message
 
             if message.tool_calls:
@@ -327,7 +373,12 @@ class LightHermes:
     def _run_stream(self, params: Dict[str, Any], max_iterations: int) -> Generator:
         """流式运行"""
         for _ in range(max_iterations):
-            response = self.client.chat.completions.create(**params)
+            response = self._call_api_with_fallback(
+                messages=params["messages"],
+                stream=params.get("stream", True),
+                tools=params.get("tools"),
+                tool_choice=params.get("tool_choice")
+            )
 
             output = ""
             tool_calls = []
