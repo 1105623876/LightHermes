@@ -1,14 +1,20 @@
 # LightHermes
 
-轻量级自进化智能体框架
+**极简自进化智能体框架** — 在 LightAgent 的轻量哲学上，加入记忆与自进化能力
 
-## 特性
+## 设计理念
 
-- **四级记忆系统**: 短期、工作、情景、语义四层记忆管理
-- **混合自进化**: 从对话中学习 + 自动生成技能
-- **轻量级设计**: 核心代码 ~3600 行,最小依赖
+- **极简主义**: 核心 1500 行，零重依赖（无 LangChain/LlamaIndex）
+- **开箱即用**: 默认关键词检索，可选语义增强
+- **渐进增强**: 从最简实现开始，按需启用高级特性
+
+## 核心特性
+
+- **四级记忆系统**: 短期/工作/情景/语义分层管理
+- **自进化能力**: 从对话中学习 + 自动生成技能
 - **技能系统**: Markdown 技能 + Python 插件
-- **交互式 CLI**: 简洁的命令行界面
+- **多 API 支持**: OpenAI + Anthropic
+- **交互式 CLI**: 简洁命令行界面
 
 ## 快速开始
 
@@ -20,17 +26,15 @@ pip install -r requirements.txt
 
 ### 配置
 
-1. 复制 `config.yaml` 并设置你的 API key:
-
-```yaml
-model:
-  api_key: your_openai_api_key
-```
-
-2. 设置环境变量(可选):
+设置 API key（二选一）：
 
 ```bash
-export OPENAI_API_KEY=your_api_key
+# 环境变量
+export OPENAI_API_KEY=your_key
+
+# 或编辑 config.yaml
+model:
+  api_key: your_key
 ```
 
 ### 使用
@@ -42,16 +46,15 @@ from lightherrmes import LightHermes
 
 agent = LightHermes(
     name="MyAgent",
-    role="你是一个有用的编程助手",
-    model="gpt-4o-mini",
-    api_key="your_api_key"
+    role="编程助手",
+    model="gpt-4o-mini"
 )
 
 response = agent.run("帮我解释这段代码")
 print(response)
 ```
 
-**命令行界面**:
+**CLI**:
 
 ```bash
 python -m lightherrmes.cli
@@ -75,48 +78,45 @@ LightHermes/
 └── config.yaml         # 配置文件
 ```
 
-## 配置说明
+## 渐进增强
 
-### 混合检索配置 (可选)
+**默认**: 关键词检索，零额外依赖
 
-**默认行为**: LightHermes 使用简单的关键词匹配进行记忆检索,**无需任何额外依赖**。
-
-**可选增强**: 如果需要更精确的语义检索,可以启用混合检索:
+**可选**: 启用语义检索（`config.yaml`）
 
 ```yaml
 memory:
   hybrid_retrieval:
-    enabled: true                 # 启用混合检索
-    provider: openai              # 使用 OpenAI API (推荐)
+    enabled: true
+    provider: openai  # 或 local (需 sentence-transformers)
     model: text-embedding-3-small
-    
-    # 或使用本地模型 (需要: pip install sentence-transformers)
-    # provider: local
-    # model: all-MiniLM-L6-v2
 ```
 
-**权衡**:
-- 关键词匹配: 快速、零依赖、适合大多数场景
-- 混合检索: 更精确、需要 API 调用或本地模型(~80MB)
+**权衡**: 关键词快速零依赖，语义检索更精确但需 API/本地模型
 
 ## 开发状态
 
-当前版本: **0.1.0** (Phase 1+2+3 完成)
+**v0.1.0** ✅ 核心完成
 
-**Phase 1 - 核心功能** ✅
-- [x] 项目基础结构
-- [x] core.py 基础框架
-- [x] memory.py 四级记忆系统
-- [x] 基础技能加载
-- [x] cli.py 命令行界面
+- 四级记忆系统
+- 自进化能力（轨迹分析、技能生成）
+- 混合检索（可选）
+- 多 API 支持（OpenAI + Anthropic）
 
-**Phase 2 - 自进化系统** ✅
-- [x] evolution.py (轨迹分析、技能生成、验证)
-- [x] 集成到 core.py
+**改进方向**:
+- 测试覆盖
+- 性能优化（缓存、索引）
+- 插件系统完善
 
-**Phase 3 - 增强功能** ✅
-- [x] 混合检索 (TF-IDF + 嵌入)
-- [x] 集成到记忆系统
+## 对比
+
+| 特性 | LightAgent | LightHermes |
+|------|-----------|-------------|
+| 核心代码 | ~1000 行 | ~1500 行 |
+| 记忆系统 | mem0 外挂 | 内置四级记忆 |
+| 自进化 | 自学习 | 轨迹分析 + 技能生成 |
+| 依赖 | 零依赖 | 零依赖（可选增强）|
+| 定位 | 极简基础 | 轻量 + 记忆增强 |
 
 ## 许可证
 
@@ -125,4 +125,5 @@ Apache 2.0
 ## 参考
 
 - 设计文档: `docs/superpowers/specs/2026-04-25-lightherrmes-design.md`
-- 参考项目: LightAgent, Hermes
+- LightAgent: 极简智能体框架
+- Hermes: 生产级记忆管理
