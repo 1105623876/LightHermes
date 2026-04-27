@@ -15,6 +15,50 @@ import re
 from lightherrmes.logger import setup_logger
 
 
+class MemoryStats:
+    """记忆统计 - 追踪各层级命中率"""
+
+    def __init__(self, stats_file: str):
+        self.stats_file = stats_file
+        self.stats = self._load_stats()
+
+    def _load_stats(self) -> Dict[str, Dict[str, float]]:
+        if not os.path.exists(self.stats_file):
+            return {}
+        try:
+            with open(self.stats_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_stats(self):
+        try:
+            os.makedirs(os.path.dirname(self.stats_file), exist_ok=True)
+            with open(self.stats_file, 'w', encoding='utf-8') as f:
+                json.dump(self.stats, f, indent=2)
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"保存统计数据失败: {e}")
+
+    def record_hit(self, layer: str, hit_count: int, query_time: float):
+        if layer not in self.stats:
+            self.stats[layer] = {"hits": 0, "queries": 0, "total_time": 0.0}
+
+        self.stats[layer]["queries"] += 1
+        self.stats[layer]["hits"] += hit_count
+        self.stats[layer]["total_time"] += query_time
+
+        self._save_stats()
+
+    def get_hit_rate(self, layer: str) -> float:
+        if layer not in self.stats or self.stats[layer]["queries"] == 0:
+            return 0.0
+        return self.stats[layer]["hits"] / self.stats[layer]["queries"]
+
+    def get_all_stats(self) -> Dict[str, Dict[str, float]]:
+        return self.stats.copy()
+
+
 class ShortTermMemory:
     """短期记忆 - 当前会话的上下文"""
 
