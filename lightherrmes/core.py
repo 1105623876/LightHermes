@@ -4,6 +4,7 @@ LightHermes 核心引擎
 实现对话循环、工具调度、技能加载
 """
 
+import json
 import os
 import yaml
 import uuid
@@ -368,7 +369,11 @@ class LightHermes:
 
                 for tool_call in message.tool_calls:
                     function_call = tool_call.function
-                    function_args = eval(function_call.arguments)
+                    try:
+                        function_args = json.loads(function_call.arguments)
+                    except json.JSONDecodeError:
+                        self.logger.error(f"工具参数解析失败: {function_call.arguments}")
+                        continue
 
                     tool_response = self.tool_dispatcher.call_tool(
                         function_call.name,
@@ -436,7 +441,12 @@ class LightHermes:
                 elif finish_reason in ("tool_calls", "stop") and any(tc["name"] for tc in tool_calls):
                     for tool_call in tool_calls:
                         if tool_call["name"]:
-                            function_args = eval(tool_call["arguments"])
+                            try:
+                                function_args = json.loads(tool_call["arguments"])
+                            except json.JSONDecodeError:
+                                self.logger.error(f"工具参数解析失败: {tool_call['arguments']}")
+                                continue
+
                             tool_response = self.tool_dispatcher.call_tool(
                                 tool_call["name"],
                                 function_args
