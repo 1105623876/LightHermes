@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import re
 
+from lightherrmes.logger import setup_logger
+
 
 class ShortTermMemory:
     """短期记忆 - 当前会话的上下文"""
@@ -45,31 +47,40 @@ class WorkingMemory:
 
     def _init_db(self):
         """初始化数据库"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                user_id TEXT,
-                summary TEXT,
-                timestamp TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
+        try:
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    summary TEXT,
+                    timestamp TEXT
+                )
+            """)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"初始化工作记忆数据库失败: {e}")
+            raise
 
     def add_session(self, session_id: str, user_id: str, summary: str):
         """添加会话摘要"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO sessions (session_id, user_id, summary, timestamp)
-            VALUES (?, ?, ?, ?)
-        """, (session_id, user_id, summary, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-        self._cleanup_old_sessions()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO sessions (session_id, user_id, summary, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (session_id, user_id, summary, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+            self._cleanup_old_sessions()
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"添加会话摘要失败: {e}")
 
     def get_recent_sessions(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """获取最近的会话摘要"""
