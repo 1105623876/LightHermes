@@ -59,6 +59,80 @@ class MemoryStats:
         return self.stats.copy()
 
 
+class MemoryIndex:
+    """内存倒排索引 - 加速关键词检索"""
+
+    def __init__(self, index_file: str):
+        self.index_file = index_file
+        self.inverted_index: Dict[str, set] = {}
+        self._load_index()
+
+    def _load_index(self):
+        """从文件加载索引"""
+        if not os.path.exists(self.index_file):
+            return
+        try:
+            with open(self.index_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # 将列表转换回集合
+                self.inverted_index = {k: set(v) for k, v in data.items()}
+        except Exception:
+            self.inverted_index = {}
+
+    def _save_index(self):
+        """保存索引到文件"""
+        try:
+            os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
+            # 将集合转换为列表以便 JSON 序列化
+            data = {k: list(v) for k, v in self.inverted_index.items()}
+            with open(self.index_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"保存索引失败: {e}")
+
+    def add(self, name: str, content: str):
+        """添加文档到索引"""
+        # 简单分词：转小写 + 按空格分割
+        words = set(content.lower().split())
+        for word in words:
+            if len(word) > 1:  # 过滤单字符
+                if word not in self.inverted_index:
+                    self.inverted_index[word] = set()
+                self.inverted_index[word].add(name)
+        self._save_index()
+
+    def remove(self, name: str):
+        """从索引中移除文档"""
+        for word in list(self.inverted_index.keys()):
+            if name in self.inverted_index[word]:
+                self.inverted_index[word].discard(name)
+                if not self.inverted_index[word]:
+                    del self.inverted_index[word]
+        self._save_index()
+
+    def search(self, query_words: List[str]) -> set:
+        """搜索包含所有查询词的文档（交集）"""
+        if not query_words:
+            return set()
+
+        # 转小写
+        query_words = [w.lower() for w in query_words if len(w) > 1]
+        if not query_words:
+            return set()
+
+        # 获取每个词的文档集合
+        results = []
+        for word in query_words:
+            if word in self.inverted_index:
+                results.append(self.inverted_index[word])
+            else:
+                return set()  # 如果有词不存在，返回空集
+
+        # 返回交集
+        return set.intersection(*results) if results else set()
+
+
 class ShortTermMemory:
     """短期记忆 - 当前会话的上下文"""
 
@@ -396,41 +470,103 @@ class MemoryManager:
         self.working.add_session(session_id, user_id, summary)
 
     def recall(self, query: str, user_id: str = "default") -> str:
-        """召回相关记忆"""
+        """召回相关记忆 - 优化版：排序、token预算、去重"""
         import time
         start_time = time.time()
 
-        context_parts = []
+        # 收集所有记忆
+        memories = []
 
-        # 1. 从工作记忆中召回最近的会话
+        # 1. 工作记忆
         recent_sessions = self.working.get_recent_sessions(user_id, limit=3)
-        if recent_sessions:
-            context_parts.append("## 最近的对话")
-            for session in recent_sessions[:2]:
-                context_parts.append(f"- {session['summary']}")
+        for session in recent_sessions[:2]:
+            memories.append({
+                "type": "working",
+                "content": f"最近对话: {session['summary']}",
+                "priority": 3  # 最高优先级
+            })
         self.stats.record_hit("working", 1 if recent_sessions else 0, time.time() - start_time)
 
-        # 2. 从情景记忆中召回相关项目/任务
-        episodic_results = self.episodic.search(query, limit=2)
-        if episodic_results:
-            context_parts.append("\n## 相关项目/任务")
-            for memory in episodic_results:
-                name = memory.get("name", "unknown")
-                content = memory["content"][:200]
-                context_parts.append(f"- {name}: {content}...")
+        # 2. 情景记忆
+        episodic_results = self.episodic.search(query, limit=3)
+        for memory in episodic_results:
+            name = memory.get("name", "unknown")
+            content = memory["content"][:500]  # 扩展到500字符
+            memories.append({
+                "type": "episodic",
+                "content": f"项目/任务 {name}: {content}",
+                "priority": 2,
+                "full_content": memory["content"]
+            })
         self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
-        # 3. 从语义记忆中召回相关知识
+        # 3. 语义记忆
         semantic_results = self.semantic.search(query, limit=3)
-        if semantic_results:
-            context_parts.append("\n## 相关知识")
-            for memory in semantic_results:
-                name = memory.get("name", "unknown")
-                content = memory["content"][:150]
-                context_parts.append(f"- {name}: {content}...")
+        for memory in semantic_results:
+            name = memory.get("name", "unknown")
+            content = memory["content"][:500]  # 从150扩展到500字符
+            memories.append({
+                "type": "semantic",
+                "content": f"知识 {name}: {content}",
+                "priority": 1,
+                "full_content": memory["content"]
+            })
         self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
 
-        return "\n".join(context_parts) if context_parts else ""
+        # 去重：检查情景记忆和语义记忆的重叠
+        def jaccard_similarity(text1: str, text2: str) -> float:
+            words1 = set(text1.lower().split())
+            words2 = set(text2.lower().split())
+            if not words1 or not words2:
+                return 0.0
+            intersection = len(words1 & words2)
+            union = len(words1 | words2)
+            return intersection / union if union > 0 else 0.0
+
+        # 去重逻辑
+        filtered_memories = []
+        for i, mem in enumerate(memories):
+            if mem["type"] == "working":
+                filtered_memories.append(mem)
+                continue
+
+            # 检查与已添加的记忆是否重叠
+            is_duplicate = False
+            for existing in filtered_memories:
+                if existing["type"] == "working":
+                    continue
+                sim = jaccard_similarity(
+                    mem.get("full_content", mem["content"]),
+                    existing.get("full_content", existing["content"])
+                )
+                if sim > 0.5:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                filtered_memories.append(mem)
+
+        # 按优先级排序
+        filtered_memories.sort(key=lambda x: x["priority"], reverse=True)
+
+        # Token预算：总上限约2000字符
+        total_chars = 0
+        max_chars = 2000
+        result_parts = []
+
+        for mem in filtered_memories:
+            content = mem["content"]
+            if total_chars + len(content) > max_chars:
+                # 截断以适应预算
+                remaining = max_chars - total_chars
+                if remaining > 100:  # 至少保留100字符
+                    content = content[:remaining] + "..."
+                    result_parts.append(content)
+                break
+            result_parts.append(content)
+            total_chars += len(content)
+
+        return "\n".join(result_parts) if result_parts else ""
 
     def save_episodic(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存情景记忆"""
