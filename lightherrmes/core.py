@@ -325,6 +325,34 @@ class LightHermes:
 
         raise last_error
 
+    def _classify_task(self, query: str) -> str:
+        """
+        简单的任务分类 - 基于关键词识别任务类型
+        """
+        query_lower = query.lower()
+
+        # 代码相关
+        code_keywords = ["代码", "函数", "class", "def", "实现", "编写", "写一个", "code", "function", "implement"]
+        if any(kw in query_lower for kw in code_keywords):
+            return "代码"
+
+        # 调试相关
+        debug_keywords = ["调试", "bug", "错误", "报错", "修复", "fix", "debug", "error"]
+        if any(kw in query_lower for kw in debug_keywords):
+            return "调试"
+
+        # 解释相关
+        explain_keywords = ["解释", "说明", "什么是", "如何", "为什么", "explain", "what", "how", "why"]
+        if any(kw in query_lower for kw in explain_keywords):
+            return "解释"
+
+        # 配置相关
+        config_keywords = ["配置", "设置", "安装", "部署", "config", "setup", "install", "deploy"]
+        if any(kw in query_lower for kw in config_keywords):
+            return "配置"
+
+        return "通用"
+
     def run(
         self,
         query: str,
@@ -427,9 +455,40 @@ class LightHermes:
 
                 # 自适应记忆调整
                 self.query_count += 1
-                if self.query_count % 100 == 0:
+                if self.memory_enabled and self.query_count % 100 == 0:
                     self.memory.adapt_weights()
                     self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
+
+                # 自动记录轨迹并触发进化
+                if self.evolution_enabled and self.evolution:
+                    task_type = self._classify_task(params["messages"][-1]["content"])
+                    tool_calls_list = []
+
+                    # 收集本次对话的工具调用
+                    for msg in params["messages"]:
+                        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("tool_calls"):
+                            for tc in msg["tool_calls"]:
+                                tool_calls_list.append({
+                                    "name": tc["function"]["name"],
+                                    "arguments": tc["function"]["arguments"]
+                                })
+
+                    # 记录轨迹
+                    self.evolution.analyzer.save_trajectory(
+                        session_id=session_id,
+                        messages=params["messages"],
+                        tool_calls=tool_calls_list,
+                        success=True,
+                        task_type=task_type
+                    )
+
+                    # 每 50 次对话触发一次进化
+                    if self.query_count % 50 == 0:
+                        self.logger.info(f"触发自动进化（已完成 {self.query_count} 次对话）")
+                        result = self.evolution.evolve()
+                        if result.get("success_skills"):
+                            self.skill_loader.load_all()
+                            self.logger.info(f"热加载了 {len(result['success_skills'])} 个新技能")
 
                 return reply
 
