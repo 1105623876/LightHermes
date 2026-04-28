@@ -10,10 +10,10 @@ import yaml
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional, Generator, Union
-from openai import OpenAI
 
 from lightherrmes.memory import MemoryManager
 from lightherrmes.evolution import EvolutionEngine
+from lightherrmes.adapters import get_adapter
 
 
 class SkillLoader:
@@ -168,6 +168,7 @@ class LightHermes:
         name: str = None,
         role: str = None,
         model: str = "gpt-4o-mini",
+        provider: str = "openai",
         api_key: str = None,
         base_url: str = None,
         memory_enabled: bool = True,
@@ -209,6 +210,7 @@ class LightHermes:
         self.name = name or f"LightHermes-{uuid.uuid4().hex[:8]}"
         self.role = role or "你是一个有用的AI助手"
         self.model = model
+        self.provider = provider
         self.debug = debug
 
         from lightherrmes.logger import setup_logger
@@ -221,14 +223,22 @@ class LightHermes:
         self.fallback_models = fallback_models or []
         self.query_count = 0
 
+        # 自动检测 API key
         if api_key is None:
-            api_key = os.environ.get("OPENAI_API_KEY")
-        if api_key is None:
-            raise ValueError("API key is required")
+            if provider == "openai":
+                api_key = os.environ.get("OPENAI_API_KEY")
+            elif provider == "anthropic":
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
 
-        self.client = OpenAI(
+        if api_key is None:
+            raise ValueError(f"API key is required for provider: {provider}")
+
+        # 使用 adapter 替代直接创建 client
+        self.adapter = get_adapter(
+            provider=provider,
+            model=model,
             api_key=api_key,
-            base_url=base_url or "https://api.openai.com/v1"
+            base_url=base_url
         )
 
         self.memory_enabled = memory_enabled
@@ -253,11 +263,28 @@ class LightHermes:
                 self.tool_dispatcher.register_tool(tool)
 
         if evolution_enabled:
-            self.evolution = EvolutionEngine(
-                client=self.client,
-                model=model,
-                skill_validation=skill_validation
-            )
+            # Evolution 系统需要 OpenAI client
+            # 如果主 provider 不是 openai，为 evolution 创建单独的 client
+            if provider == "openai":
+                evolution_client = self.adapter.client
+            else:
+                from openai import OpenAI
+                evolution_api_key = os.environ.get("OPENAI_API_KEY")
+                if not evolution_api_key:
+                    self.logger.warning(
+                        "Evolution 系统需要 OPENAI_API_KEY，已禁用"
+                    )
+                    self.evolution = None
+                    self.evolution_enabled = False
+                else:
+                    evolution_client = OpenAI(api_key=evolution_api_key)
+
+            if evolution_enabled:  # 可能在上面被禁用
+                self.evolution = EvolutionEngine(
+                    client=evolution_client,
+                    model=model,
+                    skill_validation=skill_validation
+                )
         else:
             self.evolution = None
 
@@ -274,11 +301,18 @@ class LightHermes:
 
         for i, model in enumerate(models):
             try:
-                response = self.client.chat.completions.create(
-                    model=model,
+                # 临时切换 adapter 的模型
+                original_model = self.adapter.model
+                self.adapter.model = model
+
+                response = self.adapter.create(
                     messages=messages,
                     **kwargs
                 )
+
+                # 恢复原始模型
+                self.adapter.model = original_model
+
                 if i > 0:
                     self.logger.warning(f"降级到模型 {model}")
                 return response
