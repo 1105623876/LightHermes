@@ -236,6 +236,10 @@ class EpisodicMemory:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
+        # 初始化索引
+        index_file = str(Path(storage_dir).parent / "episodic_index.json")
+        self.index = MemoryIndex(index_file)
+
     def save(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存情景记忆"""
         metadata = metadata or {}
@@ -251,6 +255,9 @@ class EpisodicMemory:
         file_path = self.storage_dir / f"{name}.md"
         file_path.write_text(frontmatter + content, encoding="utf-8")
 
+        # 更新索引
+        self.index.add(name, content)
+
     def load(self, name: str) -> Optional[Dict[str, Any]]:
         """加载情景记忆"""
         file_path = self.storage_dir / f"{name}.md"
@@ -261,16 +268,29 @@ class EpisodicMemory:
         return self._parse_memory(content)
 
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """搜索情景记忆"""
+        """搜索情景记忆 - 使用索引加速"""
+        query_words = query.lower().split()
+
+        # 使用索引定位候选文件
+        candidate_names = self.index.search(query_words)
+
+        # 如果索引没有结果，回退到全扫描
+        if not candidate_names:
+            candidate_names = {f.stem for f in self.storage_dir.glob("*.md")}
+
         results = []
         query_lower = query.lower()
 
-        for file_path in self.storage_dir.glob("*.md"):
+        for name in candidate_names:
+            file_path = self.storage_dir / f"{name}.md"
+            if not file_path.exists():
+                continue
+
             content = file_path.read_text(encoding="utf-8")
             memory = self._parse_memory(content)
 
             if memory and query_lower in memory["content"].lower():
-                memory["name"] = file_path.stem
+                memory["name"] = name
                 results.append(memory)
 
         return results[:limit]
@@ -305,6 +325,10 @@ class SemanticMemory:
         self.max_entries = max_entries
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
+        # 初始化索引
+        index_file = str(Path(storage_dir).parent / "semantic_index.json")
+        self.index = MemoryIndex(index_file)
+
         if use_hybrid_retrieval:
             try:
                 from lightherrmes.retrieval import HybridRetriever
@@ -332,6 +356,9 @@ class SemanticMemory:
 
         file_path = self.storage_dir / f"{name}.md"
         file_path.write_text(frontmatter + content, encoding="utf-8")
+
+        # 更新索引
+        self.index.add(name, content)
 
         self._cleanup_if_needed()
 
@@ -363,12 +390,25 @@ class SemanticMemory:
                 except Exception as e:
                     print(f"混合检索失败,回退到关键词匹配: {e}")
 
-        # 默认使用简单关键词匹配
-        results = []
+        # 默认使用简单关键词匹配 - 使用索引加速
         query_lower = query.lower()
-        query_words = set(query_lower.split())
+        query_words = query_lower.split()
 
-        for file_path in self.storage_dir.glob("*.md"):
+        # 使用索引定位候选文件
+        candidate_names = self.index.search(query_words)
+
+        # 如果索引没有结果，回退到全扫描
+        if not candidate_names:
+            candidate_names = {f.stem for f in self.storage_dir.glob("*.md")}
+
+        results = []
+        query_words_set = set(query_words)
+
+        for name in candidate_names:
+            file_path = self.storage_dir / f"{name}.md"
+            if not file_path.exists():
+                continue
+
             content = file_path.read_text(encoding="utf-8")
             memory = self._parse_memory(content)
 
@@ -376,9 +416,9 @@ class SemanticMemory:
                 content_lower = memory["content"].lower()
                 content_words = set(content_lower.split())
 
-                matches = len(query_words & content_words)
+                matches = len(query_words_set & content_words)
                 if matches > 0:
-                    memory["name"] = file_path.stem
+                    memory["name"] = name
                     memory["score"] = matches
                     results.append(memory)
 
