@@ -37,4 +37,4 @@ Thumbs.db
 # 项目特定
 CLAUDE.md
 LightAgent/
-hermes-agent/
+hermes-agent/.claude/settings.local.json
