@@ -15,7 +15,7 @@
 - **自进化能力**: 从对话中学习 + 自动生成技能
 - **生产稳定性**: 轻量日志 + 模型降级 + 错误处理
 - **技能系统**: Markdown 技能 + Python 插件
-- **多 API 支持**: OpenAI + Anthropic
+- **多 API 支持**: OpenAI + Anthropic + MiniMax (Anthropic 兼容)
 - **交互式 CLI**: 简洁命令行界面
 
 ## 快速开始
@@ -37,6 +37,31 @@ export OPENAI_API_KEY=your_key
 # 或编辑 config.yaml
 model:
   api_key: your_key
+```
+
+**使用 Anthropic API**:
+
+```python
+agent = LightHermes(
+    name="MyAgent",
+    role="编程助手",
+    model="claude-sonnet-4-6",
+    provider="anthropic",
+    api_key="your_anthropic_key"
+)
+```
+
+**使用 MiniMax (Anthropic 兼容端点)**:
+
+```python
+agent = LightHermes(
+    name="MyAgent",
+    role="编程助手",
+    model="claude-sonnet-4-6",
+    provider="anthropic",
+    api_key="your_minimax_key",
+    base_url="https://api.minimaxi.com/anthropic"
+)
 ```
 
 ### 使用
@@ -122,7 +147,7 @@ model:
 - ✅ 记忆归档功能（低频记忆自动归档）
 - ✅ 自进化能力（轨迹分析、技能生成）
 - ✅ 混合检索（可选）
-- ✅ 多 API 支持（OpenAI + Anthropic）
+- ✅ 多 API 支持（OpenAI + Anthropic + MiniMax）
 - ✅ 轻量日志系统
 - ✅ 模型降级机制
 - ✅ 配置集成（config.yaml）
