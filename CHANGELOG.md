@@ -103,7 +103,7 @@ model:
 ### 运行
 ```bash
 # 命令行界面
-python -m lightherrmes.cli
+python -m lighthermes.cli
 
 # Python API
 python example.py
@@ -111,7 +111,7 @@ python example.py
 
 ### 测试记忆系统
 ```python
-from lightherrmes import LightHermes
+from lighthermes import LightHermes
 
 agent = LightHermes(model="gpt-4o-mini", api_key="your_key")
 

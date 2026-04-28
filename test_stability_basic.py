@@ -14,7 +14,7 @@ if sys.platform == 'win32':
 # 测试 1: 日志系统
 print("=== 测试 1: 日志系统 ===")
 try:
-    from lightherrmes.logger import setup_logger
+    from lighthermes.logger import setup_logger
 
     logger = setup_logger("test", level="INFO")
     logger.info("日志系统测试")
@@ -29,7 +29,7 @@ except Exception as e:
 # 测试 2: 模型降级配置
 print("\n=== 测试 2: 模型降级配置 ===")
 try:
-    from lightherrmes import LightHermes
+    from lighthermes import LightHermes
 
     # 检查 API key
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -58,7 +58,7 @@ except Exception as e:
 # 测试 3: 错误处理
 print("\n=== 测试 3: 记忆系统错误处理 ===")
 try:
-    from lightherrmes.memory import WorkingMemory
+    from lighthermes.memory import WorkingMemory
     import tempfile
 
     # 创建临时数据库测试错误处理

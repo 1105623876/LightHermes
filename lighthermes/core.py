@@ -11,9 +11,9 @@ import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional, Generator, Union
 
-from lightherrmes.memory import MemoryManager
-from lightherrmes.evolution import EvolutionEngine
-from lightherrmes.adapters import get_adapter
+from lighthermes.memory import MemoryManager
+from lighthermes.evolution import EvolutionEngine
+from lighthermes.adapters import get_adapter
 
 
 def tool(name: str, description: str, params: List[Dict]):
@@ -243,9 +243,9 @@ class LightHermes:
         self.provider = provider
         self.debug = debug
 
-        from lightherrmes.logger import setup_logger
+        from lighthermes.logger import setup_logger
         self.logger = setup_logger(
-            name="lightherrmes",
+            name="lighthermes",
             level=log_level,
             log_file=log_file
         )

@@ -2,7 +2,7 @@
 LightHermes 自进化系统测试示例
 """
 
-from lightherrmes import LightHermes
+from lighthermes import LightHermes
 import time
 
 def test_evolution():

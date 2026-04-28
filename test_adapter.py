@@ -16,7 +16,7 @@ def test_openai_adapter():
     """测试 OpenAI adapter"""
     print("=== 测试 1: OpenAI Adapter ===")
     try:
-        from lightherrmes.adapters import get_adapter
+        from lighthermes.adapters import get_adapter
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -45,7 +45,7 @@ def test_anthropic_adapter():
     """测试 Anthropic adapter"""
     print("\n=== 测试 2: Anthropic Adapter ===")
     try:
-        from lightherrmes.adapters import get_adapter
+        from lighthermes.adapters import get_adapter
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -70,11 +70,11 @@ def test_anthropic_adapter():
         return False
 
 
-def test_lightherrmes_with_openai():
+def test_lighthermes_with_openai():
     """测试 LightHermes 使用 OpenAI"""
     print("\n=== 测试 3: LightHermes + OpenAI ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -104,11 +104,11 @@ def test_lightherrmes_with_openai():
         return False
 
 
-def test_lightherrmes_with_anthropic():
+def test_lighthermes_with_anthropic():
     """测试 LightHermes 使用 Anthropic"""
     print("\n=== 测试 4: LightHermes + Anthropic ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -142,7 +142,7 @@ def test_anthropic_api_call():
     """测试 Anthropic API 真实调用"""
     print("\n=== 测试 5: Anthropic API 真实调用 ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -183,8 +183,8 @@ def main():
     tests = [
         test_openai_adapter,
         test_anthropic_adapter,
-        test_lightherrmes_with_openai,
-        test_lightherrmes_with_anthropic,
+        test_lighthermes_with_openai,
+        test_lighthermes_with_anthropic,
         test_anthropic_api_call,
     ]
 

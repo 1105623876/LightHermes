@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import re
 
-from lightherrmes.logger import setup_logger
+from lighthermes.logger import setup_logger
 
 
 class MemoryStats:
@@ -37,7 +37,7 @@ class MemoryStats:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(self.stats, f, indent=2)
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"保存统计数据失败: {e}")
 
     def record_hit(self, layer: str, hit_count: int, query_time: float):
@@ -88,7 +88,7 @@ class MemoryIndex:
             with open(self.index_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"保存索引失败: {e}")
 
     def add(self, name: str, content: str):
@@ -188,7 +188,7 @@ class WorkingMemory:
             conn.commit()
             conn.close()
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"初始化工作记忆数据库失败: {e}")
             raise
 
@@ -205,7 +205,7 @@ class WorkingMemory:
             conn.close()
             self._cleanup_old_sessions()
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"添加会话摘要失败: {e}")
 
     def get_recent_sessions(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -250,7 +250,7 @@ class WorkingMemory:
             conn.commit()
             conn.close()
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"保存会话消息失败: {e}")
 
     def load_conversation(self, session_id: str) -> List[Dict[str, str]]:
@@ -268,7 +268,7 @@ class WorkingMemory:
                 return json.loads(result[0])
             return []
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"加载会话消息失败: {e}")
             return []
 
@@ -287,7 +287,7 @@ class WorkingMemory:
             conn.close()
             return result[0] if result else None
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"获取最近会话失败: {e}")
             return None
 
@@ -394,7 +394,7 @@ class SemanticMemory:
 
         if use_hybrid_retrieval:
             try:
-                from lightherrmes.retrieval import HybridRetriever
+                from lighthermes.retrieval import HybridRetriever
                 self.hybrid_retriever = HybridRetriever(
                     embedding_provider=embedding_provider,
                     embedding_model=embedding_model,
@@ -536,7 +536,7 @@ class MemoryManager:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_hybrid_retrieval = use_hybrid_retrieval
-        self.logger = setup_logger("lightherrmes.memory")
+        self.logger = setup_logger("lighthermes.memory")
 
         # 初始化统计系统
         stats_file = str(self.memory_dir / "stats.json")

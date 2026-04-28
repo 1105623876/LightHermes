@@ -2,7 +2,7 @@
 LightHermes 基础使用示例
 """
 
-from lightherrmes import LightHermes
+from lighthermes import LightHermes
 
 # 示例 1: 基础对话
 def example_basic():
@@ -55,4 +55,4 @@ if __name__ == "__main__":
     # example_stream()
 
     print("\n提示: 取消注释上面的函数调用并设置你的 API key 来运行示例")
-    print("或者直接运行: python -m lightherrmes.cli")
+    print("或者直接运行: python -m lighthermes.cli")

@@ -2,10 +2,10 @@
 
 # 模型配置
 model:
-  provider: openai
-  model_name: gpt-4o-mini
-  api_key: ${OPENAI_API_KEY}
-  base_url: https://api.openai.com/v1
+  provider: anthropic
+  model_name: claude-sonnet-4-6
+  api_key: sk-cp-H6_zWzcNypjoNQ94O_VExgsxSd7L0KsfCNnxI7cSQJAXdiSERRbROMviRA2ieJW4oSTsNT8MyiZHKNpMBx6epnVfl2Qk5CWeDf5iChd9GAJ931tavyrUxBU
+  base_url: https://api.minimaxi.com/anthropic
   fallback_models:
     - gpt-3.5-turbo  # API 失败时自动切换
 
@@ -66,12 +66,12 @@ plugins:
 cli:
   prompt_symbol: ">"
   show_banner: true
-  stream_output: true
+  stream_output: false  # 暂时禁用流式输出，避免 MiniMax 重复响应问题
   show_skill_usage: true
   color_enabled: true
 
 # 日志配置
 logging:
   level: INFO
-  file: logs/lightherrmes.log
+  file: logs/lighthermes.log
   debug: false

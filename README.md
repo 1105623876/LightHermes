@@ -71,7 +71,7 @@ agent = LightHermes(
 **Python API**:
 
 ```python
-from lightherrmes import LightHermes
+from lighthermes import LightHermes
 
 agent = LightHermes(
     name="MyAgent",
@@ -87,7 +87,7 @@ print(response)
 
 ```bash
 # 启动 CLI（需先在 config.yaml 中配置 API key）
-python -m lightherrmes.cli
+python -m lighthermes.cli
 
 # 可用命令
 /help       # 显示帮助信息
@@ -101,7 +101,7 @@ python -m lightherrmes.cli
 
 ```
 LightHermes/
-├── lightherrmes/       # 核心代码
+├── lighthermes/       # 核心代码
 │   ├── core.py         # 主引擎
 │   ├── memory.py       # 四级记忆系统
 │   ├── evolution.py    # 自进化系统
@@ -191,6 +191,6 @@ Apache 2.0
 
 ## 参考
 
-- 设计文档: `docs/superpowers/specs/2026-04-25-lightherrmes-design.md`
+- 设计文档: `docs/superpowers/specs/2026-04-25-lighthermes-design.md`
 - LightAgent: 极简智能体框架
 - Hermes: 生产级记忆管理

@@ -16,7 +16,7 @@ def test_tool_decorator_import():
     """测试 @tool 装饰器导入"""
     print("=== 测试 1: @tool 装饰器导入 ===")
     try:
-        from lightherrmes import tool
+        from lighthermes import tool
         print(f"✓ @tool 装饰器导入成功")
         print(f"✓ 类型: {type(tool)}")
         return True
@@ -31,7 +31,7 @@ def test_tool_decorator_usage():
     """测试 @tool 装饰器使用"""
     print("\n=== 测试 2: @tool 装饰器使用 ===")
     try:
-        from lightherrmes import tool
+        from lighthermes import tool
 
         @tool(
             name="get_weather",
@@ -72,8 +72,8 @@ def test_tool_registration():
     """测试工具注册"""
     print("\n=== 测试 3: 工具注册 ===")
     try:
-        from lightherrmes import LightHermes, tool
-        from lightherrmes.core import ToolDispatcher
+        from lighthermes import LightHermes, tool
+        from lighthermes.core import ToolDispatcher
 
         @tool(
             name="test_tool",

@@ -15,7 +15,7 @@
 - 标准库 `logging`，零依赖
 - 三级日志：ERROR（关键错误）、WARNING（降级/重试）、INFO（关键节点）
 - 输出：控制台 + 可选文件
-- 实现：新增 `lightherrmes/logger.py`（~40 行）
+- 实现：新增 `lighthermes/logger.py`（~40 行）
 
 **模型降级机制**
 - 配置降级链：`gpt-4o-mini → gpt-3.5-turbo → 抛出异常`
@@ -57,7 +57,7 @@
 # 日志配置
 logging:
   level: INFO
-  file: logs/lightherrmes.log
+  file: logs/lighthermes.log
 
 # 模型降级配置
 model:
@@ -78,9 +78,9 @@ memory:
 
 ## 文件变更
 
-- 新增：`lightherrmes/logger.py`（~40 行）
-- 修改：`lightherrmes/core.py`（+100 行）
-- 修改：`lightherrmes/memory.py`（+140 行）
+- 新增：`lighthermes/logger.py`（~40 行）
+- 修改：`lighthermes/core.py`（+100 行）
+- 修改：`lighthermes/memory.py`（+140 行）
 - 修改：`config.yaml`（+20 行）
 
 **总计**：~300 行（20% 增量）

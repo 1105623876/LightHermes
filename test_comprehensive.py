@@ -18,10 +18,10 @@ def test_imports():
     """测试模块导入"""
     print("=== 测试 1: 模块导入 ===")
     try:
-        from lightherrmes import LightHermes
-        from lightherrmes.memory import MemoryManager, MemoryStats
-        from lightherrmes.logger import setup_logger
-        from lightherrmes.evolution import EvolutionEngine
+        from lighthermes import LightHermes
+        from lighthermes.memory import MemoryManager, MemoryStats
+        from lighthermes.logger import setup_logger
+        from lighthermes.evolution import EvolutionEngine
         print("✓ 所有核心模块导入成功")
         return True
     except Exception as e:
@@ -32,7 +32,7 @@ def test_logger():
     """测试日志系统"""
     print("\n=== 测试 2: 日志系统 ===")
     try:
-        from lightherrmes.logger import setup_logger
+        from lighthermes.logger import setup_logger
 
         logger = setup_logger("test", level="INFO")
         logger.info("日志测试")
@@ -49,7 +49,7 @@ def test_memory_stats():
     """测试记忆统计系统"""
     print("\n=== 测试 3: 记忆统计系统 ===")
     try:
-        from lightherrmes.memory import MemoryStats
+        from lighthermes.memory import MemoryStats
 
         temp_dir = tempfile.mkdtemp()
         stats_file = os.path.join(temp_dir, "stats.json")
@@ -78,7 +78,7 @@ def test_memory_manager():
     """测试记忆管理器"""
     print("\n=== 测试 4: 记忆管理器 ===")
     try:
-        from lightherrmes.memory import MemoryManager
+        from lighthermes.memory import MemoryManager
 
         temp_dir = tempfile.mkdtemp()
 
@@ -124,7 +124,7 @@ def test_adaptive_memory():
     """测试自适应记忆调整"""
     print("\n=== 测试 5: 自适应记忆调整 ===")
     try:
-        from lightherrmes.memory import MemoryManager
+        from lighthermes.memory import MemoryManager
 
         temp_dir = tempfile.mkdtemp()
 
@@ -191,11 +191,11 @@ def test_config_loading():
         traceback.print_exc()
         return False
 
-def test_lightherrmes_init():
+def test_lighthermes_init():
     """测试 LightHermes 初始化"""
     print("\n=== 测试 7: LightHermes 初始化 ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         # 检查 API key
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -238,7 +238,7 @@ def main():
         test_memory_manager,
         test_adaptive_memory,
         test_config_loading,
-        test_lightherrmes_init,
+        test_lighthermes_init,
     ]
 
     results = []

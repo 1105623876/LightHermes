@@ -17,7 +17,7 @@ def test_task_classification():
     """测试任务分类"""
     print("=== 测试 1: 任务分类 ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -71,7 +71,7 @@ def test_trajectory_recording():
     """测试轨迹记录"""
     print("\n=== 测试 2: 轨迹记录 ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
         import tempfile
 
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -127,7 +127,7 @@ def test_evolution_trigger():
     """测试自动进化触发"""
     print("\n=== 测试 3: 自动进化触发 ===")
     try:
-        from lightherrmes import LightHermes
+        from lighthermes import LightHermes
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:

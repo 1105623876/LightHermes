@@ -13,7 +13,7 @@
 ## Task 1: 日志系统
 
 **Files:**
-- Create: `lightherrmes/logger.py`
+- Create: `lighthermes/logger.py`
 
 - [ ] **Step 1: 创建日志模块**
 
@@ -73,7 +73,7 @@ def setup_logger(
 - [ ] **Step 2: 提交日志模块**
 
 ```bash
-git add lightherrmes/logger.py
+git add lighthermes/logger.py
 git commit -m "feat: 添加轻量日志系统"
 ```
 
@@ -82,7 +82,7 @@ git commit -m "feat: 添加轻量日志系统"
 ## Task 2: 模型降级机制
 
 **Files:**
-- Modify: `lightherrmes/core.py:164-200`
+- Modify: `lighthermes/core.py:164-200`
 
 - [ ] **Step 1: 在 LightHermes.__init__ 添加降级配置**
 
@@ -93,9 +93,9 @@ git commit -m "feat: 添加轻量日志系统"
 fallback_models: List[str] = None,
 
 # 在初始化逻辑中添加（约第 190 行后）
-from lightherrmes.logger import setup_logger
+from lighthermes.logger import setup_logger
 self.logger = setup_logger(
-    name="lightherrmes",
+    name="lighthermes",
     level=log_level,
     log_file=log_file
 )
@@ -155,7 +155,7 @@ response = self._call_api_with_fallback(
 - [ ] **Step 4: 提交模型降级功能**
 
 ```bash
-git add lightherrmes/core.py
+git add lighthermes/core.py
 git commit -m "feat: 添加模型降级机制"
 ```
 
@@ -164,20 +164,20 @@ git commit -m "feat: 添加模型降级机制"
 ## Task 3: 记忆系统错误处理
 
 **Files:**
-- Modify: `lightherrmes/memory.py:46-100`
+- Modify: `lighthermes/memory.py:46-100`
 
 - [ ] **Step 1: 在 MemoryManager 添加日志**
 
 在 `memory.py` 顶部导入日志（约第 13 行后）：
 
 ```python
-from lightherrmes.logger import setup_logger
+from lighthermes.logger import setup_logger
 ```
 
 在 `MemoryManager.__init__` 中添加日志初始化（约第 200 行）：
 
 ```python
-self.logger = setup_logger("lightherrmes.memory")
+self.logger = setup_logger("lighthermes.memory")
 ```
 
 - [ ] **Step 2: 为 WorkingMemory 添加错误处理**
@@ -201,7 +201,7 @@ def _init_db(self):
         conn.commit()
         conn.close()
     except Exception as e:
-        logger = setup_logger("lightherrmes.memory")
+        logger = setup_logger("lighthermes.memory")
         logger.error(f"初始化工作记忆数据库失败: {e}")
         raise
 ```
@@ -223,14 +223,14 @@ def add_session(self, session_id: str, user_id: str, summary: str):
         conn.close()
         self._cleanup_old_sessions()
     except Exception as e:
-        logger = setup_logger("lightherrmes.memory")
+        logger = setup_logger("lighthermes.memory")
         logger.error(f"添加会话摘要失败: {e}")
 ```
 
 - [ ] **Step 4: 提交错误处理**
 
 ```bash
-git add lightherrmes/memory.py
+git add lighthermes/memory.py
 git commit -m "feat: 添加记忆系统错误处理"
 ```
 
@@ -239,7 +239,7 @@ git commit -m "feat: 添加记忆系统错误处理"
 ## Task 4: 记忆统计系统
 
 **Files:**
-- Modify: `lightherrmes/memory.py:15-100`
+- Modify: `lighthermes/memory.py:15-100`
 
 - [ ] **Step 1: 添加 MemoryStats 类**
 
@@ -268,7 +268,7 @@ class MemoryStats:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(self.stats, f, indent=2)
         except Exception as e:
-            logger = setup_logger("lightherrmes.memory")
+            logger = setup_logger("lighthermes.memory")
             logger.error(f"保存统计数据失败: {e}")
     
     def record_hit(self, layer: str, hit_count: int, query_time: float):
@@ -341,7 +341,7 @@ def retrieve(self, query: str, user_id: str = "default_user") -> str:
 - [ ] **Step 4: 提交统计系统**
 
 ```bash
-git add lightherrmes/memory.py
+git add lighthermes/memory.py
 git commit -m "feat: 添加记忆统计系统"
 ```
 
@@ -350,7 +350,7 @@ git commit -m "feat: 添加记忆统计系统"
 ## Task 5: 自适应权重调整
 
 **Files:**
-- Modify: `lightherrmes/memory.py:200-250`
+- Modify: `lighthermes/memory.py:200-250`
 
 - [ ] **Step 1: 添加 adapt_weights 方法**
 
@@ -420,7 +420,7 @@ if self.memory and self.query_count % 100 == 0:
 - [ ] **Step 3: 提交自适应调整**
 
 ```bash
-git add lightherrmes/memory.py lightherrmes/core.py
+git add lighthermes/memory.py lighthermes/core.py
 git commit -m "feat: 添加自适应权重调整"
 ```
 
@@ -429,7 +429,7 @@ git commit -m "feat: 添加自适应权重调整"
 ## Task 6: 记忆归档
 
 **Files:**
-- Modify: `lightherrmes/memory.py:100-150`
+- Modify: `lighthermes/memory.py:100-150`
 
 - [ ] **Step 1: 为 EpisodicMemory 添加归档支持**
 
@@ -502,7 +502,7 @@ archived_count = self.archive_old_memories(days_threshold=30)
 - [ ] **Step 4: 提交归档功能**
 
 ```bash
-git add lightherrmes/memory.py
+git add lighthermes/memory.py
 git commit -m "feat: 添加记忆归档功能"
 ```
 
@@ -521,7 +521,7 @@ git commit -m "feat: 添加记忆归档功能"
 # 日志配置
 logging:
   level: INFO
-  file: logs/lightherrmes.log
+  file: logs/lighthermes.log
   debug: false
 
 # 模型降级配置
@@ -583,7 +583,7 @@ if not log_file and config.get("logging", {}).get("file"):
 - [ ] **Step 3: 提交配置集成**
 
 ```bash
-git add config.yaml lightherrmes/core.py
+git add config.yaml lighthermes/core.py
 git commit -m "feat: 添加配置集成"
 ```
 
@@ -603,7 +603,7 @@ git commit -m "feat: 添加配置集成"
 
 import os
 import time
-from lightherrmes import LightHermes
+from lighthermes import LightHermes
 
 def test_logging():
     print("=== 测试日志系统 ===")
@@ -716,7 +716,7 @@ git commit -m "test: 添加稳定性和自适应记忆测试"
 ```yaml
 logging:
   level: INFO  # DEBUG/INFO/WARNING/ERROR
-  file: logs/lightherrmes.log
+  file: logs/lighthermes.log
 ```
 
 **模型降级**:
@@ -753,7 +753,7 @@ git commit -m "docs: 更新 README - 添加稳定性和自适应记忆说明"
 - [ ] **Step 1: 检查代码行数**
 
 ```bash
-find lightherrmes -name "*.py" -exec wc -l {} + | tail -1
+find lighthermes -name "*.py" -exec wc -l {} + | tail -1
 ```
 
 预期输出：约 1819 行（1519 + 300）
@@ -761,7 +761,7 @@ find lightherrmes -name "*.py" -exec wc -l {} + | tail -1
 - [ ] **Step 2: 运行完整测试**
 
 ```bash
-python -m lightherrmes.cli
+python -m lighthermes.cli
 ```
 
 在 CLI 中测试：

@@ -9,7 +9,7 @@ import os
 import yaml
 from pathlib import Path
 
-from lightherrmes.core import LightHermes
+from lighthermes.core import LightHermes
 
 
 class CLI:

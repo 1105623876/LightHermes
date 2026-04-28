@@ -14,7 +14,7 @@
 ## 模块分布
 
 ```
-lightherrmes/
+lighthermes/
 ├── memory.py      539 行  四级记忆系统 + 自适应调整
 ├── core.py        482 行  对话循环 + 工具调度
 ├── evolution.py   349 行  自进化系统
@@ -188,7 +188,7 @@ ed6ee5b feat: 添加自适应记忆层与配置集成
 
 ## 参考文档
 
-- 设计文档: `docs/superpowers/specs/2026-04-25-lightherrmes-design.md`
+- 设计文档: `docs/superpowers/specs/2026-04-25-lighthermes-design.md`
 - 实现计划: `docs/superpowers/plans/2026-04-27-stability-adaptive-memory.md`
 - 变更日志: `CHANGELOG.md`
 - 使用文档: `README.md`
