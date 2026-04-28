@@ -177,6 +177,14 @@ class WorkingMemory:
                     timestamp TEXT
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS conversations (
+                    session_id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    messages TEXT,
+                    timestamp TEXT
+                )
+            """)
             conn.commit()
             conn.close()
         except Exception as e:
@@ -225,8 +233,63 @@ class WorkingMemory:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM sessions WHERE timestamp < ?", (cutoff,))
+        cursor.execute("DELETE FROM conversations WHERE timestamp < ?", (cutoff,))
         conn.commit()
         conn.close()
+
+    def save_conversation(self, session_id: str, user_id: str, messages: List[Dict[str, str]]):
+        """持久化会话消息"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            messages_json = json.dumps(messages, ensure_ascii=False)
+            cursor.execute("""
+                INSERT OR REPLACE INTO conversations (session_id, user_id, messages, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (session_id, user_id, messages_json, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"保存会话消息失败: {e}")
+
+    def load_conversation(self, session_id: str) -> List[Dict[str, str]]:
+        """加载历史会话消息"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT messages FROM conversations WHERE session_id = ?
+            """, (session_id,))
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                return json.loads(result[0])
+            return []
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"加载会话消息失败: {e}")
+            return []
+
+    def get_latest_session(self, user_id: str) -> Optional[str]:
+        """获取用户最近的会话ID"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT session_id FROM conversations
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, (user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else None
+        except Exception as e:
+            logger = setup_logger("lightherrmes.memory")
+            logger.error(f"获取最近会话失败: {e}")
+            return None
 
 
 class EpisodicMemory:
