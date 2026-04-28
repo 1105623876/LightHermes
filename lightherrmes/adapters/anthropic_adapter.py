@@ -246,26 +246,40 @@ class AnthropicAdapter(BaseAdapter):
 
     def _handle_stream(self, response) -> Generator[Any, None, None]:
         """处理流式响应，返回类 OpenAI 格式的 chunk"""
+        previous_text = ""  # 跟踪之前的累积文本
+
         for event in response:
             if event.type == "content_block_delta":
                 if hasattr(event.delta, "text"):
-                    # 构造类 OpenAI 格式的 chunk
-                    class StreamChunk:
-                        def __init__(self, text):
-                            self.choices = [self._create_choice(text)]
+                    current_text = event.delta.text
 
-                        def _create_choice(self, text):
-                            class Choice:
-                                def __init__(self, text):
-                                    self.delta = self._create_delta(text)
-                                    self.finish_reason = None
+                    # 计算增量文本（处理 MiniMax 返回累积文本的情况）
+                    if current_text.startswith(previous_text):
+                        # MiniMax 风格：返回累积文本，提取增量部分
+                        delta_text = current_text[len(previous_text):]
+                        previous_text = current_text
+                    else:
+                        # 标准 Anthropic 风格：直接返回增量文本
+                        delta_text = current_text
 
-                                def _create_delta(self, text):
-                                    class Delta:
-                                        def __init__(self, text):
-                                            self.content = text
-                                            self.tool_calls = None
-                                    return Delta(text)
-                            return Choice(text)
+                    if delta_text:  # 只在有新内容时才 yield
+                        # 构造类 OpenAI 格式的 chunk
+                        class StreamChunk:
+                            def __init__(self, text):
+                                self.choices = [self._create_choice(text)]
 
-                    yield StreamChunk(event.delta.text)
+                            def _create_choice(self, text):
+                                class Choice:
+                                    def __init__(self, text):
+                                        self.delta = self._create_delta(text)
+                                        self.finish_reason = None
+
+                                    def _create_delta(self, text):
+                                        class Delta:
+                                            def __init__(self, text):
+                                                self.content = text
+                                                self.tool_calls = None
+                                        return Delta(text)
+                                return Choice(text)
+
+                        yield StreamChunk(delta_text)

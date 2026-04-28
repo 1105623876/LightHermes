@@ -45,6 +45,7 @@ class CLI:
             name="LightHermes",
             role="你是 LightHermes,一个轻量级自进化智能体助手",
             model=model_config.get("model_name", "gpt-4o-mini"),
+            provider=model_config.get("provider", "openai"),
             api_key=api_key,
             base_url=model_config.get("base_url"),
             memory_enabled=memory_config.get("enabled", True),
