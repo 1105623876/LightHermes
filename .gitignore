@@ -6,6 +6,7 @@ ENV/
 
 # 测试文件(包含 API key)
 test_minimax.py
+test_minimax_anthropic.py
 diagnose_api.py
 test_anthropic_api.py
 
@@ -37,4 +38,4 @@ Thumbs.db
 # 项目特定
 CLAUDE.md
 LightAgent/
-hermes-agent/.claude/settings.local.json
+hermes-agent/

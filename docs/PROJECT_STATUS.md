@@ -6,21 +6,27 @@
 
 ## 核心指标
 
-- **代码规模**: 1808 行（符合设计目标 < 2000 行）
-- **核心依赖**: 2 个（openai + pyyaml）
+- **代码规模**: 2630 行（包含多 API 适配器系统）
+- **核心依赖**: 3 个（openai + anthropic + pyyaml）
 - **测试通过率**: 7/7（100%）
-- **最新提交**: a115cf3 - 修复 eval() 安全漏洞
+- **最新提交**: 800b1a3 - 修正项目名称拼写错误
 
 ## 模块分布
 
 ```
 lighthermes/
-├── memory.py      539 行  四级记忆系统 + 自适应调整
-├── core.py        482 行  对话循环 + 工具调度
-├── evolution.py   349 行  自进化系统
-├── cli.py         210 行  命令行界面
-├── retrieval.py   169 行  混合检索
-└── logger.py       50 行  日志系统
+├── memory.py                    778 行  四级记忆系统 + 自适应调整
+├── core.py                      617 行  对话循环 + 工具调度
+├── evolution.py                 349 行  自进化系统
+├── adapters/
+│   ├── anthropic_adapter.py     285 行  Anthropic API 适配器
+│   ├── openai_adapter.py         67 行  OpenAI API 适配器
+│   ├── base.py                   45 行  适配器基类
+│   └── __init__.py               50 行  适配器工厂
+├── cli.py                       211 行  命令行界面
+├── retrieval.py                 169 行  混合检索
+├── logger.py                     50 行  日志系统
+└── __init__.py                    9 行  包初始化
 ```
 
 ## 已完成功能（v0.2.0）
@@ -45,6 +51,8 @@ lighthermes/
 ### 多 API 支持
 - ✅ OpenAI API
 - ✅ Anthropic API
+- ✅ MiniMax (Anthropic 兼容端点)
+- ✅ 适配器模式设计，易于扩展新 API
 
 ### 安全修复
 - ✅ 修复 eval() 安全漏洞（替换为 json.loads）
@@ -68,13 +76,13 @@ lighthermes/
 ## 最近提交历史
 
 ```
-a115cf3 fix: 修复 eval() 安全漏洞
-e414a4a docs: 更新 README 并添加综合测试
-ed6ee5b feat: 添加自适应记忆层与配置集成
-8546977 feat: 添加记忆统计系统 (MemoryStats)
-7ada998 feat: 添加记忆系统错误处理
-7dc867c feat: 添加模型降级机制
-28d07e5 feat: 添加轻量日志系统
+800b1a3 refactor: 修正项目名称拼写错误 lightherrmes -> lighthermes
+ffbd313 docs: 更新 README 添加 CLI 使用说明和已知问题
+0e2871c fix: 修复 CLI 和 Evolution 系统初始化问题
+4afe2dc docs: 更新 README 添加 MiniMax 支持说明
+66df06b feat: 添加 MiniMax Anthropic 兼容端点支持
+27b5d71 chore: 统一版本号到 v0.2.0
+6b3d1f0 feat: 添加会话持久化功能
 ```
 
 ## 下一步扩展方向
@@ -158,13 +166,18 @@ ed6ee5b feat: 添加自适应记忆层与配置集成
 2. **自进化系统**
    - 技能生成依赖 LLM 质量，可能生成不可用的技能
    - 沙箱验证较简单，复杂技能可能验证不准确
+   - 非 OpenAI provider 时需要额外的 OPENAI_API_KEY 环境变量
 
 3. **CLI**
    - 无彩色输出
    - 无进度指示
    - 命令较少
 
-4. **测试**
+4. **MiniMax 集成**
+   - 流式响应存在重复输出问题（已临时禁用流式输出）
+   - 需要使用 Bearer 认证而非标准 x-api-key
+
+5. **测试**
    - 缺少单元测试
    - 缺少性能基准测试
    - 缺少真实 API 集成测试

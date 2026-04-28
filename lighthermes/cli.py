@@ -11,6 +11,19 @@ from pathlib import Path
 
 from lighthermes.core import LightHermes
 
+# 尝试导入 colorama，如果不存在则禁用彩色输出
+try:
+    from colorama import init, Fore, Style
+    init(autoreset=True)
+    COLORS_AVAILABLE = True
+except ImportError:
+    COLORS_AVAILABLE = False
+    # 定义空的颜色常量
+    class Fore:
+        GREEN = CYAN = YELLOW = RED = BLUE = MAGENTA = ""
+    class Style:
+        BRIGHT = RESET_ALL = ""
+
 
 class CLI:
     """命令行界面"""
@@ -64,21 +77,36 @@ class CLI:
         if not self.cli_config.get("show_banner", True):
             return
 
-        print("╭─────────────────────────────────────╮")
-        print("│  LightHermes v0.2.0                │")
-        print("│  轻量级自进化智能体框架              │")
-        print("╰─────────────────────────────────────╯")
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"{Fore.CYAN}{Style.BRIGHT}╭─────────────────────────────────────╮")
+            print(f"│  LightHermes v0.2.0                │")
+            print(f"│  轻量级自进化智能体框架              │")
+            print(f"╰─────────────────────────────────────╯{Style.RESET_ALL}")
+        else:
+            print("╭─────────────────────────────────────╮")
+            print("│  LightHermes v0.2.0                │")
+            print("│  轻量级自进化智能体框架              │")
+            print("╰─────────────────────────────────────╯")
         print()
 
     def print_help(self):
         """打印帮助信息"""
-        print("\n可用命令:")
-        print("  /help       - 显示帮助信息")
-        print("  /skills     - 列出所有可用技能")
-        print("  /memory     - 显示记忆系统统计")
-        print("  /config     - 显示当前配置")
-        print("  /clear      - 清屏")
-        print("  /exit       - 退出")
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.YELLOW}可用命令:{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}/help{Style.RESET_ALL}       - 显示帮助信息")
+            print(f"  {Fore.GREEN}/skills{Style.RESET_ALL}     - 列出所有可用技能")
+            print(f"  {Fore.GREEN}/memory{Style.RESET_ALL}     - 显示记忆系统统计")
+            print(f"  {Fore.GREEN}/config{Style.RESET_ALL}     - 显示当前配置")
+            print(f"  {Fore.GREEN}/clear{Style.RESET_ALL}      - 清屏")
+            print(f"  {Fore.GREEN}/exit{Style.RESET_ALL}       - 退出")
+        else:
+            print("\n可用命令:")
+            print("  /help       - 显示帮助信息")
+            print("  /skills     - 列出所有可用技能")
+            print("  /memory     - 显示记忆系统统计")
+            print("  /config     - 显示当前配置")
+            print("  /clear      - 清屏")
+            print("  /exit       - 退出")
         print()
 
     def show_skills(self):
@@ -88,12 +116,20 @@ class CLI:
             print("\n暂无可用技能")
             return
 
-        print("\n可用技能:")
-        for skill in skills:
-            status = "✓"
-            name = skill["name"]
-            desc = skill["description"]
-            print(f"  {status} {name} - {desc}")
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.YELLOW}可用技能:{Style.RESET_ALL}")
+            for skill in skills:
+                status = f"{Fore.GREEN}✓{Style.RESET_ALL}"
+                name = f"{Fore.CYAN}{skill['name']}{Style.RESET_ALL}"
+                desc = skill["description"]
+                print(f"  {status} {name} - {desc}")
+        else:
+            print("\n可用技能:")
+            for skill in skills:
+                status = "✓"
+                name = skill["name"]
+                desc = skill["description"]
+                print(f"  {status} {name} - {desc}")
         print()
 
     def show_memory_stats(self):
@@ -148,10 +184,16 @@ class CLI:
         try:
             self.init_agent()
         except Exception as e:
-            print(f"初始化失败: {e}")
-            print("\n请检查:")
-            print("1. config.yaml 文件是否存在")
-            print("2. OPENAI_API_KEY 环境变量是否设置")
+            if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+                print(f"{Fore.RED}初始化失败: {e}{Style.RESET_ALL}")
+                print(f"\n{Fore.YELLOW}请检查:{Style.RESET_ALL}")
+                print("1. config.yaml 文件是否存在")
+                print("2. OPENAI_API_KEY 环境变量是否设置")
+            else:
+                print(f"初始化失败: {e}")
+                print("\n请检查:")
+                print("1. config.yaml 文件是否存在")
+                print("2. OPENAI_API_KEY 环境变量是否设置")
             return
 
         self.print_banner()
@@ -159,7 +201,10 @@ class CLI:
         prompt_symbol = self.cli_config.get("prompt_symbol", ">")
         stream_output = self.cli_config.get("stream_output", True)
 
-        print(f"[{self.agent.name}] 你好!有什么可以帮你的?\n")
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"{Fore.GREEN}[{self.agent.name}]{Style.RESET_ALL} 你好!有什么可以帮你的?\n")
+        else:
+            print(f"[{self.agent.name}] 你好!有什么可以帮你的?\n")
 
         while True:
             try:
@@ -173,7 +218,10 @@ class CLI:
                         break
                     continue
 
-                print(f"\n[{self.agent.name}] ", end="", flush=True)
+                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+                    print(f"\n{Fore.GREEN}[{self.agent.name}]{Style.RESET_ALL} ", end="", flush=True)
+                else:
+                    print(f"\n[{self.agent.name}] ", end="", flush=True)
 
                 response = self.agent.run(
                     user_input,
@@ -195,7 +243,10 @@ class CLI:
             except EOFError:
                 break
             except Exception as e:
-                print(f"\n错误: {e}")
+                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+                    print(f"\n{Fore.RED}错误: {e}{Style.RESET_ALL}")
+                else:
+                    print(f"\n错误: {e}")
                 if self.agent.debug:
                     import traceback
                     traceback.print_exc()
