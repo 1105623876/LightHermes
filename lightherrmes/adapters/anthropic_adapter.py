@@ -26,10 +26,42 @@ class AnthropicAdapter(BaseAdapter):
                 "需要安装 anthropic 库: pip install anthropic"
             )
 
-        self.client = Anthropic(
-            api_key=api_key,
-            base_url=base_url
+        # 检测是否是 MiniMax 端点，需要 Bearer 认证
+        is_minimax = (
+            base_url and
+            ("api.minimax.io/anthropic" in base_url.lower() or
+             "api.minimaxi.com/anthropic" in base_url.lower())
         )
+
+        if is_minimax:
+            # MiniMax 需要 Bearer 认证，使用自定义 httpx client
+            import httpx
+
+            class BearerAuthClient(httpx.Client):
+                def __init__(self, bearer_token, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.bearer_token = bearer_token
+
+                def build_request(self, *args, **kwargs):
+                    request = super().build_request(*args, **kwargs)
+                    # 移除 X-Api-Key，使用 Bearer 认证
+                    if 'X-Api-Key' in request.headers:
+                        del request.headers['X-Api-Key']
+                    request.headers['Authorization'] = f'Bearer {self.bearer_token}'
+                    return request
+
+            http_client = BearerAuthClient(bearer_token=api_key)
+            self.client = Anthropic(
+                api_key=api_key,
+                base_url=base_url,
+                http_client=http_client
+            )
+        else:
+            # 标准 Anthropic API 使用 X-Api-Key
+            self.client = Anthropic(
+                api_key=api_key,
+                base_url=base_url
+            )
 
     def create(
         self,
@@ -206,15 +238,34 @@ class AnthropicAdapter(BaseAdapter):
                                             }
                                         })
 
-                        return Message(blocks)
+                        return Message(content_blocks)
 
                 return Choice(anthropic_response.content)
 
         return Response(response)
 
-    def _handle_stream(self, response) -> Generator[str, None, None]:
-        """处理流式响应"""
+    def _handle_stream(self, response) -> Generator[Any, None, None]:
+        """处理流式响应，返回类 OpenAI 格式的 chunk"""
         for event in response:
             if event.type == "content_block_delta":
                 if hasattr(event.delta, "text"):
-                    yield event.delta.text
+                    # 构造类 OpenAI 格式的 chunk
+                    class StreamChunk:
+                        def __init__(self, text):
+                            self.choices = [self._create_choice(text)]
+
+                        def _create_choice(self, text):
+                            class Choice:
+                                def __init__(self, text):
+                                    self.delta = self._create_delta(text)
+                                    self.finish_reason = None
+
+                                def _create_delta(self, text):
+                                    class Delta:
+                                        def __init__(self, text):
+                                            self.content = text
+                                            self.tool_calls = None
+                                    return Delta(text)
+                            return Choice(text)
+
+                    yield StreamChunk(event.delta.text)
