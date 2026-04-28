@@ -64,7 +64,7 @@ class CLI:
             return
 
         print("╭─────────────────────────────────────╮")
-        print("│  LightHermes v0.1.0                │")
+        print("│  LightHermes v0.2.0                │")
         print("│  轻量级自进化智能体框架              │")
         print("╰─────────────────────────────────────╯")
         print()
