@@ -16,6 +16,36 @@ from lightherrmes.evolution import EvolutionEngine
 from lightherrmes.adapters import get_adapter
 
 
+def tool(name: str, description: str, params: List[Dict]):
+    """
+    工具装饰器 - 简化工具注册流程
+
+    Args:
+        name: 工具名称
+        description: 工具描述
+        params: 参数列表，每个参数包含 name, type, description, required
+
+    Example:
+        @tool(
+            name="get_weather",
+            description="获取指定城市的天气",
+            params=[
+                {"name": "city", "type": "string", "description": "城市名称", "required": True}
+            ]
+        )
+        def get_weather(city: str) -> str:
+            return f"{city} 的天气是晴天"
+    """
+    def decorator(func):
+        func.tool_info = {
+            "tool_name": name,
+            "tool_description": description,
+            "tool_params": params,
+        }
+        return func
+    return decorator
+
+
 class SkillLoader:
     """技能加载器 - 加载和匹配 Markdown 技能"""
 
