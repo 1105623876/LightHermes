@@ -11,6 +11,12 @@ from pathlib import Path
 
 from lighthermes.core import LightHermes
 
+# 修复 Windows 终端编码问题
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 # 尝试导入 colorama，如果不存在则禁用彩色输出
 try:
     from colorama import init, Fore, Style
@@ -175,8 +181,12 @@ class CLI:
         elif cmd == "/exit":
             return False
         else:
-            print(f"未知命令: {cmd}")
-            print("输入 /help 查看可用命令")
+            if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+                print(f"{Fore.RED}未知命令: {cmd}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}提示:{Style.RESET_ALL} 输入 {Fore.GREEN}/help{Style.RESET_ALL} 查看可用命令")
+            else:
+                print(f"未知命令: {cmd}")
+                print("提示: 输入 /help 查看可用命令")
         return True
 
     def run(self):
@@ -185,15 +195,25 @@ class CLI:
             self.init_agent()
         except Exception as e:
             if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                print(f"{Fore.RED}初始化失败: {e}{Style.RESET_ALL}")
-                print(f"\n{Fore.YELLOW}请检查:{Style.RESET_ALL}")
-                print("1. config.yaml 文件是否存在")
-                print("2. OPENAI_API_KEY 环境变量是否设置")
+                print(f"{Fore.RED}✗ 初始化失败: {e}{Style.RESET_ALL}")
+                print(f"\n{Fore.YELLOW}可能的原因:{Style.RESET_ALL}")
+                print(f"  1. {Fore.CYAN}config.yaml{Style.RESET_ALL} 文件不存在或格式错误")
+                print(f"  2. API key 未配置（检查 config.yaml 或环境变量）")
+                print(f"  3. 网络连接问题")
+                print(f"\n{Fore.YELLOW}建议操作:{Style.RESET_ALL}")
+                print(f"  • 检查 {Fore.CYAN}config.yaml{Style.RESET_ALL} 是否存在")
+                print(f"  • 确认 API key 已正确设置")
+                print(f"  • 尝试运行: {Fore.GREEN}python -m lighthermes.cli{Style.RESET_ALL}")
             else:
-                print(f"初始化失败: {e}")
-                print("\n请检查:")
-                print("1. config.yaml 文件是否存在")
-                print("2. OPENAI_API_KEY 环境变量是否设置")
+                print(f"✗ 初始化失败: {e}")
+                print("\n可能的原因:")
+                print("  1. config.yaml 文件不存在或格式错误")
+                print("  2. API key 未配置（检查 config.yaml 或环境变量）")
+                print("  3. 网络连接问题")
+                print("\n建议操作:")
+                print("  • 检查 config.yaml 是否存在")
+                print("  • 确认 API key 已正确设置")
+                print("  • 尝试运行: python -m lighthermes.cli")
             return
 
         self.print_banner()
@@ -238,15 +258,20 @@ class CLI:
                     print()
 
             except KeyboardInterrupt:
-                print("\n\n再见!")
+                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+                    print(f"\n\n{Fore.CYAN}再见!{Style.RESET_ALL}")
+                else:
+                    print("\n\n再见!")
                 break
             except EOFError:
                 break
             except Exception as e:
                 if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                    print(f"\n{Fore.RED}错误: {e}{Style.RESET_ALL}")
+                    print(f"\n{Fore.RED}✗ 错误: {e}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}提示:{Style.RESET_ALL} 如果问题持续，请检查网络连接或 API 配置")
                 else:
-                    print(f"\n错误: {e}")
+                    print(f"\n✗ 错误: {e}")
+                    print("提示: 如果问题持续，请检查网络连接或 API 配置")
                 if self.agent.debug:
                     import traceback
                     traceback.print_exc()
