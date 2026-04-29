@@ -80,23 +80,471 @@
 **科研价值**: 探索轻量级记忆管理的边界
 
 ### 2.2 自进化系统增强 🔄
-**优先级**: 中  
-**工作量**: 4-5 小时
+**优先级**: 高  
+**工作量**: 8-10 小时
 
-**实验 1: 技能评分与排序**
-- 自动评估技能质量（成功率、执行时间）
-- 优先推荐高质量技能
-- 自动淘汰低质量技能
+#### 实验 1: 反模式学习系统 (Anti-Pattern Learning)
+**目标**: 从失败中学习"不要做什么"
 
-**实验 2: 技能组合与链式调用**
-- 支持技能之间的依赖关系
-- 自动组合多个技能完成复杂任务
-- 实验技能编排策略
+**核心概念**:
+- 传统学习只关注成功案例，但失败案例同样重要
+- 反模式 = 看似合理但实际导致失败的做法
+- 主动警告 > 被动记录
 
-**实验 3: 失败模式学习**
-- 记录失败案例和原因
-- 从失败中学习，避免重复错误
-- 生成"反模式"技能（what not to do）
+**实现方案**:
+```
+新增模块: lighthermes/anti_pattern.py (~200 行)
+
+1. 失败案例分析器 (FailureAnalyzer)
+   - 记录失败原因分类：
+     * 工具使用错误（参数错误、顺序错误）
+     * 逻辑错误（条件判断、循环逻辑）
+     * 资源问题（超时、内存溢出）
+     * 依赖问题（版本冲突、缺失依赖）
+   - 提取失败模式特征：
+     * 触发条件（什么情况下会失败）
+     * 错误症状（如何识别这个问题）
+     * 影响范围（失败的后果）
+
+2. 反模式技能生成器 (AntiPatternGenerator)
+   - 生成"不要做什么"的技能
+   - 格式：
+     ---
+     name: antipattern_xxx
+     type: anti-pattern
+     severity: high/medium/low
+     ---
+     
+     ## 反模式：[名称]
+     
+     ### 不要这样做
+     [错误的做法]
+     
+     ### 为什么会失败
+     [失败原因]
+     
+     ### 正确的做法
+     [替代方案]
+     
+     ### 识别信号
+     [如何识别这个问题即将发生]
+
+3. 主动警告系统 (WarningSystem)
+   - 在执行前检查是否匹配已知反模式
+   - 警告级别：
+     * 🔴 高危：立即阻止并警告
+     * 🟡 中危：警告但允许继续
+     * 🟢 低危：记录日志
+   - 集成到 core.py 的工具调用前
+```
+
+**数据结构**:
+```python
+{
+  "anti_pattern_id": "ap_001",
+  "name": "recursive_api_call_without_limit",
+  "severity": "high",
+  "trigger_conditions": {
+    "tool": "api_call",
+    "pattern": "recursive without max_depth"
+  },
+  "failure_cases": [
+    {
+      "session_id": "xxx",
+      "error": "RecursionError: maximum recursion depth exceeded",
+      "context": "..."
+    }
+  ],
+  "warning_message": "检测到无限制递归调用，可能导致栈溢出",
+  "correct_approach": "添加 max_depth 参数限制递归深度"
+}
+```
+
+**科研价值**: 探索"负向学习"在 AI 系统中的应用
+
+---
+
+#### 实验 2: 成功质量评估系统 (Success Quality Assessment)
+**目标**: 区分"侥幸成功"和"高效成功"，只从高质量成功中学习
+
+**核心概念**:
+- 不是所有成功都值得学习
+- 侥幸成功 = 多次重试、用户多次纠正、执行时间过长
+- 高效成功 = 一次成功、无需纠正、执行时间合理
+
+**质量评估指标**:
+```python
+SuccessQuality = {
+  "efficiency_score": 0-100,  # 综合评分
+  "metrics": {
+    "retry_count": 0,           # 重试次数（越少越好）
+    "user_corrections": 0,      # 用户纠正次数（越少越好）
+    "execution_time": 1.5,      # 执行时间（秒）
+    "tool_call_count": 3,       # 工具调用次数
+    "token_usage": 1500,        # Token 使用量
+    "first_attempt_success": True  # 是否一次成功
+  },
+  "quality_level": "high",  # high/medium/low
+  "learning_worthy": True   # 是否值得学习
+}
+```
+
+**评分算法**:
+```python
+def calculate_quality_score(metrics):
+    score = 100
+    
+    # 重试惩罚：每次重试 -20 分
+    score -= metrics["retry_count"] * 20
+    
+    # 用户纠正惩罚：每次纠正 -15 分
+    score -= metrics["user_corrections"] * 15
+    
+    # 执行时间惩罚：超过基准时间每秒 -5 分
+    baseline_time = estimate_baseline_time(task_type)
+    if metrics["execution_time"] > baseline_time:
+        score -= (metrics["execution_time"] - baseline_time) * 5
+    
+    # 一次成功奖励：+20 分
+    if metrics["first_attempt_success"]:
+        score += 20
+    
+    return max(0, min(100, score))
+```
+
+**学习策略**:
+- 高质量成功（score >= 80）：立即学习，生成技能
+- 中等质量成功（50 <= score < 80）：记录但不立即学习
+- 低质量成功（score < 50）：标记为"侥幸成功"，不学习
+
+**实现方案**:
+```
+扩展 evolution.py 中的 TrajectoryAnalyzer:
+
+1. 添加质量评估方法
+   - calculate_quality_score()
+   - classify_success_quality()
+   - should_learn_from_success()
+
+2. 修改 save_trajectory()
+   - 记录详细的执行指标
+   - 计算质量评分
+   - 标记学习价值
+
+3. 修改 analyze_patterns()
+   - 只分析高质量成功案例
+   - 过滤低质量成功
+   - 生成质量报告
+```
+
+**科研价值**: 探索"选择性学习"提升 AI 系统学习效率
+
+---
+
+#### 实验 3: 元学习机制 (Meta-Learning)
+**目标**: 从学习过程本身中学习，识别知识缺口
+
+**核心概念**:
+- 元学习 = 学习如何学习
+- 识别"我不知道什么"比"我知道什么"更重要
+- 知识缺口 = 反复失败的领域
+
+**知识缺口识别**:
+```python
+KnowledgeGap = {
+  "gap_id": "kg_001",
+  "domain": "database_optimization",  # 缺口领域
+  "failure_count": 5,                 # 失败次数
+  "failure_rate": 0.83,               # 失败率（5/6）
+  "recent_failures": [                # 最近失败案例
+    {"session_id": "xxx", "error": "..."},
+    {"session_id": "yyy", "error": "..."}
+  ],
+  "missing_knowledge": [              # 缺失的知识点
+    "索引优化策略",
+    "查询计划分析",
+    "慢查询诊断"
+  ],
+  "learning_priority": "high",        # 学习优先级
+  "suggested_resources": [            # 建议学习资源
+    "PostgreSQL 性能优化文档",
+    "数据库索引设计最佳实践"
+  ]
+}
+```
+
+**元学习循环**:
+```
+1. 执行任务 → 记录结果
+2. 分析失败模式 → 识别知识缺口
+3. 生成学习目标 → 优先级排序
+4. 主动学习 → 填补知识缺口
+5. 验证学习效果 → 重新评估
+```
+
+**实现方案**:
+```
+新增模块: lighthermes/meta_learning.py (~250 行)
+
+1. 知识缺口分析器 (KnowledgeGapAnalyzer)
+   - 统计失败模式频率
+   - 识别反复失败的领域
+   - 计算知识缺口优先级
+
+2. 学习目标生成器 (LearningGoalGenerator)
+   - 根据知识缺口生成学习目标
+   - 推荐学习资源
+   - 制定学习计划
+
+3. 学习进度追踪器 (LearningProgressTracker)
+   - 追踪每个知识缺口的学习进度
+   - 验证学习效果（失败率是否下降）
+   - 生成学习报告
+
+4. CLI 命令
+   - /gaps - 显示当前知识缺口
+   - /learn <domain> - 针对特定领域学习
+   - /progress - 显示学习进度
+```
+
+**学习效果验证**:
+```python
+def validate_learning_effect(gap_id):
+    gap = load_knowledge_gap(gap_id)
+    
+    # 学习前失败率
+    before_rate = gap["failure_rate"]
+    
+    # 学习后执行相同类型任务
+    recent_tasks = get_recent_tasks(gap["domain"], limit=10)
+    after_rate = calculate_failure_rate(recent_tasks)
+    
+    # 计算改进幅度
+    improvement = (before_rate - after_rate) / before_rate
+    
+    if improvement > 0.5:
+        return "学习有效，知识缺口已填补"
+    elif improvement > 0.2:
+        return "学习有一定效果，需要继续学习"
+    else:
+        return "学习效果不明显，需要调整学习策略"
+```
+
+**科研价值**: 探索 AI 系统的"自我认知"和"主动学习"能力
+
+---
+
+#### 实验 4: 反事实推理系统 (Counterfactual Reasoning)
+**目标**: "如果当时做了 X，结果会怎样？"
+
+**核心概念**:
+- 反事实推理 = 事后分析备选方案
+- 决策点 = 有多个选择的关键时刻
+- 学习最优决策策略
+
+**决策点记录**:
+```python
+DecisionPoint = {
+  "decision_id": "dp_001",
+  "timestamp": "2026-04-29T20:00:00",
+  "context": "需要查询数据库中的用户信息",
+  "options": [
+    {
+      "option_id": "opt_1",
+      "description": "使用 ORM 查询",
+      "estimated_cost": {"time": 2, "complexity": "low"},
+      "chosen": True
+    },
+    {
+      "option_id": "opt_2",
+      "description": "使用原生 SQL",
+      "estimated_cost": {"time": 1, "complexity": "medium"},
+      "chosen": False
+    },
+    {
+      "option_id": "opt_3",
+      "description": "使用缓存",
+      "estimated_cost": {"time": 0.5, "complexity": "high"},
+      "chosen": False
+    }
+  ],
+  "actual_outcome": {
+    "success": True,
+    "actual_time": 2.5,
+    "quality_score": 75
+  }
+}
+```
+
+**反事实分析**:
+```python
+def counterfactual_analysis(decision_id):
+    decision = load_decision(decision_id)
+    chosen = get_chosen_option(decision)
+    alternatives = get_unchosen_options(decision)
+    
+    analysis = {
+        "chosen_option": chosen["description"],
+        "actual_outcome": decision["actual_outcome"],
+        "counterfactuals": []
+    }
+    
+    for alt in alternatives:
+        # 基于历史数据估算备选方案的结果
+        estimated_outcome = estimate_outcome(alt, decision["context"])
+        
+        # 比较实际结果和估算结果
+        comparison = compare_outcomes(
+            decision["actual_outcome"],
+            estimated_outcome
+        )
+        
+        analysis["counterfactuals"].append({
+            "option": alt["description"],
+            "estimated_outcome": estimated_outcome,
+            "comparison": comparison,
+            "lesson": generate_lesson(comparison)
+        })
+    
+    return analysis
+```
+
+**学习策略优化**:
+```python
+# 如果反事实分析显示备选方案更好
+if counterfactual_better_than_actual:
+    # 更新决策策略
+    update_decision_strategy(
+        context=decision["context"],
+        preferred_option=better_alternative,
+        reason="反事实分析显示此方案更优"
+    )
+    
+    # 生成学习记录
+    save_lesson({
+        "context": decision["context"],
+        "wrong_choice": chosen_option,
+        "better_choice": better_alternative,
+        "reason": comparison["reason"]
+    })
+```
+
+**实现方案**:
+```
+扩展 evolution.py:
+
+1. 决策点记录器 (DecisionPointRecorder)
+   - 在关键决策点记录所有选项
+   - 记录选择理由
+   - 记录实际结果
+
+2. 反事实分析器 (CounterfactualAnalyzer)
+   - 事后分析备选方案
+   - 估算"如果选择 X"的结果
+   - 生成对比报告
+
+3. 决策策略优化器 (DecisionStrategyOptimizer)
+   - 根据反事实分析更新决策策略
+   - 学习最优决策模式
+   - 避免重复错误决策
+
+4. CLI 命令
+   - /decisions - 显示最近的决策点
+   - /whatif <decision_id> <option_id> - 分析"如果选择 X"
+   - /lessons - 显示从反事实分析中学到的经验
+```
+
+**科研价值**: 探索 AI 系统的"反思能力"和"决策优化"
+
+---
+
+#### 集成方案
+
+**统一架构**:
+```
+lighthermes/
+├── evolution.py          # 现有自进化系统（扩展）
+├── anti_pattern.py       # 反模式学习系统（新增）
+├── meta_learning.py      # 元学习机制（新增）
+└── advanced_learning.py  # 统一管理高级学习功能（新增）
+
+advanced_learning.py 职责：
+- 协调四个学习系统
+- 提供统一的 API
+- 管理学习优先级
+- 生成综合学习报告
+```
+
+**配置项**:
+```yaml
+# config.yaml
+advanced_learning:
+  enabled: true
+  
+  # 反模式学习
+  anti_pattern:
+    enabled: true
+    warning_level: medium  # high/medium/low
+    auto_block_high_risk: true
+  
+  # 成功质量评估
+  quality_assessment:
+    enabled: true
+    min_quality_score: 80  # 只从高质量成功中学习
+    track_metrics: true
+  
+  # 元学习
+  meta_learning:
+    enabled: true
+    gap_detection_threshold: 3  # 失败 3 次后识别为知识缺口
+    auto_generate_goals: true
+  
+  # 反事实推理
+  counterfactual:
+    enabled: true
+    record_decision_points: true
+    auto_analyze: true  # 自动分析决策点
+```
+
+**CLI 命令**:
+```bash
+# 反模式相关
+/antipatterns              # 显示已识别的反模式
+/antipattern <id>          # 查看特定反模式详情
+/warnings                  # 显示最近的警告
+
+# 质量评估相关
+/quality                   # 显示成功质量统计
+/quality <session_id>      # 查看特定会话的质量评分
+
+# 元学习相关
+/gaps                      # 显示知识缺口
+/learn <domain>            # 针对特定领域学习
+/progress                  # 显示学习进度
+
+# 反事实推理相关
+/decisions                 # 显示决策点
+/whatif <decision_id> <option_id>  # 反事实分析
+/lessons                   # 显示学到的经验
+
+# 综合报告
+/learning-report           # 生成综合学习报告
+```
+
+**实施优先级**:
+1. **Phase 1** (3-4 小时): 反模式学习 + 成功质量评估
+   - 这两个功能相对独立，可以先实现
+   - 立即产生价值（避免重复错误、提升学习质量）
+
+2. **Phase 2** (2-3 小时): 元学习机制
+   - 依赖 Phase 1 的数据积累
+   - 需要一定量的失败案例才能识别知识缺口
+
+3. **Phase 3** (3-4 小时): 反事实推理
+   - 最复杂，需要决策点记录和结果估算
+   - 可以作为长期优化项
+
+**总工作量**: 8-10 小时
 
 **科研价值**: 探索智能体的自我改进机制
 
