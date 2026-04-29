@@ -103,6 +103,7 @@ class CLI:
             print(f"  {Fore.GREEN}/skills{Style.RESET_ALL}     - 列出所有可用技能")
             print(f"  {Fore.GREEN}/memory{Style.RESET_ALL}     - 显示记忆系统统计")
             print(f"  {Fore.GREEN}/config{Style.RESET_ALL}     - 显示当前配置")
+            print(f"  {Fore.GREEN}/compress{Style.RESET_ALL}   - 压缩当前对话上下文")
             print(f"  {Fore.GREEN}/clear{Style.RESET_ALL}      - 清屏")
             print(f"  {Fore.GREEN}/exit{Style.RESET_ALL}       - 退出")
         else:
@@ -111,6 +112,7 @@ class CLI:
             print("  /skills     - 列出所有可用技能")
             print("  /memory     - 显示记忆系统统计")
             print("  /config     - 显示当前配置")
+            print("  /compress   - 压缩当前对话上下文")
             print("  /clear      - 清屏")
             print("  /exit       - 退出")
         print()
@@ -160,6 +162,60 @@ class CLI:
         print(f"  模型: {self.agent.model}")
         print(f"  记忆系统: {'启用' if self.agent.memory_enabled else '禁用'}")
         print(f"  自进化: {'启用' if self.agent.evolution_enabled else '禁用'}")
+        print(f"  上下文压缩: {'启用' if self.agent.compression_enabled else '禁用'}")
+        print()
+
+    def show_compression_stats(self):
+        """显示压缩统计"""
+        if not self.agent.compression_enabled:
+            print("\n上下文压缩未启用")
+            return
+
+        stats = self.agent.compressor.get_stats()
+
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.YELLOW}上下文压缩统计:{Style.RESET_ALL}")
+            print(f"  压缩次数: {Fore.CYAN}{stats['compression_count']}{Style.RESET_ALL}")
+            print(f"  节省 tokens: {Fore.CYAN}{stats['tokens_saved']}{Style.RESET_ALL}")
+            print(f"  平均每次节省: {Fore.CYAN}{stats['avg_tokens_saved']}{Style.RESET_ALL}")
+        else:
+            print("\n上下文压缩统计:")
+            print(f"  压缩次数: {stats['compression_count']}")
+            print(f"  节省 tokens: {stats['tokens_saved']}")
+            print(f"  平均每次节省: {stats['avg_tokens_saved']}")
+        print()
+
+    def manual_compress(self):
+        """手动触发压缩"""
+        if not self.agent.compression_enabled:
+            print("\n上下文压缩未启用")
+            return
+
+        if not self.agent.memory_enabled:
+            print("\n需要启用记忆系统才能使用压缩功能")
+            return
+
+        messages = self.agent.memory.short_term.messages
+        if len(messages) < 5:
+            print("\n对话消息太少，无需压缩")
+            return
+
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.YELLOW}正在压缩对话上下文...{Style.RESET_ALL}")
+        else:
+            print("\n正在压缩对话上下文...")
+
+        original_count = len(messages)
+        compressed = self.agent.compressor.compress(messages)
+        self.agent.memory.short_term.messages = compressed
+        new_count = len(compressed)
+
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"{Fore.GREEN}✓ 压缩完成{Style.RESET_ALL}")
+            print(f"  消息数: {Fore.CYAN}{original_count}{Style.RESET_ALL} → {Fore.CYAN}{new_count}{Style.RESET_ALL}")
+        else:
+            print("✓ 压缩完成")
+            print(f"  消息数: {original_count} → {new_count}")
         print()
 
     def clear_screen(self):
@@ -176,6 +232,10 @@ class CLI:
             self.show_memory_stats()
         elif cmd == "/config":
             self.show_config()
+        elif cmd == "/compress":
+            self.manual_compress()
+        elif cmd == "/compress stats":
+            self.show_compression_stats()
         elif cmd == "/clear":
             self.clear_screen()
         elif cmd == "/exit":

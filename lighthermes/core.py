@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Callable, Optional, Generator, Union
 from lighthermes.memory import MemoryManager
 from lighthermes.evolution import EvolutionEngine
 from lighthermes.adapters import get_adapter
+from lighthermes.compressor import ContextCompressor
 
 
 def tool(name: str, description: str, params: List[Dict]):
@@ -320,6 +321,37 @@ class LightHermes:
         else:
             self.evolution = None
 
+        # 初始化上下文压缩器
+        compression_config = config.get("context_compression", {})
+        self.compression_enabled = compression_config.get("enabled", True)
+        if self.compression_enabled:
+            self.compressor = ContextCompressor(
+                llm_adapter=self.adapter,
+                config=compression_config
+            )
+            # 获取上下文窗口大小（根据模型）
+            self.context_window = self._get_context_window(model)
+        else:
+            self.compressor = None
+            self.context_window = 128000  # 默认值
+
+    def _get_context_window(self, model: str) -> int:
+        """获取模型的上下文窗口大小"""
+        context_windows = {
+            "gpt-4o": 128000,
+            "gpt-4o-mini": 128000,
+            "gpt-4-turbo": 128000,
+            "gpt-3.5-turbo": 16385,
+            "claude-opus-4": 200000,
+            "claude-sonnet-4": 200000,
+            "claude-haiku-4": 200000,
+        }
+        # 模糊匹配
+        for key, value in context_windows.items():
+            if key in model.lower():
+                return value
+        return 128000  # 默认值
+
     def _call_api_with_fallback(
         self,
         messages: List[Dict],
@@ -423,6 +455,12 @@ class LightHermes:
 
         if self.memory_enabled:
             self.memory.add_message("user", query)
+
+        # 检查是否需要压缩上下文
+        if self.compression_enabled and self.compressor:
+            if self.compressor.should_compress(messages, self.context_window):
+                self.logger.info("触发上下文压缩")
+                messages = self.compressor.compress(messages)
 
         tools = self.tool_dispatcher.get_tool_schemas()
 

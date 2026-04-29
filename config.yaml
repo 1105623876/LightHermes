@@ -62,6 +62,29 @@ plugins:
     - plugins/tools
     - plugins/memory
 
+# 上下文压缩配置
+context_compression:
+  enabled: true
+
+  # 触发阈值（当 token 使用达到上下文窗口的 75% 时触发压缩）
+  trigger_threshold: 0.75
+
+  # 摘要模型（默认使用便宜模型节省成本）
+  summary_model: gpt-4o-mini
+  # summary_model: null  # 使用主模型
+
+  # 保护策略
+  protect_first_n: 3  # 保护前 N 条消息（系统提示 + 初始对话）
+  protect_recent_tokens: 20000  # 保护最近 N tokens 的对话
+
+  # 摘要预算
+  summary_min_tokens: 2000
+  summary_max_tokens: 12000
+  summary_ratio: 0.20  # 压缩内容的 20%
+
+  # 可选：压缩时提取关键信息到记忆系统
+  extract_to_memory: false
+
 # CLI 配置
 cli:
   prompt_symbol: ">"
