@@ -102,8 +102,11 @@ class CLI:
             print(f"  {Fore.GREEN}/help{Style.RESET_ALL}       - 显示帮助信息")
             print(f"  {Fore.GREEN}/skills{Style.RESET_ALL}     - 列出所有可用技能")
             print(f"  {Fore.GREEN}/memory{Style.RESET_ALL}     - 显示记忆系统统计")
+            print(f"  {Fore.GREEN}/stats{Style.RESET_ALL}      - 显示详细统计信息")
             print(f"  {Fore.GREEN}/config{Style.RESET_ALL}     - 显示当前配置")
             print(f"  {Fore.GREEN}/compress{Style.RESET_ALL}   - 压缩当前对话上下文")
+            print(f"  {Fore.GREEN}/export{Style.RESET_ALL}     - 导出对话历史")
+            print(f"  {Fore.GREEN}/reset{Style.RESET_ALL}      - 重置会话但保留记忆")
             print(f"  {Fore.GREEN}/clear{Style.RESET_ALL}      - 清屏")
             print(f"  {Fore.GREEN}/exit{Style.RESET_ALL}       - 退出")
         else:
@@ -111,8 +114,11 @@ class CLI:
             print("  /help       - 显示帮助信息")
             print("  /skills     - 列出所有可用技能")
             print("  /memory     - 显示记忆系统统计")
+            print("  /stats      - 显示详细统计信息")
             print("  /config     - 显示当前配置")
             print("  /compress   - 压缩当前对话上下文")
+            print("  /export     - 导出对话历史")
+            print("  /reset      - 重置会话但保留记忆")
             print("  /clear      - 清屏")
             print("  /exit       - 退出")
         print()
@@ -218,6 +224,106 @@ class CLI:
             print(f"  消息数: {original_count} → {new_count}")
         print()
 
+    def show_stats(self):
+        """显示详细统计信息"""
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.YELLOW}会话统计:{Style.RESET_ALL}")
+            print(f"  API 调用次数: {Fore.CYAN}{self.agent.api_call_count}{Style.RESET_ALL}")
+            print(f"  Token 使用: {Fore.CYAN}{self.agent.total_tokens_used}{Style.RESET_ALL}")
+            print(f"  查询次数: {Fore.CYAN}{self.agent.query_count}{Style.RESET_ALL}")
+
+            if self.agent.memory_enabled:
+                print(f"\n{Fore.YELLOW}记忆统计:{Style.RESET_ALL}")
+                print(f"  短期记忆: {Fore.CYAN}{len(self.agent.memory.short_term.messages)}{Style.RESET_ALL} 条消息")
+
+                episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
+                print(f"  情景记忆: {Fore.CYAN}{episodic_count}{Style.RESET_ALL} 个项目/任务")
+
+                semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
+                print(f"  语义记忆: {Fore.CYAN}{semantic_count}{Style.RESET_ALL} 条知识")
+
+            if self.agent.compression_enabled:
+                stats = self.agent.compressor.get_stats()
+                print(f"\n{Fore.YELLOW}压缩统计:{Style.RESET_ALL}")
+                print(f"  压缩次数: {Fore.CYAN}{stats['compression_count']}{Style.RESET_ALL}")
+                print(f"  节省 tokens: {Fore.CYAN}{stats['tokens_saved']}{Style.RESET_ALL}")
+        else:
+            print("\n会话统计:")
+            print(f"  API 调用次数: {self.agent.api_call_count}")
+            print(f"  Token 使用: {self.agent.total_tokens_used}")
+            print(f"  查询次数: {self.agent.query_count}")
+
+            if self.agent.memory_enabled:
+                print("\n记忆统计:")
+                print(f"  短期记忆: {len(self.agent.memory.short_term.messages)} 条消息")
+
+                episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
+                print(f"  情景记忆: {episodic_count} 个项目/任务")
+
+                semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
+                print(f"  语义记忆: {semantic_count} 条知识")
+
+            if self.agent.compression_enabled:
+                stats = self.agent.compressor.get_stats()
+                print("\n压缩统计:")
+                print(f"  压缩次数: {stats['compression_count']}")
+                print(f"  节省 tokens: {stats['tokens_saved']}")
+        print()
+
+    def export_history(self):
+        """导出对话历史"""
+        if not self.agent.memory_enabled:
+            print("\n需要启用记忆系统才能导出历史")
+            return
+
+        import json
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_history_{timestamp}.json"
+
+        history = {
+            "timestamp": timestamp,
+            "messages": self.agent.memory.short_term.messages,
+            "stats": {
+                "api_calls": self.agent.api_call_count,
+                "tokens_used": self.agent.total_tokens_used,
+                "query_count": self.agent.query_count
+            }
+        }
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.GREEN}✓ 对话历史已导出{Style.RESET_ALL}")
+            print(f"  文件: {Fore.CYAN}{filename}{Style.RESET_ALL}")
+        else:
+            print(f"\n✓ 对话历史已导出")
+            print(f"  文件: {filename}")
+        print()
+
+    def reset_session(self):
+        """重置会话但保留记忆"""
+        if self.agent.memory_enabled:
+            self.agent.memory.short_term.messages = []
+
+        self.agent.query_count = 0
+        self.agent.api_call_count = 0
+        self.agent.total_tokens_used = 0
+
+        if self.agent.compression_enabled:
+            self.agent.compressor.compression_count = 0
+            self.agent.compressor.tokens_saved = 0
+
+        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
+            print(f"\n{Fore.GREEN}✓ 会话已重置{Style.RESET_ALL}")
+            print(f"  短期记忆已清空，长期记忆保留")
+        else:
+            print("\n✓ 会话已重置")
+            print("  短期记忆已清空，长期记忆保留")
+        print()
+
     def clear_screen(self):
         """清屏"""
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -232,10 +338,16 @@ class CLI:
             self.show_memory_stats()
         elif cmd == "/config":
             self.show_config()
+        elif cmd == "/stats":
+            self.show_stats()
         elif cmd == "/compress":
             self.manual_compress()
         elif cmd == "/compress stats":
             self.show_compression_stats()
+        elif cmd == "/export":
+            self.export_history()
+        elif cmd == "/reset":
+            self.reset_session()
         elif cmd == "/clear":
             self.clear_screen()
         elif cmd == "/exit":

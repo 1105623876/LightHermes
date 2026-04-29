@@ -253,6 +253,8 @@ class LightHermes:
 
         self.fallback_models = fallback_models or []
         self.query_count = 0
+        self.total_tokens_used = 0
+        self.api_call_count = 0
 
         # 自动检测 API key
         if api_key is None:
@@ -488,6 +490,7 @@ class LightHermes:
     ) -> str:
         """非流式运行"""
         for _ in range(max_iterations):
+            self.api_call_count += 1
             response = self._call_api_with_fallback(
                 messages=params["messages"],
                 stream=params.get("stream", False),
@@ -495,6 +498,10 @@ class LightHermes:
                 tool_choice=params.get("tool_choice")
             )
             message = response.choices[0].message
+
+            # 统计 token 使用
+            if hasattr(response, 'usage') and response.usage:
+                self.total_tokens_used += response.usage.total_tokens
 
             if message.tool_calls:
                 params["messages"].append(message)
