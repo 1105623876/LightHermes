@@ -587,9 +587,15 @@ class MemoryManager:
         """保存用户偏好到语义记忆"""
         import hashlib
         name = hashlib.md5(key.encode()).hexdigest()[:8]
+
+        # 为助手名字添加额外的关键词以提高召回率
+        content = f"{key}: {value}"
+        if "名字" in key or "name" in key.lower():
+            content += "\n\n相关问题: 你是谁, 你叫什么, 介绍一下自己"
+
         self.semantic.save(
             name=f"user_pref_{name}",
-            content=f"{key}: {value}",
+            content=content,
             metadata={"type": "user_preference", "key": key}
         )
         self.logger.info(f"已保存用户偏好: {key}")
