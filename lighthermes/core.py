@@ -398,19 +398,21 @@ class LightHermes:
         return any(kw in query_lower for kw in memory_keywords)
 
     def _extract_and_save_memory(self, query: str):
-        """提取并保存用户要求记住的信息"""
+        """提取并保存用户要求记住的信息到 SOUL.md 或 USER.md"""
         try:
             extraction_prompt = f"""请从以下用户输入中提取关键信息。
 
 用户输入："{query}"
 
-请分析用户想要记住什么信息，然后用"键: 值"格式返回。
+请分析用户想要记住什么信息：
+1. 如果是关于智能体的设定（名字、人格、角色等），返回：SOUL: <内容>
+2. 如果是关于用户的偏好或信息，返回：USER: <内容>
 
 示例：
-- "记住我的名字是张三" → 名字: 张三
-- "请记住我喜欢Python" → 偏好: 喜欢Python
-- "记住你的名字是希儿" → 助手名字: 希儿
-- "记住你的名字是糖糖，是一个可爱的小萝莉" → 助手名字: 糖糖（可爱、乐于助人的小萝莉）
+- "记住我的名字是张三" → USER: 用户名字是张三
+- "请记住我喜欢Python" → USER: 用户喜欢Python编程
+- "记住你的名字是希儿" → SOUL: 智能体名字是希儿
+- "记住你的名字是糖糖，是一个可爱的小萝莉" → SOUL: 智能体名字是糖糖，人格特征：可爱、乐于助人的小萝莉
 
 请提取关键信息："""
 
@@ -425,26 +427,57 @@ class LightHermes:
             extracted = response.choices[0].message.content.strip()
             self.logger.info(f"LLM 提取结果: {extracted}")
 
-            # 使用正则表达式从回复中提取"键: 值"格式
+            # 使用正则表达式提取 SOUL: 或 USER: 格式
             import re
-            # 匹配"键: 值"格式，键可以是中文、英文、数字，值可以包含任何字符
-            pattern = r'([^:\n]+):\s*(.+?)(?:\n|$)'
-            matches = re.findall(pattern, extracted)
+            soul_match = re.search(r'SOUL:\s*(.+?)(?:\n|$)', extracted, re.IGNORECASE)
+            user_match = re.search(r'USER:\s*(.+?)(?:\n|$)', extracted, re.IGNORECASE)
 
-            if matches:
-                # 取第一个匹配
-                key, value = matches[0]
-                key = key.strip()
-                value = value.strip()
-
-                self.memory.save_user_preference(key, value)
-                self.logger.info(f"已提取并保存记忆: {key} = {value}")
+            if soul_match:
+                content = soul_match.group(1).strip()
+                self._update_soul_file(content)
+                self.logger.info(f"已更新 SOUL.md: {content}")
+            elif user_match:
+                content = user_match.group(1).strip()
+                self._update_user_file(content)
+                self.logger.info(f"已更新 USER.md: {content}")
             else:
-                self.logger.warning(f"无法从回复中提取键值对: {extracted}")
+                self.logger.warning(f"无法从回复中提取 SOUL/USER 信息: {extracted}")
         except Exception as e:
             import traceback
             self.logger.error(f"提取记忆失败: {e}")
             self.logger.error(f"详细错误: {traceback.format_exc()}")
+
+    def _update_soul_file(self, content: str):
+        """更新 SOUL.md 文件"""
+        soul_path = Path(self.memory.memory_dir) / "SOUL.md"
+
+        # 读取现有内容
+        if soul_path.exists():
+            existing = soul_path.read_text(encoding="utf-8")
+        else:
+            existing = "# 智能体灵魂设定\n\n"
+
+        # 添加新内容
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_entry = f"\n## 更新 ({timestamp})\n{content}\n"
+
+        soul_path.write_text(existing + new_entry, encoding="utf-8")
+
+    def _update_user_file(self, content: str):
+        """更新 USER.md 文件"""
+        user_path = Path(self.memory.memory_dir) / "USER.md"
+
+        # 读取现有内容
+        if user_path.exists():
+            existing = user_path.read_text(encoding="utf-8")
+        else:
+            existing = "# 用户偏好设定\n\n"
+
+        # 添加新内容
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_entry = f"\n## 更新 ({timestamp})\n{content}\n"
+
+        user_path.write_text(existing + new_entry, encoding="utf-8")
 
     def _classify_task(self, query: str) -> str:
         """
@@ -489,11 +522,18 @@ class LightHermes:
 
         system_prompt = f"{self.role}\n\n你的名字是 {self.name}。"
 
-        # 注入所有用户偏好记忆（不依赖查询匹配）
+        # 注入 SOUL.md 和 USER.md（固定记忆文件）
         if self.memory_enabled:
-            user_prefs = self.memory.get_all_user_preferences()
-            if user_prefs:
-                system_prompt += f"\n\n## 用户偏好\n{user_prefs}"
+            soul_path = Path(self.memory.memory_dir) / "SOUL.md"
+            user_path = Path(self.memory.memory_dir) / "USER.md"
+
+            if soul_path.exists():
+                soul_content = soul_path.read_text(encoding="utf-8")
+                system_prompt += f"\n\n## 智能体设定\n{soul_content}"
+
+            if user_path.exists():
+                user_content = user_path.read_text(encoding="utf-8")
+                system_prompt += f"\n\n## 用户偏好\n{user_content}"
 
         matched_skill = self.skill_loader.match_skill(query)
         if matched_skill:

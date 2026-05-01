@@ -17,7 +17,9 @@ __pycache__/
 *.so
 
 # 记忆和日志
-memory/
+memory/*
+!memory/SOUL.md
+!memory/USER.md
 logs/
 trajectories/
 
