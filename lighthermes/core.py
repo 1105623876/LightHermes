@@ -400,44 +400,47 @@ class LightHermes:
     def _extract_and_save_memory(self, query: str):
         """提取并保存用户要求记住的信息"""
         try:
-            extraction_prompt = f"""你是一个信息提取助手。用户说："{query}"
+            extraction_prompt = f"""请从以下用户输入中提取关键信息。
 
-请严格按照以下格式提取关键信息，只返回一行"键: 值"，不要任何其他内容：
+用户输入："{query}"
+
+请分析用户想要记住什么信息，然后用"键: 值"格式返回。
 
 示例：
-- 输入："记住我的名字是张三" -> 输出：名字: 张三
-- 输入："请记住我喜欢Python" -> 输出：偏好: 喜欢Python
-- 输入："记住你的名字是希儿" -> 输出：助手名字: 希儿
-- 输入："记住你的名字是糖糖，是一个可爱的小萝莉" -> 输出：助手名字: 糖糖（可爱的小萝莉）
+- "记住我的名字是张三" → 名字: 张三
+- "请记住我喜欢Python" → 偏好: 喜欢Python
+- "记住你的名字是希儿" → 助手名字: 希儿
+- "记住你的名字是糖糖，是一个可爱的小萝莉" → 助手名字: 糖糖（可爱、乐于助人的小萝莉）
 
-现在请提取上述用户输入的关键信息，只返回一行"键: 值"格式："""
+请提取关键信息："""
 
             self.logger.info(f"检测到记忆提取请求: {query}")
 
             response = self.adapter.create(
-                messages=[
-                    {"role": "system", "content": "你是一个信息提取助手，只返回'键: 值'格式，不要其他内容。"},
-                    {"role": "user", "content": extraction_prompt}
-                ],
+                messages=[{"role": "user", "content": extraction_prompt}],
                 stream=False,
-                max_tokens=200  # 增加到 200，避免截断
+                max_tokens=200
             )
 
             extracted = response.choices[0].message.content.strip()
             self.logger.info(f"LLM 提取结果: {extracted}")
 
-            # 提取第一行（如果有多行）
-            first_line = extracted.split('\n')[0].strip()
+            # 使用正则表达式从回复中提取"键: 值"格式
+            import re
+            # 匹配"键: 值"格式，键可以是中文、英文、数字，值可以包含任何字符
+            pattern = r'([^:\n]+):\s*(.+?)(?:\n|$)'
+            matches = re.findall(pattern, extracted)
 
-            if ":" in first_line:
-                key, value = first_line.split(":", 1)
+            if matches:
+                # 取第一个匹配
+                key, value = matches[0]
                 key = key.strip()
                 value = value.strip()
 
                 self.memory.save_user_preference(key, value)
                 self.logger.info(f"已提取并保存记忆: {key} = {value}")
             else:
-                self.logger.warning(f"提取的内容格式不正确: {extracted}")
+                self.logger.warning(f"无法从回复中提取键值对: {extracted}")
         except Exception as e:
             import traceback
             self.logger.error(f"提取记忆失败: {e}")
