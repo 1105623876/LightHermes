@@ -501,7 +501,11 @@ class LightHermes:
 
             # 统计 token 使用
             if hasattr(response, 'usage') and response.usage:
-                self.total_tokens_used += response.usage.total_tokens
+                usage = response.usage
+                if isinstance(usage, dict):
+                    self.total_tokens_used += usage.get('total_tokens', 0)
+                else:
+                    self.total_tokens_used += usage.total_tokens
 
             if message.tool_calls:
                 params["messages"].append(message)
