@@ -400,20 +400,25 @@ class LightHermes:
     def _extract_and_save_memory(self, query: str):
         """提取并保存用户要求记住的信息"""
         try:
-            extraction_prompt = f"""用户说："{query}"
+            extraction_prompt = f"""你是一个信息提取助手。用户说："{query}"
 
-请提取用户要求记住的关键信息，以"键: 值"的格式返回。
-例如：
-- 用户说"记住我的名字是张三" -> 返回：名字: 张三
-- 用户说"请记住我喜欢Python" -> 返回：偏好: 喜欢Python
-- 用户说"记住你的名字是希儿" -> 返回：助手名字: 希儿
+请严格按照以下格式提取关键信息，只返回一行"键: 值"，不要任何其他内容：
 
-只返回"键: 值"格式，不要其他内容。"""
+示例：
+- 输入："记住我的名字是张三" -> 输出：名字: 张三
+- 输入："请记住我喜欢Python" -> 输出：偏好: 喜欢Python
+- 输入："记住你的名字是希儿" -> 输出：助手名字: 希儿
+- 输入："记住你的名字是糖糖，是一个可爱的小萝莉" -> 输出：助手名字: 糖糖（可爱的小萝莉）
+
+现在请提取上述用户输入的关键信息，只返回一行"键: 值"格式："""
 
             self.logger.info(f"检测到记忆提取请求: {query}")
 
             response = self.adapter.create(
-                messages=[{"role": "user", "content": extraction_prompt}],
+                messages=[
+                    {"role": "system", "content": "你是一个信息提取助手，只返回'键: 值'格式，不要其他内容。"},
+                    {"role": "user", "content": extraction_prompt}
+                ],
                 stream=False,
                 max_tokens=100
             )
@@ -421,8 +426,11 @@ class LightHermes:
             extracted = response.choices[0].message.content.strip()
             self.logger.info(f"LLM 提取结果: {extracted}")
 
-            if ":" in extracted:
-                key, value = extracted.split(":", 1)
+            # 提取第一行（如果有多行）
+            first_line = extracted.split('\n')[0].strip()
+
+            if ":" in first_line:
+                key, value = first_line.split(":", 1)
                 key = key.strip()
                 value = value.strip()
 
