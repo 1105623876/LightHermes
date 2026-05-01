@@ -420,7 +420,7 @@ class LightHermes:
                     {"role": "user", "content": extraction_prompt}
                 ],
                 stream=False,
-                max_tokens=100
+                max_tokens=200  # 增加到 200，避免截断
             )
 
             extracted = response.choices[0].message.content.strip()
@@ -485,6 +485,12 @@ class LightHermes:
         session_id = session_id or uuid.uuid4().hex
 
         system_prompt = f"{self.role}\n\n你的名字是 {self.name}。"
+
+        # 注入所有用户偏好记忆（不依赖查询匹配）
+        if self.memory_enabled:
+            user_prefs = self.memory.get_all_user_preferences()
+            if user_prefs:
+                system_prompt += f"\n\n## 用户偏好\n{user_prefs}"
 
         matched_skill = self.skill_loader.match_skill(query)
         if matched_skill:

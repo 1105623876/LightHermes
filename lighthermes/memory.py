@@ -587,18 +587,24 @@ class MemoryManager:
         """保存用户偏好到语义记忆"""
         import hashlib
         name = hashlib.md5(key.encode()).hexdigest()[:8]
-
-        # 为助手名字添加额外的关键词以提高召回率
-        content = f"{key}: {value}"
-        if "名字" in key or "name" in key.lower():
-            content += "\n\n相关问题: 你是谁, 你叫什么, 介绍一下自己"
-
         self.semantic.save(
             name=f"user_pref_{name}",
-            content=content,
+            content=f"{key}: {value}",
             metadata={"type": "user_preference", "key": key}
         )
         self.logger.info(f"已保存用户偏好: {key}")
+
+    def get_all_user_preferences(self) -> str:
+        """获取所有用户偏好记忆，用于注入到 system prompt"""
+        preferences = []
+        for file_path in self.semantic.storage_dir.glob("user_pref_*.md"):
+            memory = parse_memory_file(str(file_path))
+            if memory and memory.get("metadata", {}).get("type") == "user_preference":
+                preferences.append(memory["content"])
+
+        if preferences:
+            return "\n".join(preferences)
+        return ""
 
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆 - 优化版：排序、token预算、去重"""
