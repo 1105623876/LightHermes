@@ -15,6 +15,33 @@ import re
 from lighthermes.logger import setup_logger
 
 
+def parse_memory_file(file_path: str) -> Optional[Dict[str, Any]]:
+    """解析记忆文件的通用函数"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception:
+        return None
+
+    if not content.startswith("---"):
+        return None
+
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return None
+
+    metadata = {}
+    for line in parts[1].strip().split("\n"):
+        if ":" in line:
+            key, value = line.split(":", 1)
+            metadata[key.strip()] = value.strip()
+
+    return {
+        "metadata": metadata,
+        "content": parts[2].strip()
+    }
+
+
 class MemoryStats:
     """记忆统计 - 追踪各层级命中率"""
 
@@ -363,34 +390,13 @@ class EpisodicMemory:
             if not file_path.exists():
                 continue
 
-            content = file_path.read_text(encoding="utf-8")
-            memory = self._parse_memory(content)
+            memory = parse_memory_file(str(file_path))
 
             if memory and query_lower in memory["content"].lower():
                 memory["name"] = name
                 results.append(memory)
 
         return results[:limit]
-
-    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
-        """解析记忆文件"""
-        if not content.startswith("---"):
-            return None
-
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            return None
-
-        metadata = {}
-        for line in parts[1].strip().split("\n"):
-            if ":" in line:
-                key, value = line.split(":", 1)
-                metadata[key.strip()] = value.strip()
-
-        return {
-            "metadata": metadata,
-            "content": parts[2].strip()
-        }
 
 
 class SemanticMemory:
@@ -448,6 +454,18 @@ class SemanticMemory:
         content = file_path.read_text(encoding="utf-8")
         return self._parse_memory(content)
 
+    def update_access(self, name: str):
+        """更新访问记录"""
+        memory = self.load(name)
+        if not memory:
+            return
+
+        metadata = memory.get("metadata", {})
+        metadata["last_accessed"] = datetime.now().isoformat()
+        metadata["access_count"] = int(metadata.get("access_count", 0)) + 1
+
+        self.save(name, memory["content"], metadata)
+
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """搜索语义记忆 - 自动选择最佳检索方式"""
         # 如果启用了混合检索,使用混合检索
@@ -486,8 +504,7 @@ class SemanticMemory:
             if not file_path.exists():
                 continue
 
-            content = file_path.read_text(encoding="utf-8")
-            memory = self._parse_memory(content)
+            memory = parse_memory_file(str(file_path))
 
             if memory:
                 content_lower = memory["content"].lower()
@@ -501,26 +518,6 @@ class SemanticMemory:
 
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
         return results[:limit]
-
-    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
-        """解析记忆文件"""
-        if not content.startswith("---"):
-            return None
-
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            return None
-
-        metadata = {}
-        for line in parts[1].strip().split("\n"):
-            if ":" in line:
-                key, value = line.split(":", 1)
-                metadata[key.strip()] = value.strip()
-
-        return {
-            "metadata": metadata,
-            "content": parts[2].strip()
-        }
 
     def _cleanup_if_needed(self):
         """清理过多的记忆条目"""
@@ -820,7 +817,6 @@ class MemoryManager:
                     self.semantic.save(
                         semantic_name,
                         memory["content"],
-                        "general",
                         {"promoted_from": "episodic", "original_name": file_path.stem}
                     )
                     self.logger.info(f"提升情景记忆到语义记忆: {file_path.stem} → {semantic_name}")
@@ -849,50 +845,3 @@ class MemoryManager:
             self.logger.info("自动记忆迁移完成")
         except Exception as e:
             self.logger.error(f"自动记忆迁移失败: {e}")
-        archived_count = self.archive_old_memories(days_threshold=30)
-
-    def archive_old_memories(self, days_threshold: int = 30) -> int:
-        """归档低频记忆"""
-        cutoff = (datetime.now() - timedelta(days=days_threshold)).isoformat()
-
-        try:
-            # 检查 episodic 是否使用数据库存储
-            episodic_db = str(self.memory_dir / "episodic.db")
-            if not os.path.exists(episodic_db):
-                # 如果使用文件存储，跳过归档
-                return 0
-
-            conn = sqlite3.connect(episodic_db)
-            cursor = conn.cursor()
-
-            # 检查表是否存在 archived 字段
-            cursor.execute("PRAGMA table_info(episodes)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if "archived" not in columns:
-                conn.close()
-                return 0
-
-            cursor.execute("""
-                SELECT id, summary FROM episodes
-                WHERE last_accessed < ? AND archived = 0
-            """, (cutoff,))
-
-            to_archive = cursor.fetchall()
-
-            for episode_id, summary in to_archive:
-                cursor.execute("""
-                    UPDATE episodes
-                    SET content = ?, archived = 1
-                    WHERE id = ?
-                """, (f"[已归档] {summary}", episode_id))
-
-            conn.commit()
-            conn.close()
-
-            if to_archive:
-                self.logger.info(f"归档了 {len(to_archive)} 条低频记忆")
-
-            return len(to_archive)
-        except Exception as e:
-            self.logger.error(f"归档记忆失败: {e}")
-            return 0

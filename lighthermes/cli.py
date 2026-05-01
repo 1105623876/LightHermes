@@ -38,6 +38,23 @@ class CLI:
         self.agent = None
         self.config = self.load_config()
         self.session_id = None
+        self.cli_config = {}
+
+    def _use_color(self) -> bool:
+        """判断是否使用彩色输出"""
+        return self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE
+
+    def _colorize(self, text: str, color: str = "", style: str = "") -> str:
+        """返回彩色文本（如果启用）"""
+        if not self._use_color():
+            return text
+        color_code = getattr(Fore, color.upper(), "")
+        style_code = getattr(Style, style.upper(), "")
+        return f"{color_code}{style_code}{text}{Style.RESET_ALL}"
+
+    def _print(self, text: str, color: str = "", style: str = ""):
+        """打印文本（支持彩色）"""
+        print(self._colorize(text, color, style))
 
     def load_config(self, config_path: str = "config.yaml") -> dict:
         """加载配置文件"""
@@ -83,44 +100,30 @@ class CLI:
         if not self.cli_config.get("show_banner", True):
             return
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"{Fore.CYAN}{Style.BRIGHT}╭─────────────────────────────────────╮")
-            print(f"│  LightHermes v0.2.0                │")
-            print(f"│  轻量级自进化智能体框架              │")
-            print(f"╰─────────────────────────────────────╯{Style.RESET_ALL}")
-        else:
-            print("╭─────────────────────────────────────╮")
-            print("│  LightHermes v0.2.0                │")
-            print("│  轻量级自进化智能体框架              │")
-            print("╰─────────────────────────────────────╯")
+        self._print("╭─────────────────────────────────────╮", "cyan", "bright")
+        self._print("│  LightHermes v0.2.0                │", "cyan", "bright")
+        self._print("│  轻量级自进化智能体框架              │", "cyan", "bright")
+        self._print("╰─────────────────────────────────────╯", "cyan", "bright")
         print()
 
     def print_help(self):
         """打印帮助信息"""
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.YELLOW}可用命令:{Style.RESET_ALL}")
-            print(f"  {Fore.GREEN}/help{Style.RESET_ALL}       - 显示帮助信息")
-            print(f"  {Fore.GREEN}/skills{Style.RESET_ALL}     - 列出所有可用技能")
-            print(f"  {Fore.GREEN}/memory{Style.RESET_ALL}     - 显示记忆系统统计")
-            print(f"  {Fore.GREEN}/stats{Style.RESET_ALL}      - 显示详细统计信息")
-            print(f"  {Fore.GREEN}/config{Style.RESET_ALL}     - 显示当前配置")
-            print(f"  {Fore.GREEN}/compress{Style.RESET_ALL}   - 压缩当前对话上下文")
-            print(f"  {Fore.GREEN}/export{Style.RESET_ALL}     - 导出对话历史")
-            print(f"  {Fore.GREEN}/reset{Style.RESET_ALL}      - 重置会话但保留记忆")
-            print(f"  {Fore.GREEN}/clear{Style.RESET_ALL}      - 清屏")
-            print(f"  {Fore.GREEN}/exit{Style.RESET_ALL}       - 退出")
-        else:
-            print("\n可用命令:")
-            print("  /help       - 显示帮助信息")
-            print("  /skills     - 列出所有可用技能")
-            print("  /memory     - 显示记忆系统统计")
-            print("  /stats      - 显示详细统计信息")
-            print("  /config     - 显示当前配置")
-            print("  /compress   - 压缩当前对话上下文")
-            print("  /export     - 导出对话历史")
-            print("  /reset      - 重置会话但保留记忆")
-            print("  /clear      - 清屏")
-            print("  /exit       - 退出")
+        self._print("\n可用命令:", "yellow")
+        commands = [
+            ("/help", "显示帮助信息"),
+            ("/skills", "列出所有可用技能"),
+            ("/memory", "显示记忆系统统计"),
+            ("/stats", "显示详细统计信息"),
+            ("/config", "显示当前配置"),
+            ("/compress", "压缩当前对话上下文"),
+            ("/export", "导出对话历史"),
+            ("/reset", "重置会话但保留记忆"),
+            ("/clear", "清屏"),
+            ("/exit", "退出")
+        ]
+        for cmd, desc in commands:
+            cmd_colored = self._colorize(cmd, "green")
+            print(f"  {cmd_colored:20s} - {desc}")
         print()
 
     def show_skills(self):
@@ -130,20 +133,11 @@ class CLI:
             print("\n暂无可用技能")
             return
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.YELLOW}可用技能:{Style.RESET_ALL}")
-            for skill in skills:
-                status = f"{Fore.GREEN}✓{Style.RESET_ALL}"
-                name = f"{Fore.CYAN}{skill['name']}{Style.RESET_ALL}"
-                desc = skill["description"]
-                print(f"  {status} {name} - {desc}")
-        else:
-            print("\n可用技能:")
-            for skill in skills:
-                status = "✓"
-                name = skill["name"]
-                desc = skill["description"]
-                print(f"  {status} {name} - {desc}")
+        self._print("\n可用技能:", "yellow")
+        for skill in skills:
+            status = self._colorize("✓", "green")
+            name = self._colorize(skill['name'], "cyan")
+            print(f"  {status} {name} - {skill['description']}")
         print()
 
     def show_memory_stats(self):
@@ -178,17 +172,10 @@ class CLI:
             return
 
         stats = self.agent.compressor.get_stats()
-
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.YELLOW}上下文压缩统计:{Style.RESET_ALL}")
-            print(f"  压缩次数: {Fore.CYAN}{stats['compression_count']}{Style.RESET_ALL}")
-            print(f"  节省 tokens: {Fore.CYAN}{stats['tokens_saved']}{Style.RESET_ALL}")
-            print(f"  平均每次节省: {Fore.CYAN}{stats['avg_tokens_saved']}{Style.RESET_ALL}")
-        else:
-            print("\n上下文压缩统计:")
-            print(f"  压缩次数: {stats['compression_count']}")
-            print(f"  节省 tokens: {stats['tokens_saved']}")
-            print(f"  平均每次节省: {stats['avg_tokens_saved']}")
+        self._print("\n上下文压缩统计:", "yellow")
+        print(f"  压缩次数: {self._colorize(str(stats['compression_count']), 'cyan')}")
+        print(f"  节省 tokens: {self._colorize(str(stats['tokens_saved']), 'cyan')}")
+        print(f"  平均每次节省: {self._colorize(str(stats['avg_tokens_saved']), 'cyan')}")
         print()
 
     def manual_compress(self):
@@ -206,68 +193,39 @@ class CLI:
             print("\n对话消息太少，无需压缩")
             return
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.YELLOW}正在压缩对话上下文...{Style.RESET_ALL}")
-        else:
-            print("\n正在压缩对话上下文...")
+        self._print("\n正在压缩对话上下文...", "yellow")
 
         original_count = len(messages)
         compressed = self.agent.compressor.compress(messages)
         self.agent.memory.short_term.messages = compressed
         new_count = len(compressed)
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"{Fore.GREEN}✓ 压缩完成{Style.RESET_ALL}")
-            print(f"  消息数: {Fore.CYAN}{original_count}{Style.RESET_ALL} → {Fore.CYAN}{new_count}{Style.RESET_ALL}")
-        else:
-            print("✓ 压缩完成")
-            print(f"  消息数: {original_count} → {new_count}")
+        self._print("✓ 压缩完成", "green")
+        print(f"  消息数: {self._colorize(str(original_count), 'cyan')} → {self._colorize(str(new_count), 'cyan')}")
         print()
 
     def show_stats(self):
         """显示详细统计信息"""
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.YELLOW}会话统计:{Style.RESET_ALL}")
-            print(f"  API 调用次数: {Fore.CYAN}{self.agent.api_call_count}{Style.RESET_ALL}")
-            print(f"  Token 使用: {Fore.CYAN}{self.agent.total_tokens_used}{Style.RESET_ALL}")
-            print(f"  查询次数: {Fore.CYAN}{self.agent.query_count}{Style.RESET_ALL}")
+        self._print("\n会话统计:", "yellow")
+        print(f"  API 调用次数: {self._colorize(str(self.agent.api_call_count), 'cyan')}")
+        print(f"  Token 使用: {self._colorize(str(self.agent.total_tokens_used), 'cyan')}")
+        print(f"  查询次数: {self._colorize(str(self.agent.query_count), 'cyan')}")
 
-            if self.agent.memory_enabled:
-                print(f"\n{Fore.YELLOW}记忆统计:{Style.RESET_ALL}")
-                print(f"  短期记忆: {Fore.CYAN}{len(self.agent.memory.short_term.messages)}{Style.RESET_ALL} 条消息")
+        if self.agent.memory_enabled:
+            self._print("\n记忆统计:", "yellow")
+            print(f"  短期记忆: {self._colorize(str(len(self.agent.memory.short_term.messages)), 'cyan')} 条消息")
 
-                episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
-                print(f"  情景记忆: {Fore.CYAN}{episodic_count}{Style.RESET_ALL} 个项目/任务")
+            episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
+            print(f"  情景记忆: {self._colorize(str(episodic_count), 'cyan')} 个项目/任务")
 
-                semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
-                print(f"  语义记忆: {Fore.CYAN}{semantic_count}{Style.RESET_ALL} 条知识")
+            semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
+            print(f"  语义记忆: {self._colorize(str(semantic_count), 'cyan')} 条知识")
 
-            if self.agent.compression_enabled:
-                stats = self.agent.compressor.get_stats()
-                print(f"\n{Fore.YELLOW}压缩统计:{Style.RESET_ALL}")
-                print(f"  压缩次数: {Fore.CYAN}{stats['compression_count']}{Style.RESET_ALL}")
-                print(f"  节省 tokens: {Fore.CYAN}{stats['tokens_saved']}{Style.RESET_ALL}")
-        else:
-            print("\n会话统计:")
-            print(f"  API 调用次数: {self.agent.api_call_count}")
-            print(f"  Token 使用: {self.agent.total_tokens_used}")
-            print(f"  查询次数: {self.agent.query_count}")
-
-            if self.agent.memory_enabled:
-                print("\n记忆统计:")
-                print(f"  短期记忆: {len(self.agent.memory.short_term.messages)} 条消息")
-
-                episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
-                print(f"  情景记忆: {episodic_count} 个项目/任务")
-
-                semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
-                print(f"  语义记忆: {semantic_count} 条知识")
-
-            if self.agent.compression_enabled:
-                stats = self.agent.compressor.get_stats()
-                print("\n压缩统计:")
-                print(f"  压缩次数: {stats['compression_count']}")
-                print(f"  节省 tokens: {stats['tokens_saved']}")
+        if self.agent.compression_enabled:
+            stats = self.agent.compressor.get_stats()
+            self._print("\n压缩统计:", "yellow")
+            print(f"  压缩次数: {self._colorize(str(stats['compression_count']), 'cyan')}")
+            print(f"  节省 tokens: {self._colorize(str(stats['tokens_saved']), 'cyan')}")
         print()
 
     def export_history(self):
@@ -295,12 +253,8 @@ class CLI:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.GREEN}✓ 对话历史已导出{Style.RESET_ALL}")
-            print(f"  文件: {Fore.CYAN}{filename}{Style.RESET_ALL}")
-        else:
-            print(f"\n✓ 对话历史已导出")
-            print(f"  文件: {filename}")
+        self._print("\n✓ 对话历史已导出", "green")
+        print(f"  文件: {self._colorize(filename, 'cyan')}")
         print()
 
     def reset_session(self):
@@ -316,12 +270,8 @@ class CLI:
             self.agent.compressor.compression_count = 0
             self.agent.compressor.tokens_saved = 0
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"\n{Fore.GREEN}✓ 会话已重置{Style.RESET_ALL}")
-            print(f"  短期记忆已清空，长期记忆保留")
-        else:
-            print("\n✓ 会话已重置")
-            print("  短期记忆已清空，长期记忆保留")
+        self._print("\n✓ 会话已重置", "green")
+        print("  短期记忆已清空，长期记忆保留")
         print()
 
     def clear_screen(self):
@@ -330,35 +280,28 @@ class CLI:
 
     def handle_command(self, cmd: str) -> bool:
         """处理命令,返回是否继续"""
-        if cmd == "/help":
-            self.print_help()
-        elif cmd == "/skills":
-            self.show_skills()
-        elif cmd == "/memory":
-            self.show_memory_stats()
-        elif cmd == "/config":
-            self.show_config()
-        elif cmd == "/stats":
-            self.show_stats()
-        elif cmd == "/compress":
-            self.manual_compress()
-        elif cmd == "/compress stats":
-            self.show_compression_stats()
-        elif cmd == "/export":
-            self.export_history()
-        elif cmd == "/reset":
-            self.reset_session()
-        elif cmd == "/clear":
-            self.clear_screen()
-        elif cmd == "/exit":
+        commands = {
+            "/help": self.print_help,
+            "/skills": self.show_skills,
+            "/memory": self.show_memory_stats,
+            "/config": self.show_config,
+            "/stats": self.show_stats,
+            "/compress": self.manual_compress,
+            "/compress stats": self.show_compression_stats,
+            "/export": self.export_history,
+            "/reset": self.reset_session,
+            "/clear": self.clear_screen,
+        }
+
+        if cmd == "/exit":
             return False
+
+        handler = commands.get(cmd)
+        if handler:
+            handler()
         else:
-            if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                print(f"{Fore.RED}未知命令: {cmd}{Style.RESET_ALL}")
-                print(f"{Fore.YELLOW}提示:{Style.RESET_ALL} 输入 {Fore.GREEN}/help{Style.RESET_ALL} 查看可用命令")
-            else:
-                print(f"未知命令: {cmd}")
-                print("提示: 输入 /help 查看可用命令")
+            self._print(f"未知命令: {cmd}", "red")
+            print(f"{self._colorize('提示:', 'yellow')} 输入 {self._colorize('/help', 'green')} 查看可用命令")
         return True
 
     def run(self):
@@ -366,26 +309,15 @@ class CLI:
         try:
             self.init_agent()
         except Exception as e:
-            if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                print(f"{Fore.RED}✗ 初始化失败: {e}{Style.RESET_ALL}")
-                print(f"\n{Fore.YELLOW}可能的原因:{Style.RESET_ALL}")
-                print(f"  1. {Fore.CYAN}config.yaml{Style.RESET_ALL} 文件不存在或格式错误")
-                print(f"  2. API key 未配置（检查 config.yaml 或环境变量）")
-                print(f"  3. 网络连接问题")
-                print(f"\n{Fore.YELLOW}建议操作:{Style.RESET_ALL}")
-                print(f"  • 检查 {Fore.CYAN}config.yaml{Style.RESET_ALL} 是否存在")
-                print(f"  • 确认 API key 已正确设置")
-                print(f"  • 尝试运行: {Fore.GREEN}python -m lighthermes.cli{Style.RESET_ALL}")
-            else:
-                print(f"✗ 初始化失败: {e}")
-                print("\n可能的原因:")
-                print("  1. config.yaml 文件不存在或格式错误")
-                print("  2. API key 未配置（检查 config.yaml 或环境变量）")
-                print("  3. 网络连接问题")
-                print("\n建议操作:")
-                print("  • 检查 config.yaml 是否存在")
-                print("  • 确认 API key 已正确设置")
-                print("  • 尝试运行: python -m lighthermes.cli")
+            self._print(f"✗ 初始化失败: {e}", "red")
+            self._print("\n可能的原因:", "yellow")
+            print(f"  1. {self._colorize('config.yaml', 'cyan')} 文件不存在或格式错误")
+            print("  2. API key 未配置（检查 config.yaml 或环境变量）")
+            print("  3. 网络连接问题")
+            self._print("\n建议操作:", "yellow")
+            print(f"  • 检查 {self._colorize('config.yaml', 'cyan')} 是否存在")
+            print("  • 确认 API key 已正确设置")
+            print(f"  • 尝试运行: {self._colorize('python -m lighthermes.cli', 'green')}")
             return
 
         self.print_banner()
@@ -393,10 +325,8 @@ class CLI:
         prompt_symbol = self.cli_config.get("prompt_symbol", ">")
         stream_output = self.cli_config.get("stream_output", True)
 
-        if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-            print(f"{Fore.GREEN}[{self.agent.name}]{Style.RESET_ALL} 你好!有什么可以帮你的?\n")
-        else:
-            print(f"[{self.agent.name}] 你好!有什么可以帮你的?\n")
+        agent_name = self._colorize(f"[{self.agent.name}]", "green")
+        print(f"{agent_name} 你好!有什么可以帮你的?\n")
 
         while True:
             try:
@@ -410,10 +340,7 @@ class CLI:
                         break
                     continue
 
-                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                    print(f"\n{Fore.GREEN}[{self.agent.name}]{Style.RESET_ALL} ", end="", flush=True)
-                else:
-                    print(f"\n[{self.agent.name}] ", end="", flush=True)
+                print(f"\n{agent_name} ", end="", flush=True)
 
                 response = self.agent.run(
                     user_input,
@@ -430,20 +357,13 @@ class CLI:
                     print()
 
             except KeyboardInterrupt:
-                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                    print(f"\n\n{Fore.CYAN}再见!{Style.RESET_ALL}")
-                else:
-                    print("\n\n再见!")
+                self._print("\n\n再见!", "cyan")
                 break
             except EOFError:
                 break
             except Exception as e:
-                if self.cli_config.get("color_enabled", True) and COLORS_AVAILABLE:
-                    print(f"\n{Fore.RED}✗ 错误: {e}{Style.RESET_ALL}")
-                    print(f"{Fore.YELLOW}提示:{Style.RESET_ALL} 如果问题持续，请检查网络连接或 API 配置")
-                else:
-                    print(f"\n✗ 错误: {e}")
-                    print("提示: 如果问题持续，请检查网络连接或 API 配置")
+                self._print(f"\n✗ 错误: {e}", "red")
+                print(f"{self._colorize('提示:', 'yellow')} 如果问题持续，请检查网络连接或 API 配置")
                 if self.agent.debug:
                     import traceback
                     traceback.print_exc()
