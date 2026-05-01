@@ -410,6 +410,8 @@ class LightHermes:
 
 只返回"键: 值"格式，不要其他内容。"""
 
+            self.logger.info(f"检测到记忆提取请求: {query}")
+
             response = self.adapter.create(
                 messages=[{"role": "user", "content": extraction_prompt}],
                 stream=False,
@@ -417,6 +419,7 @@ class LightHermes:
             )
 
             extracted = response.choices[0].message.content.strip()
+            self.logger.info(f"LLM 提取结果: {extracted}")
 
             if ":" in extracted:
                 key, value = extracted.split(":", 1)
@@ -425,8 +428,12 @@ class LightHermes:
 
                 self.memory.save_user_preference(key, value)
                 self.logger.info(f"已提取并保存记忆: {key} = {value}")
+            else:
+                self.logger.warning(f"提取的内容格式不正确: {extracted}")
         except Exception as e:
+            import traceback
             self.logger.error(f"提取记忆失败: {e}")
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
 
     def _classify_task(self, query: str) -> str:
         """
