@@ -66,7 +66,7 @@ agent = LightHermes(
 )
 ```
 
-> **注意**: MiniMax 的流式响应实现存在问题（返回累积文本而非增量文本），建议在 `config.yaml` 中设置 `stream_output: false` 以避免重复输出。
+> **注意**: MiniMax 的流式响应返回累积文本而非增量文本，但 LightHermes 已自动处理此差异，可正常使用流式输出。
 
 ### 使用
 
@@ -173,6 +173,7 @@ model:
 - ✅ CLI 增强（/stats、/export、/reset 命令）
 - ✅ 统计跟踪（API 调用次数、token 使用量）
 - ✅ 代码精简优化（减少 131 行重复代码，提升可维护性）
+- ✅ MiniMax 流式响应修复（智能处理累积文本，添加单元测试）
 
 **v0.2.0** ✅ 稳定性增强完成
 
@@ -189,14 +190,12 @@ model:
 **测试覆盖**: 12/12 测试通过
 
 **已知问题**:
-- MiniMax 的 Anthropic 兼容端点流式响应存在重复输出问题，建议禁用流式输出
 - Evolution 系统在非 OpenAI provider 时需要额外的 `OPENAI_API_KEY` 环境变量
 
 **改进方向**:
 - 性能优化（缓存、索引）
 - 插件系统完善
-- CLI 增强（彩色输出、更多命令）
-- 修复 MiniMax 流式响应兼容性
+- 添加 pytest 测试框架
 
 ## 对比
 
