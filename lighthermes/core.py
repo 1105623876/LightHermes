@@ -391,6 +391,43 @@ class LightHermes:
 
         raise last_error
 
+    def _should_extract_memory(self, query: str) -> bool:
+        """检测用户是否要求记住某些信息"""
+        query_lower = query.lower()
+        memory_keywords = ["记住", "记得", "记一下", "保存", "remember", "save", "记录"]
+        return any(kw in query_lower for kw in memory_keywords)
+
+    def _extract_and_save_memory(self, query: str):
+        """提取并保存用户要求记住的信息"""
+        try:
+            extraction_prompt = f"""用户说："{query}"
+
+请提取用户要求记住的关键信息，以"键: 值"的格式返回。
+例如：
+- 用户说"记住我的名字是张三" -> 返回：名字: 张三
+- 用户说"请记住我喜欢Python" -> 返回：偏好: 喜欢Python
+- 用户说"记住你的名字是希儿" -> 返回：助手名字: 希儿
+
+只返回"键: 值"格式，不要其他内容。"""
+
+            response = self.adapter.create(
+                messages=[{"role": "user", "content": extraction_prompt}],
+                stream=False,
+                max_tokens=100
+            )
+
+            extracted = response.choices[0].message.content.strip()
+
+            if ":" in extracted:
+                key, value = extracted.split(":", 1)
+                key = key.strip()
+                value = value.strip()
+
+                self.memory.save_user_preference(key, value)
+                self.logger.info(f"已提取并保存记忆: {key} = {value}")
+        except Exception as e:
+            self.logger.error(f"提取记忆失败: {e}")
+
     def _classify_task(self, query: str) -> str:
         """
         简单的任务分类 - 基于关键词识别任务类型
@@ -457,6 +494,10 @@ class LightHermes:
 
         if self.memory_enabled:
             self.memory.add_message("user", query)
+
+            # 检测"记住"指令并提取信息
+            if self._should_extract_memory(query):
+                self._extract_and_save_memory(query)
 
         # 检查是否需要压缩上下文
         if self.compression_enabled and self.compressor:

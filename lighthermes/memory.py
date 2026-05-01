@@ -583,6 +583,17 @@ class MemoryManager:
         """保存会话摘要到工作记忆"""
         self.working.add_session(session_id, user_id, summary)
 
+    def save_user_preference(self, key: str, value: str):
+        """保存用户偏好到语义记忆"""
+        import hashlib
+        name = hashlib.md5(key.encode()).hexdigest()[:8]
+        self.semantic.save(
+            name=f"user_pref_{name}",
+            content=f"{key}: {value}",
+            metadata={"type": "user_preference", "key": key}
+        )
+        self.logger.info(f"已保存用户偏好: {key}")
+
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆 - 优化版：排序、token预算、去重"""
         import time
