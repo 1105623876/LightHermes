@@ -17,7 +17,9 @@
       "Bash(xargs grep *)",
       "WebFetch(domain:github.com)",
       "WebSearch",
-      "Bash(pip list *)"
+      "Bash(pip list *)",
+      "Bash(awk '{print $2 \": \" $1}')",
+      "Bash(awk '{sum+=$1; print} END {print \"总计: \" sum \" 行\"}')"
     ]
   }
 }
