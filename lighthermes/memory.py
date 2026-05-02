@@ -15,14 +15,8 @@ import re
 from lighthermes.logger import setup_logger
 
 
-def parse_memory_file(file_path: str) -> Optional[Dict[str, Any]]:
-    """解析记忆文件的通用函数"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-    except Exception:
-        return None
-
+def parse_memory_file_content(content: str) -> Optional[Dict[str, Any]]:
+    """解析记忆文件内容的通用函数"""
     if not content.startswith("---"):
         return None
 
@@ -40,6 +34,17 @@ def parse_memory_file(file_path: str) -> Optional[Dict[str, Any]]:
         "metadata": metadata,
         "content": parts[2].strip()
     }
+
+
+def parse_memory_file(file_path: str) -> Optional[Dict[str, Any]]:
+    """解析记忆文件的通用函数"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception:
+        return None
+
+    return parse_memory_file_content(content)
 
 
 class MemoryStats:
@@ -120,14 +125,44 @@ class MemoryIndex:
 
     def add(self, name: str, content: str):
         """添加文档到索引"""
-        # 简单分词：转小写 + 按空格分割
-        words = set(content.lower().split())
+        words = set(self._tokenize(content))
         for word in words:
-            if len(word) > 1:  # 过滤单字符
-                if word not in self.inverted_index:
-                    self.inverted_index[word] = set()
-                self.inverted_index[word].add(name)
+            # 中文单字保留，英文单字符过滤
+            if len(word) == 0:
+                continue
+            if len(word) == 1 and word.isascii():
+                continue
+            if word not in self.inverted_index:
+                self.inverted_index[word] = set()
+            self.inverted_index[word].add(name)
         self._save_index()
+
+    def _tokenize(self, text: str) -> List[str]:
+        """轻量分词：支持中英文混合"""
+        text = text.lower()
+        tokens = []
+        current_token = ""
+
+        for char in text:
+            # 中文字符（CJK统一汉字）
+            if '一' <= char <= '鿿':
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                tokens.append(char)  # 中文按字索引
+            # 英文字母和数字
+            elif char.isalnum():
+                current_token += char
+            # 分隔符（空格、标点等）
+            else:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+
+        if current_token:
+            tokens.append(current_token)
+
+        return tokens
 
     def remove(self, name: str):
         """从索引中移除文档"""
@@ -139,25 +174,26 @@ class MemoryIndex:
         self._save_index()
 
     def search(self, query_words: List[str]) -> set:
-        """搜索包含所有查询词的文档（交集）"""
+        """搜索包含任意查询词的文档（并集），按匹配度排序"""
         if not query_words:
             return set()
 
-        # 转小写
-        query_words = [w.lower() for w in query_words if len(w) > 1]
-        if not query_words:
-            return set()
-
-        # 获取每个词的文档集合
-        results = []
+        # 分词查询
+        tokens = []
         for word in query_words:
-            if word in self.inverted_index:
-                results.append(self.inverted_index[word])
-            else:
-                return set()  # 如果有词不存在，返回空集
+            tokens.extend(self._tokenize(word))
 
-        # 返回交集
-        return set.intersection(*results) if results else set()
+        tokens = [t for t in tokens if len(t) > 0]
+        if not tokens:
+            return set()
+
+        # 收集所有匹配的文档（并集而非交集）
+        matched_docs = set()
+        for token in tokens:
+            if token in self.inverted_index:
+                matched_docs.update(self.inverted_index[token])
+
+        return matched_docs
 
 
 class ShortTermMemory:
@@ -330,6 +366,10 @@ class EpisodicMemory:
         index_file = str(Path(storage_dir).parent / "episodic_index.json")
         self.index = MemoryIndex(index_file)
 
+    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
+        """解析记忆文件内容"""
+        return parse_memory_file_content(content)
+
     def save(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存情景记忆"""
         metadata = metadata or {}
@@ -411,6 +451,10 @@ class SemanticMemory:
         # 初始化索引
         index_file = str(Path(storage_dir).parent / "semantic_index.json")
         self.index = MemoryIndex(index_file)
+
+    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
+        """解析记忆文件内容"""
+        return parse_memory_file_content(content)
 
         if use_hybrid_retrieval:
             try:
@@ -497,7 +541,8 @@ class SemanticMemory:
             candidate_names = {f.stem for f in self.storage_dir.glob("*.md")}
 
         results = []
-        query_words_set = set(query_words)
+        # 使用相同的分词逻辑
+        query_tokens = set(self.index._tokenize(query))
 
         for name in candidate_names:
             file_path = self.storage_dir / f"{name}.md"
@@ -507,10 +552,10 @@ class SemanticMemory:
             memory = parse_memory_file(str(file_path))
 
             if memory:
-                content_lower = memory["content"].lower()
-                content_words = set(content_lower.split())
+                # 使用相同的分词逻辑
+                content_tokens = set(self.index._tokenize(memory["content"]))
 
-                matches = len(query_words_set & content_words)
+                matches = len(query_tokens & content_tokens)
                 if matches > 0:
                     memory["name"] = name
                     memory["score"] = matches
