@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from lighthermes.evolution import EvolutionEngine, SkillGenerator, TrajectoryAnalyzer
+from lighthermes.evolution import EvolutionEngine, SkillGenerator, SkillValidator, TrajectoryAnalyzer
 
 
 GENERATED_SKILL = """---
@@ -14,6 +14,24 @@ type: skill
 
 ## 步骤
 - 复用成功轨迹。
+"""
+
+GENERATED_FAILURE_REPORT = """---
+name: generated_failure_report
+description: 测试失败报告
+type: failure_report
+task_type: 配置
+source: evolution
+---
+
+## 失败模式
+重复使用错误配置。
+
+## 不要这样做
+不要忽略失败信号。
+
+## 替代建议
+先验证配置。
 """
 
 
@@ -237,12 +255,54 @@ class TestSkillGeneratorAdapter:
             "trajectories": [{"tool_calls": []}]
         }
 
-        skill = generator.generate_skill_from_pattern(pattern, "failure")
+        skill = generator.generate_skill_from_pattern(pattern, "success")
 
         assert skill["name"] == "generated_test_skill"
         call = client.chat.completions.calls[0]
         assert call["model"] == "test-model"
         assert call["temperature"] == 0.7
+
+    def test_failure_pattern_asks_for_failure_report(self):
+        adapter = FakeAdapter(GENERATED_FAILURE_REPORT)
+        generator = SkillGenerator(adapter, model="test-model")
+        pattern = {
+            "task_type": "配置",
+            "trajectories": [{"tool_calls": [{"tool": "write"}]}]
+        }
+
+        report = generator.generate_skill_from_pattern(pattern, "failure")
+        prompt = adapter.calls[0]["messages"][0]["content"]
+
+        assert report["name"] == "generated_failure_report"
+        assert report["metadata"]["type"] == "failure_report"
+        assert "type: failure_report" in prompt
+        assert "不要把失败轨迹包装成正向执行步骤" in prompt
+
+    def test_parse_generated_failure_report_metadata(self):
+        generator = SkillGenerator(FakeAdapter())
+
+        report = generator._parse_generated_skill(GENERATED_FAILURE_REPORT)
+
+        assert report["name"] == "generated_failure_report"
+        assert report["metadata"]["type"] == "failure_report"
+        assert report["metadata"]["task_type"] == "配置"
+        assert report["metadata"]["source"] == "evolution"
+
+
+@pytest.mark.unit
+class TestSkillValidator:
+    """测试技能验证器"""
+
+    def test_failure_report_is_valid_markdown_document(self):
+        validator = SkillValidator()
+        report = {
+            "metadata": {"type": "failure_report"},
+            "content": GENERATED_FAILURE_REPORT
+        }
+
+        result = validator.validate_skill(report)
+
+        assert result == {"valid": True, "reason": "Markdown 文档无需验证"}
 
 
 @pytest.mark.unit
@@ -293,4 +353,27 @@ class TestEvolutionEngineRecordSession:
         result = engine.evolve()
 
         assert result["success_skills"] == ["generated_test_skill"]
+        assert result["errors"] == []
+
+    def test_evolve_generates_failure_report_with_adapter(self, temp_memory_dir):
+        engine = EvolutionEngine(
+            client=FakeAdapter(GENERATED_FAILURE_REPORT),
+            trajectory_dir=temp_memory_dir,
+            skill_output_dir=f"{temp_memory_dir}/skills",
+            min_failure_count=1,
+            skill_validation="none"
+        )
+        engine.record_session(
+            session_id="failure_1",
+            messages=[{"role": "user", "content": "配置失败"}],
+            tool_calls=[{"tool": "write"}],
+            success=False,
+            task_type="配置",
+            iterations=1
+        )
+
+        result = engine.evolve()
+
+        assert result["failure_reports"] == ["generated_failure_report"]
+        assert result["failure_skills"] == ["generated_failure_report"]
         assert result["errors"] == []
