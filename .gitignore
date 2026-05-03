@@ -39,6 +39,7 @@ Thumbs.db
 *.bak
 
 # 项目特定
+.claude/worktrees/
 CLAUDE.md
 LightAgent/
 hermes-agent/

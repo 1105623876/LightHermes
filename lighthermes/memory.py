@@ -451,10 +451,7 @@ class SemanticMemory:
         # 初始化索引
         index_file = str(Path(storage_dir).parent / "semantic_index.json")
         self.index = MemoryIndex(index_file)
-
-    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
-        """解析记忆文件内容"""
-        return parse_memory_file_content(content)
+        self.hybrid_retriever = None
 
         if use_hybrid_retrieval:
             try:
@@ -466,9 +463,12 @@ class SemanticMemory:
                 )
             except ImportError:
                 print("混合检索不可用,使用简单关键词匹配")
-                self.hybrid_retriever = None
-        else:
-            self.hybrid_retriever = None
+            except Exception as e:
+                print(f"混合检索初始化失败,使用简单关键词匹配: {e}")
+
+    def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
+        """解析记忆文件内容"""
+        return parse_memory_file_content(content)
 
     def save(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存语义记忆"""
@@ -863,9 +863,22 @@ class MemoryManager:
         # 工作记忆 → 情景记忆：高频访问的会话提升为项目记忆
         recent_sessions = self.working.get_recent_sessions("default", limit=20)
         for session in recent_sessions:
-            # 这里可以根据访问频率决定是否提升
-            # 简化实现：暂时跳过
-            pass
+            session_id = session["session_id"]
+            episodic_name = f"working_{session_id}"
+            if (self.episodic.storage_dir / f"{episodic_name}.md").exists():
+                continue
+
+            self.episodic.save(
+                episodic_name,
+                session["summary"],
+                {
+                    "promoted_from": "working",
+                    "source_session_id": session_id,
+                    "user_id": "default",
+                    "source_timestamp": session.get("timestamp", "")
+                }
+            )
+            self.logger.info(f"提升工作记忆到情景记忆: {session_id} → {episodic_name}")
 
         # 情景记忆 → 语义记忆：反复使用的项目知识抽象为通用知识
         for file_path in self.episodic.storage_dir.glob("*.md"):

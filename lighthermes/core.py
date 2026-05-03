@@ -276,10 +276,14 @@ class LightHermes:
 
         self.memory_enabled = memory_enabled
         if memory_enabled:
-            # 默认不启用混合检索,避免引入大依赖
+            memory_config = config.get("memory", {})
+            hybrid_config = memory_config.get("hybrid_retrieval", {})
             self.memory = MemoryManager(
                 memory_dir=memory_dir,
-                use_hybrid_retrieval=False  # 可通过配置文件启用
+                use_hybrid_retrieval=hybrid_config.get("enabled", False),
+                embedding_provider=hybrid_config.get("provider", embedding_provider),
+                embedding_model=hybrid_config.get("model", embedding_model),
+                api_key=hybrid_config.get("api_key")
             )
         else:
             self.memory = None
@@ -326,6 +330,7 @@ class LightHermes:
         # 初始化上下文压缩器
         compression_config = config.get("context_compression", {})
         self.compression_enabled = compression_config.get("enabled", True)
+        self.extract_compression_to_memory = compression_config.get("extract_to_memory", False)
         if self.compression_enabled:
             self.compressor = ContextCompressor(
                 llm_adapter=self.adapter,
@@ -353,6 +358,25 @@ class LightHermes:
             if key in model.lower():
                 return value
         return 128000  # 默认值
+
+    def _save_compression_summary_to_memory(
+        self,
+        messages: List[Dict[str, Any]],
+        session_id: str,
+        user_id: str
+    ):
+        """按配置将上下文压缩摘要保存到工作记忆"""
+        if not (self.memory_enabled and self.memory and self.extract_compression_to_memory):
+            return
+
+        marker = "[CONTEXT COMPACTION — REFERENCE ONLY]"
+        for message in messages:
+            content = message.get("content", "") if isinstance(message, dict) else ""
+            if marker in content:
+                summary = content.replace(marker, "").strip()
+                if summary:
+                    self.memory.save_session(session_id, user_id, summary)
+                return
 
     def _call_api_with_fallback(
         self,
@@ -568,6 +592,7 @@ class LightHermes:
             if self.compressor.should_compress(messages, self.context_window):
                 self.logger.info("触发上下文压缩")
                 messages = self.compressor.compress(messages)
+                self._save_compression_summary_to_memory(messages, session_id, user_id)
 
         tools = self.tool_dispatcher.get_tool_schemas()
 

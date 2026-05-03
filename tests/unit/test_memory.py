@@ -1,11 +1,13 @@
 """记忆系统单元测试"""
+from pathlib import Path
+
 import pytest
 from lighthermes.memory import (
     MemoryManager,
     MemoryIndex,
     MemoryStats,
     ShortTermMemory,
-    parse_memory_file,
+    SemanticMemory,
     parse_memory_file_content
 )
 
@@ -44,11 +46,9 @@ class TestMemoryIndex:
         index.add("doc1", "Python是一种编程语言")
         index.add("doc2", "Java是另一种语言")
 
-        # 搜索 Python
         results = index.search(["python"])
         assert "doc1" in results
 
-        # 搜索中文
         results = index.search(["编"])
         assert "doc1" in results
 
@@ -61,13 +61,11 @@ class TestMemoryStats:
         """测试记录和获取命中率"""
         stats = MemoryStats(f"{temp_memory_dir}/stats.json")
 
-        # 记录命中
         stats.record_hit("semantic", 3, 0.05)
         stats.record_hit("semantic", 2, 0.03)
 
-        # 获取命中率
         rate = stats.get_hit_rate("semantic")
-        assert rate == 2.5  # (3 + 2) / 2
+        assert rate == 2.5
 
     def test_get_all_stats(self, temp_memory_dir):
         """测试获取所有统计"""
@@ -105,7 +103,6 @@ class TestShortTermMemory:
             stm.add("user", f"Message {i}")
 
         messages = stm.get_messages()
-        # 最多保留 2 * 2 = 4 条消息
         assert len(messages) <= 4
 
     def test_clear(self):
@@ -116,6 +113,37 @@ class TestShortTermMemory:
 
         messages = stm.get_messages()
         assert len(messages) == 0
+
+
+@pytest.mark.unit
+class TestSemanticMemory:
+    """测试语义记忆"""
+
+    def test_hybrid_retriever_initialization(self, temp_memory_dir, monkeypatch):
+        """测试混合检索初始化"""
+        class FakeHybridRetriever:
+            def __init__(self, embedding_provider, embedding_model, api_key):
+                self.embedding_provider = embedding_provider
+                self.embedding_model = embedding_model
+                self.api_key = api_key
+
+        monkeypatch.setattr(
+            "lighthermes.retrieval.HybridRetriever",
+            FakeHybridRetriever
+        )
+
+        semantic = SemanticMemory(
+            storage_dir=f"{temp_memory_dir}/semantic",
+            use_hybrid_retrieval=True,
+            embedding_provider="local",
+            embedding_model="test-model",
+            api_key="test-key"
+        )
+
+        assert semantic.hybrid_retriever is not None
+        assert semantic.hybrid_retriever.embedding_provider == "local"
+        assert semantic.hybrid_retriever.embedding_model == "test-model"
+        assert semantic.hybrid_retriever.api_key == "test-key"
 
 
 @pytest.mark.unit
@@ -140,13 +168,44 @@ class TestMemoryManager:
             use_hybrid_retrieval=False
         )
 
-        # 保存记忆
         for name, content in sample_memory_content.items():
             mm.semantic.save(name, content, {"type": "knowledge"})
 
-        # 召回记忆
         result = mm.recall("Python编程")
         assert "Python" in result or "python" in result
+
+    def test_promote_working_memory_to_episodic(self, temp_memory_dir):
+        """测试工作记忆提升为情景记忆"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "完成了记忆系统设计讨论")
+
+        mm.promote_memories()
+
+        memory = mm.episodic.load("working_session_1")
+        assert memory is not None
+        assert memory["content"] == "完成了记忆系统设计讨论"
+        assert memory["metadata"]["promoted_from"] == "working"
+        assert memory["metadata"]["source_session_id"] == "session_1"
+
+    def test_promote_working_memory_is_idempotent(self, temp_memory_dir):
+        """测试工作记忆提升是幂等的"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "第一次摘要")
+
+        mm.promote_memories()
+        path = Path(temp_memory_dir) / "episodic" / "working_session_1.md"
+        first_content = path.read_text(encoding="utf-8")
+
+        mm.working.add_session("session_1", "default", "第二次摘要")
+        mm.promote_memories()
+
+        assert path.read_text(encoding="utf-8") == first_content
 
 
 @pytest.mark.unit
