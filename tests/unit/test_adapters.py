@@ -60,7 +60,7 @@ class TestOpenAIAdapter:
             api_key=mock_api_key,
             base_url=custom_url
         )
-        assert adapter.client.base_url == custom_url
+        assert str(adapter.client.base_url).rstrip("/") == custom_url
 
 
 @pytest.mark.unit

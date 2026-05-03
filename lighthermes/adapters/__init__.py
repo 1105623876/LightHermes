@@ -44,7 +44,7 @@ def get_adapter(
             **kwargs
         )
     else:
-        raise ValueError(f"不支持的 provider: {provider}")
+        raise ValueError(f"Unsupported provider: {provider}")
 
 
 __all__ = ["BaseAdapter", "OpenAIAdapter", "AnthropicAdapter", "get_adapter"]
