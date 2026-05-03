@@ -655,17 +655,19 @@ class LightHermes:
                         if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("tool_calls"):
                             for tc in msg["tool_calls"]:
                                 tool_calls_list.append({
+                                    "tool": tc["function"]["name"],
                                     "name": tc["function"]["name"],
                                     "arguments": tc["function"]["arguments"]
                                 })
 
                     # 记录轨迹
-                    self.evolution.analyzer.save_trajectory(
+                    self.evolution.record_session(
                         session_id=session_id,
                         messages=params["messages"],
                         tool_calls=tool_calls_list,
                         success=True,
-                        task_type=task_type
+                        task_type=task_type,
+                        iterations=len(tool_calls_list)
                     )
 
                     # 每 50 次对话触发一次进化

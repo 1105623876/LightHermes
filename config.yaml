@@ -4,7 +4,7 @@
 model:
   provider: anthropic
   model_name: claude-sonnet-4-6
-  api_key: sk-cp-H6_zWzcNypjoNQ94O_VExgsxSd7L0KsfCNnxI7cSQJAXdiSERRbROMviRA2ieJW4oSTsNT8MyiZHKNpMBx6epnVfl2Qk5CWeDf5iChd9GAJ931tavyrUxBU
+  api_key: ${ANTHROPIC_API_KEY}
   base_url: https://api.minimaxi.com/anthropic
   fallback_models:
     - gpt-3.5-turbo  # API 失败时自动切换

@@ -4,6 +4,7 @@
 
 import sys
 import io
+import os
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
@@ -11,7 +12,9 @@ from lighthermes import LightHermes
 
 # MiniMax 的 Anthropic 兼容端点
 # 注意：Anthropic SDK 会自动添加 /v1/messages，所以这里不需要 /anthropic
-API_KEY = "sk-cp-H6_zWzcNypjoNQ94O_VExgsxSd7L0KsfCNnxI7cSQJAXdiSERRbROMviRA2ieJW4oSTsNT8MyiZHKNpMBx6epnVfl2Qk5CWeDf5iChd9GAJ931tavyrUxBU"
+API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+if not API_KEY:
+    raise RuntimeError("请先设置 ANTHROPIC_API_KEY 环境变量")
 BASE_URL = "https://api.minimaxi.com/anthropic/../anthropic"  # 绕过 SDK 自动添加的 /v1
 MODEL = "claude-sonnet-4-6"  # MiniMax 使用 Claude 模型名
 

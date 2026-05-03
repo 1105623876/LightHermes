@@ -19,6 +19,63 @@ class TrajectoryAnalyzer:
     def __init__(self, trajectory_dir: str = "trajectories"):
         self.trajectory_dir = Path(trajectory_dir)
         self.trajectory_dir.mkdir(parents=True, exist_ok=True)
+        self.quality_threshold = 80
+
+    def calculate_quality_score(self, trajectory: Dict[str, Any]) -> int:
+        """计算成功轨迹质量分数"""
+        if not trajectory.get("success", False):
+            return 0
+
+        tool_calls = trajectory.get("tool_calls", []) or []
+        iterations = trajectory.get("iterations", len(tool_calls))
+        user_corrections = trajectory.get("user_corrections", 0)
+
+        score = 100
+        score -= user_corrections * 15
+        score -= max(0, iterations - 1) * 5
+        if iterations > 5:
+            score -= (iterations - 5) * 10
+
+        return max(0, min(100, score))
+
+    def classify_success_quality(self, score: int) -> str:
+        """按分数划分成功质量等级"""
+        if score >= 80:
+            return "high"
+        if score >= 50:
+            return "medium"
+        return "low"
+
+    def should_learn_from_success(self, trajectory: Dict[str, Any]) -> bool:
+        """判断成功轨迹是否值得学习"""
+        if not trajectory.get("success", False):
+            return False
+
+        if "learning_worthy" in trajectory:
+            return bool(trajectory["learning_worthy"])
+
+        return self.evaluate_quality(trajectory)["learning_worthy"]
+
+    def evaluate_quality(self, trajectory: Dict[str, Any]) -> Dict[str, Any]:
+        """评估轨迹质量并返回追加字段"""
+        tool_calls = trajectory.get("tool_calls", []) or []
+        iterations = trajectory.get("iterations", len(tool_calls))
+        user_corrections = trajectory.get("user_corrections", 0)
+        score = self.calculate_quality_score(trajectory)
+        level = self.classify_success_quality(score)
+
+        return {
+            "quality_score": score,
+            "quality_level": level,
+            "learning_worthy": trajectory.get("success", False) and score >= self.quality_threshold,
+            "quality_metrics": {
+                "user_corrections": user_corrections,
+                "iterations": iterations,
+                "tool_call_count": len(tool_calls),
+                "first_attempt_success": trajectory.get("success", False) and user_corrections == 0 and iterations <= 1
+            },
+            "quality_version": "1.0"
+        }
 
     def save_trajectory(
         self,
@@ -27,7 +84,8 @@ class TrajectoryAnalyzer:
         tool_calls: List[Dict[str, Any]],
         success: bool,
         task_type: str = "unknown",
-        user_corrections: int = 0
+        user_corrections: int = 0,
+        iterations: Optional[int] = None
     ):
         """保存对话轨迹"""
         trajectory = {
@@ -38,8 +96,9 @@ class TrajectoryAnalyzer:
             "messages": messages,
             "tool_calls": tool_calls,
             "user_corrections": user_corrections,
-            "iterations": len(tool_calls)
+            "iterations": len(tool_calls) if iterations is None else iterations
         }
+        trajectory.update(self.evaluate_quality(trajectory))
 
         file_path = self.trajectory_dir / f"{session_id}.json"
         with open(file_path, "w", encoding="utf-8") as f:
@@ -78,14 +137,24 @@ class TrajectoryAnalyzer:
         }
 
         for task_type, trajs in task_groups.items():
-            success_trajs = [t for t in trajs if t["success"]]
-            failure_trajs = [t for t in trajs if not t["success"]]
+            success_trajs = []
+            for traj in trajs:
+                if traj.get("success"):
+                    if "quality_score" not in traj:
+                        traj.update(self.evaluate_quality(traj))
+                    if self.should_learn_from_success(traj):
+                        success_trajs.append(traj)
+
+            failure_trajs = [t for t in trajs if not t.get("success")]
 
             if len(success_trajs) >= min_success_count:
+                all_success_count = len([t for t in trajs if t.get("success")])
                 patterns["success_patterns"].append({
                     "task_type": task_type,
                     "count": len(success_trajs),
-                    "trajectories": success_trajs[-min_success_count:]
+                    "trajectories": success_trajs[-min_success_count:],
+                    "quality_threshold": self.quality_threshold,
+                    "filtered_count": all_success_count - len(success_trajs)
                 })
 
             if len(failure_trajs) >= min_failure_count:
@@ -267,7 +336,8 @@ class EvolutionEngine:
         tool_calls: List[Dict[str, Any]],
         success: bool,
         task_type: str = "unknown",
-        user_corrections: int = 0
+        user_corrections: int = 0,
+        iterations: Optional[int] = None
     ):
         """记录会话轨迹"""
         self.analyzer.save_trajectory(
@@ -276,7 +346,8 @@ class EvolutionEngine:
             tool_calls=tool_calls,
             success=success,
             task_type=task_type,
-            user_corrections=user_corrections
+            user_corrections=user_corrections,
+            iterations=iterations
         )
 
     def evolve(self) -> Dict[str, Any]:
