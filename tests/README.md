@@ -26,6 +26,8 @@ pytest tests/performance/ -v             # 性能测试
 # 运行特定测试文件
 pytest tests/unit/test_memory.py -v
 pytest tests/unit/test_adapters.py -v
+pytest tests/unit/test_compressor.py -v
+pytest tests/integration/test_cli.py -v
 
 # 运行带覆盖率报告
 pytest tests/ --cov=lighthermes --cov-report=html
@@ -43,8 +45,9 @@ tests/
 │   ├── test_memory.py                   # 记忆系统测试
 │   ├── test_core_memory.py              # 核心记忆集成测试
 │   ├── test_evolution.py                # 自进化系统测试
+│   ├── test_compressor.py               # 上下文压缩测试
 │   └── test_adapters.py                 # Adapter 测试
-├── integration/                         # 集成测试（待添加）
+├── integration/                         # 集成测试
 │   └── test_cli.py                      # CLI 集成测试
 └── performance/                         # 性能测试
     └── test_memory_performance.py       # 记忆系统性能测试
@@ -81,6 +84,14 @@ tests/
   - 压缩摘要入库
   - 混合检索配置透传
   - Evolution 复用主模型 Adapter
+- ✅ Compressor 单元测试（test_compressor.py）
+  - 压缩触发阈值
+  - 工具输出剪枝
+  - 摘要生成与失败回退
+- ✅ CLI 集成测试（integration/test_cli.py）
+  - 命令分发
+  - 手动压缩与重置
+  - 交互循环
 - ✅ 性能基准测试（test_memory_performance.py）
   - 索引性能
   - 搜索性能
@@ -88,6 +99,4 @@ tests/
   - 可扩展性测试
 
 ### 待添加
-- [ ] CLI 集成测试
-- [ ] Compressor 测试
 - [ ] 真实 API 集成测试（需要 API key）
