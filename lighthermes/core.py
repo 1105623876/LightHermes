@@ -300,30 +300,11 @@ class LightHermes:
                 self.tool_dispatcher.register_tool(tool)
 
         if evolution_enabled:
-            # Evolution 系统需要 OpenAI client
-            # 如果主 provider 不是 openai，为 evolution 创建单独的 client
-            evolution_client = None
-            if provider == "openai":
-                evolution_client = self.adapter.client
-            else:
-                from openai import OpenAI
-                evolution_api_key = os.environ.get("OPENAI_API_KEY")
-                if not evolution_api_key:
-                    self.logger.warning(
-                        "Evolution 系统需要 OPENAI_API_KEY，已禁用"
-                    )
-                    self.evolution_enabled = False
-                else:
-                    evolution_client = OpenAI(api_key=evolution_api_key)
-
-            if self.evolution_enabled and evolution_client:
-                self.evolution = EvolutionEngine(
-                    client=evolution_client,
-                    model=model,
-                    skill_validation=skill_validation
-                )
-            else:
-                self.evolution = None
+            self.evolution = EvolutionEngine(
+                client=self.adapter,
+                model=model,
+                skill_validation=skill_validation
+            )
         else:
             self.evolution = None
 

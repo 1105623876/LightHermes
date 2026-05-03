@@ -3,7 +3,59 @@ import json
 
 import pytest
 
-from lighthermes.evolution import EvolutionEngine, TrajectoryAnalyzer
+from lighthermes.evolution import EvolutionEngine, SkillGenerator, TrajectoryAnalyzer
+
+
+GENERATED_SKILL = """---
+name: generated_test_skill
+description: 测试生成技能
+type: skill
+---
+
+## 步骤
+- 复用成功轨迹。
+"""
+
+
+class FakeAdapter:
+    def __init__(self, content=GENERATED_SKILL):
+        self.content = content
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.content
+
+
+class FakeOpenAIResponse:
+    def __init__(self, content):
+        class Message:
+            def __init__(self, text):
+                self.content = text
+
+        class Choice:
+            def __init__(self, text):
+                self.message = Message(text)
+
+        self.choices = [Choice(content)]
+
+
+class FakeOpenAIClient:
+    def __init__(self, content=GENERATED_SKILL):
+        class Completions:
+            def __init__(self, text):
+                self.text = text
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return FakeOpenAIResponse(self.text)
+
+        class Chat:
+            def __init__(self, text):
+                self.completions = Completions(text)
+
+        self.chat = Chat(content)
 
 
 @pytest.mark.unit
@@ -160,6 +212,40 @@ class TestAnalyzePatternsQualityFilter:
 
 
 @pytest.mark.unit
+class TestSkillGeneratorAdapter:
+    """测试技能生成器的 adapter 兼容路径"""
+
+    def test_generate_skill_uses_adapter_create(self):
+        adapter = FakeAdapter()
+        generator = SkillGenerator(adapter, model="test-model")
+        pattern = {
+            "task_type": "代码",
+            "trajectories": [{"tool_calls": [{"tool": "read"}]}]
+        }
+
+        skill = generator.generate_skill_from_pattern(pattern, "success")
+
+        assert skill["name"] == "generated_test_skill"
+        assert adapter.calls[0]["messages"][0]["role"] == "user"
+        assert adapter.calls[0]["temperature"] == 0.7
+
+    def test_generate_skill_supports_openai_like_client(self):
+        client = FakeOpenAIClient()
+        generator = SkillGenerator(client, model="test-model")
+        pattern = {
+            "task_type": "配置",
+            "trajectories": [{"tool_calls": []}]
+        }
+
+        skill = generator.generate_skill_from_pattern(pattern, "failure")
+
+        assert skill["name"] == "generated_test_skill"
+        call = client.chat.completions.calls[0]
+        assert call["model"] == "test-model"
+        assert call["temperature"] == 0.7
+
+
+@pytest.mark.unit
 class TestEvolutionEngineRecordSession:
     """测试进化引擎会话记录"""
 
@@ -186,3 +272,25 @@ class TestEvolutionEngineRecordSession:
         assert trajectory["learning_worthy"] is True
         assert trajectory["quality_version"] == "1.0"
         assert trajectory["tool_calls"][0]["tool"] == "python"
+
+    def test_evolve_generates_skill_with_adapter(self, temp_memory_dir):
+        engine = EvolutionEngine(
+            client=FakeAdapter(),
+            trajectory_dir=temp_memory_dir,
+            skill_output_dir=f"{temp_memory_dir}/skills",
+            min_success_count=1,
+            skill_validation="none"
+        )
+        engine.record_session(
+            session_id="session_1",
+            messages=[{"role": "user", "content": "写一个函数"}],
+            tool_calls=[],
+            success=True,
+            task_type="代码",
+            iterations=0
+        )
+
+        result = engine.evolve()
+
+        assert result["success_skills"] == ["generated_test_skill"]
+        assert result["errors"] == []

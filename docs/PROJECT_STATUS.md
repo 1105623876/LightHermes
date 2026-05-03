@@ -166,7 +166,6 @@ ffbd313 docs: 更新 README 添加 CLI 使用说明和已知问题
 2. **自进化系统**
    - 技能生成依赖 LLM 质量，可能生成不可用的技能
    - 沙箱验证较简单，复杂技能可能验证不准确
-   - 非 OpenAI provider 时需要额外的 OPENAI_API_KEY 环境变量
 
 3. **CLI**
    - 无彩色输出

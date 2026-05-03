@@ -191,11 +191,10 @@ model:
 - ✅ 配置集成（config.yaml）
 
 **测试覆盖**: 
-- pytest 测试：45/45 通过 (100%)
+- pytest 测试：49/49 通过 (100%)
 - 覆盖模块：记忆系统、Adapter、MiniMax 流式响应、自进化质量评估、记忆增强、性能基准
 
 **已知问题**:
-- Evolution 系统在非 OpenAI provider 时需要额外的 `OPENAI_API_KEY` 环境变量
 - 混合检索默认关闭；启用 OpenAI/local embedding 时需要对应 API key 或本地模型依赖
 
 **最近更新** (2026-05-03):
@@ -211,7 +210,8 @@ model:
 - ✅ **测试与环境修复**
   - 重建可用 venv
   - 修复 Adapter 测试对新版 OpenAI SDK 的兼容性
-  - 全量测试 45/45 通过
+  - Evolution 复用主模型 Adapter，不再为非 OpenAI provider 额外要求 `OPENAI_API_KEY`
+  - 全量测试 49/49 通过
 
 **改进方向**:
 - CLI 集成测试

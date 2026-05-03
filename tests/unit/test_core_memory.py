@@ -119,3 +119,29 @@ context_compression:
         assert agent.memory.kwargs["embedding_provider"] == "local"
         assert agent.memory.kwargs["embedding_model"] == "test-embedding"
         assert agent.memory.kwargs["api_key"] == "test-key"
+
+    def test_non_openai_provider_reuses_adapter_for_evolution(self, temp_memory_dir, monkeypatch):
+        """测试非 OpenAI provider 不再要求额外 OPENAI_API_KEY"""
+        class FakeEvolutionEngine:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.ToolDispatcher", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.MemoryManager", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", FakeEvolutionEngine)
+
+        agent = LightHermes(
+            model="claude-sonnet-4-6",
+            provider="anthropic",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=False,
+            evolution_enabled=True
+        )
+
+        assert agent.evolution_enabled is True
+        assert isinstance(agent.evolution.kwargs["client"], FakeAdapter)
+        assert agent.evolution.kwargs["model"] == "claude-sonnet-4-6"

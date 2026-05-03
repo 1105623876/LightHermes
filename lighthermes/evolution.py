@@ -5,12 +5,10 @@ LightHermes 自进化系统
 """
 
 import json
-import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from openai import OpenAI
 
 
 class TrajectoryAnalyzer:
@@ -170,7 +168,7 @@ class TrajectoryAnalyzer:
 class SkillGenerator:
     """技能生成器 - 从轨迹中生成新技能"""
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4o-mini"):
+    def __init__(self, client: Any, model: str = "gpt-4o-mini"):
         self.client = client
         self.model = model
 
@@ -211,18 +209,36 @@ Markdown 技能是提示词模板,指导 Agent 的思维流程,无需编写代�
 只返回技能文件内容,不要有其他解释。"""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
-            )
-
-            skill_content = response.choices[0].message.content
+            response = self._create_completion([
+                {"role": "user", "content": prompt}
+            ])
+            skill_content = self._extract_response_content(response)
             return self._parse_generated_skill(skill_content)
 
         except Exception as e:
             print(f"技能生成失败: {e}")
             return None
+
+    def _create_completion(self, messages: List[Dict[str, Any]]) -> Any:
+        """调用 adapter 或兼容旧 OpenAI client 的生成接口"""
+        if hasattr(self.client, "create"):
+            return self.client.create(
+                messages=messages,
+                temperature=0.7
+            )
+
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.7
+        )
+
+    def _extract_response_content(self, response: Any) -> str:
+        """从 adapter 字符串或 OpenAI-like 响应中提取文本"""
+        if isinstance(response, str):
+            return response
+
+        return response.choices[0].message.content
 
     def _parse_generated_skill(self, content: str) -> Optional[Dict[str, Any]]:
         """解析生成的技能"""
@@ -310,7 +326,7 @@ class EvolutionEngine:
 
     def __init__(
         self,
-        client: OpenAI,
+        client: Any,
         model: str = "gpt-4o-mini",
         trajectory_dir: str = "trajectories",
         skill_output_dir: str = "skills/generated",

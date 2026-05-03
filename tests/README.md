@@ -41,6 +41,8 @@ tests/
 ├── conftest.py                          # 共享 fixtures
 ├── unit/                                # 单元测试
 │   ├── test_memory.py                   # 记忆系统测试
+│   ├── test_core_memory.py              # 核心记忆集成测试
+│   ├── test_evolution.py                # 自进化系统测试
 │   └── test_adapters.py                 # Adapter 测试
 ├── integration/                         # 集成测试（待添加）
 │   └── test_cli.py                      # CLI 集成测试
@@ -71,6 +73,14 @@ tests/
   - OpenAI Adapter
   - Anthropic Adapter
   - 流式响应处理
+- ✅ Evolution 单元测试（test_evolution.py）
+  - 成功质量评估
+  - 高质量轨迹过滤
+  - Adapter 兼容技能生成
+- ✅ 核心记忆集成测试（test_core_memory.py）
+  - 压缩摘要入库
+  - 混合检索配置透传
+  - Evolution 复用主模型 Adapter
 - ✅ 性能基准测试（test_memory_performance.py）
   - 索引性能
   - 搜索性能
@@ -79,6 +89,5 @@ tests/
 
 ### 待添加
 - [ ] CLI 集成测试
-- [ ] Evolution 系统测试
 - [ ] Compressor 测试
 - [ ] 真实 API 集成测试（需要 API key）
