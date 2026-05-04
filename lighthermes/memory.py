@@ -586,12 +586,18 @@ class MemoryManager:
         use_hybrid_retrieval: bool = False,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        api_key: str = None
+        api_key: str = None,
+        working_to_episodic_limit: int = 20,
+        episodic_to_semantic_access_threshold: int = 10,
+        archive_inactive_days: int = 30
     ):
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_hybrid_retrieval = use_hybrid_retrieval
+        self.working_to_episodic_limit = working_to_episodic_limit
+        self.episodic_to_semantic_access_threshold = episodic_to_semantic_access_threshold
+        self.archive_inactive_days = archive_inactive_days
         self.logger = setup_logger("lighthermes.memory")
 
         # 初始化统计系统
@@ -676,12 +682,12 @@ class MemoryManager:
             content = memory["content"][:500]  # 扩展到500字符
             memories.append({
                 "type": "episodic",
+                "name": name,
                 "content": f"项目/任务 {name}: {content}",
                 "priority": 2,
+                "score": memory.get("score", 0),
                 "full_content": memory["content"]
             })
-            # 更新访问记录
-            self.episodic.update_access(name)
         self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
         # 3. 语义记忆
@@ -691,12 +697,12 @@ class MemoryManager:
             content = memory["content"][:500]  # 从150扩展到500字符
             memories.append({
                 "type": "semantic",
+                "name": name,
                 "content": f"知识 {name}: {content}",
                 "priority": 1,
+                "score": memory.get("score", 0),
                 "full_content": memory["content"]
             })
-            # 更新访问记录
-            self.semantic.update_access(name)
         self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
 
         # 去重：检查情景记忆和语义记忆的重叠
@@ -732,13 +738,17 @@ class MemoryManager:
             if not is_duplicate:
                 filtered_memories.append(mem)
 
-        # 按优先级排序
-        filtered_memories.sort(key=lambda x: x["priority"], reverse=True)
+        # 按优先级和检索分数排序
+        filtered_memories.sort(
+            key=lambda x: (x.get("priority", 0), x.get("score", 0)),
+            reverse=True
+        )
 
         # Token预算：总上限约2000字符
         total_chars = 0
         max_chars = 2000
         result_parts = []
+        selected_memories = []
 
         for mem in filtered_memories:
             content = mem["content"]
@@ -748,9 +758,20 @@ class MemoryManager:
                 if remaining > 100:  # 至少保留100字符
                     content = content[:remaining] + "..."
                     result_parts.append(content)
+                    selected_memories.append(mem)
                 break
             result_parts.append(content)
+            selected_memories.append(mem)
             total_chars += len(content)
+
+        for mem in selected_memories:
+            name = mem.get("name")
+            if not name:
+                continue
+            if mem["type"] == "episodic":
+                self.episodic.update_access(name)
+            elif mem["type"] == "semantic":
+                self.semantic.update_access(name)
 
         return "\n".join(result_parts) if result_parts else ""
 
@@ -814,8 +835,9 @@ class MemoryManager:
         # 定期归档低频记忆
         self.archive_inactive_memories()
 
-    def archive_inactive_memories(self, inactive_days: int = 30):
+    def archive_inactive_memories(self, inactive_days: int = None):
         """归档长期未访问的记忆"""
+        inactive_days = self.archive_inactive_days if inactive_days is None else inactive_days
         cutoff = datetime.now() - timedelta(days=inactive_days)
 
         # 归档情景记忆
@@ -830,11 +852,12 @@ class MemoryManager:
                 try:
                     last_access_time = datetime.fromisoformat(last_accessed)
                     if last_access_time < cutoff:
-                        # 归档到 archived 子目录
                         archive_dir = self.episodic.storage_dir / "archived"
                         archive_dir.mkdir(exist_ok=True)
+                        name = file_path.stem
                         file_path.rename(archive_dir / file_path.name)
-                        self.logger.info(f"归档情景记忆: {file_path.stem}")
+                        self.episodic.index.remove(name)
+                        self.logger.info(f"归档情景记忆: {name}")
                 except Exception:
                     pass
 
@@ -850,18 +873,22 @@ class MemoryManager:
                 try:
                     last_access_time = datetime.fromisoformat(last_accessed)
                     if last_access_time < cutoff:
-                        # 归档到 archived 子目录
                         archive_dir = self.semantic.storage_dir / "archived"
                         archive_dir.mkdir(exist_ok=True)
+                        name = file_path.stem
                         file_path.rename(archive_dir / file_path.name)
-                        self.logger.info(f"归档语义记忆: {file_path.stem}")
+                        self.semantic.index.remove(name)
+                        self.logger.info(f"归档语义记忆: {name}")
                 except Exception:
                     pass
 
     def promote_memories(self):
         """提升高频访问的记忆到更高层级"""
         # 工作记忆 → 情景记忆：高频访问的会话提升为项目记忆
-        recent_sessions = self.working.get_recent_sessions("default", limit=20)
+        recent_sessions = self.working.get_recent_sessions(
+            "default",
+            limit=self.working_to_episodic_limit
+        )
         for session in recent_sessions:
             session_id = session["session_id"]
             episodic_name = f"working_{session_id}"
@@ -889,16 +916,18 @@ class MemoryManager:
             metadata = memory.get("metadata", {})
             access_count = int(metadata.get("access_count", 0))
 
-            # 如果访问次数超过阈值（如 10 次），考虑提升为语义记忆
-            if access_count > 10:
-                # 检查是否已经存在对应的语义记忆
+            if access_count > self.episodic_to_semantic_access_threshold:
                 semantic_name = f"knowledge_{file_path.stem}"
                 if not (self.semantic.storage_dir / f"{semantic_name}.md").exists():
-                    # 提升为语义记忆
                     self.semantic.save(
                         semantic_name,
                         memory["content"],
-                        {"promoted_from": "episodic", "original_name": file_path.stem}
+                        {
+                            "promoted_from": "episodic",
+                            "original_name": file_path.stem,
+                            "promotion_reason": "high_access_count",
+                            "source_access_count": access_count
+                        }
                     )
                     self.logger.info(f"提升情景记忆到语义记忆: {file_path.stem} → {semantic_name}")
 

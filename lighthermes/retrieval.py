@@ -19,6 +19,30 @@ class TFIDFRetriever:
         self.documents: List[Dict[str, Any]] = []
         self.idf: Dict[str, float] = {}
 
+    def _tokenize(self, text: str) -> List[str]:
+        """轻量分词：支持中英文混合"""
+        text = text.lower()
+        tokens = []
+        current_token = ""
+
+        for char in text:
+            if '一' <= char <= '鿿':
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                tokens.append(char)
+            elif char.isalnum():
+                current_token += char
+            else:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+
+        if current_token:
+            tokens.append(current_token)
+
+        return [token for token in tokens if token]
+
     def index_documents(self, documents: List[Dict[str, Any]]):
         """索引文档"""
         self.documents = documents
@@ -30,7 +54,7 @@ class TFIDFRetriever:
         word_doc_count = Counter()
 
         for doc in self.documents:
-            words = set(doc["content"].lower().split())
+            words = set(self._tokenize(doc["content"]))
             for word in words:
                 word_doc_count[word] += 1
 
@@ -41,12 +65,11 @@ class TFIDFRetriever:
 
     def search(self, query: str, top_k: int = 20) -> List[Dict[str, Any]]:
         """TF-IDF 搜索"""
-        query_words = query.lower().split()
+        query_words = self._tokenize(query)
         scores = []
 
         for doc in self.documents:
-            content_lower = doc["content"].lower()
-            content_words = content_lower.split()
+            content_words = self._tokenize(doc["content"])
             word_count = Counter(content_words)
 
             score = 0
@@ -167,3 +190,4 @@ class HybridRetriever:
 
         results = self.embedding.rerank(query, candidates, top_k=top_k)
         return results
+

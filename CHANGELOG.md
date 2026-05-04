@@ -1,5 +1,42 @@
 # LightHermes 开发日志
 
+## 2026-05-04 - 修复进行中的回归问题（未发布）
+
+### 修复
+- ✅ 修复 `lighthermes/retrieval.py` 结构损坏导致的 `IndentationError`
+  - 恢复 `TFIDFRetriever` 类定义与 `__init__`
+  - 将 TF-IDF 分词与检索统一切换为 `_tokenize()`（支持中英文混合）
+- ✅ 修复 `lighthermes/memory.py` 的 `MemoryManager.__init__` 参数回归
+  - 恢复 `embedding_provider` / `embedding_model` 构造参数
+  - 消除初始化阶段 `NameError: embedding_provider is not defined`
+
+### 验证
+- ✅ 记忆相关回归测试：`tests/unit/test_memory.py` + `tests/unit/test_core_memory.py`（21/21）
+- ✅ 全量 pytest：`tests/`（67/67）
+
+---
+
+## 2026-05-03 - v0.3.1 + Phase 2 起步
+
+### 自进化系统
+- ✅ 新增成功质量评估字段：`quality_score`、`quality_level`、`learning_worthy`、`quality_metrics`、`quality_version`
+- ✅ 成功模式分析仅使用高质量成功轨迹，避免侥幸成功污染技能生成
+- ✅ 失败轨迹生成 `failure_report`，避免将失败经验固化为正向技能
+
+### 记忆系统增强
+- ✅ 修复 `SemanticMemory` 混合检索初始化不可达问题
+- ✅ 打通 `config.yaml` 的 `memory.hybrid_retrieval` 到 `MemoryManager`
+- ✅ 实现工作记忆到情景记忆的幂等迁移
+- ✅ 支持将上下文压缩摘要按配置写入工作记忆
+
+### 适配器与测试
+- ✅ Evolution 复用主模型 Adapter，不再为非 OpenAI provider 额外要求 `OPENAI_API_KEY`
+- ✅ 修复 Adapter 对新版 OpenAI SDK 的兼容性
+- ✅ 补充压缩与 CLI 测试
+- ✅ 全量 pytest：67/67 通过
+
+---
+
 ## 2026-04-29 - v0.3.0 可用性增强完成
 
 ### 记忆层级迁移（最新）
@@ -112,92 +149,3 @@
   - `cli.py`: 210 行（命令行界面）
   - `retrieval.py`: 169 行（混合检索）
   - `logger.py`: 50 行（日志系统）
-
-## 2026-04-25 - Phase 1-3 完成
-
-### 已完成
-- ✅ 项目基础结构
-- ✅ `memory.py` - 四级记忆系统
-  - ShortTermMemory (短期记忆)
-  - WorkingMemory (工作记忆 - SQLite)
-  - EpisodicMemory (情景记忆 - Markdown)
-  - SemanticMemory (语义记忆 - Markdown)
-  - MemoryManager (统一管理器)
-- ✅ `core.py` - 核心引擎
-  - LightHermes 主类
-  - SkillLoader (技能加载器)
-  - ToolDispatcher (工具调度器)
-  - 对话循环 (支持流式和非流式)
-- ✅ `cli.py` - 命令行界面
-  - 交互式对话
-  - 命令处理 (/help, /skills, /memory, /config, /clear, /exit)
-- ✅ 示例技能 (explain_code_pattern)
-- ✅ 配置文件 (config.yaml)
-- ✅ 使用示例 (example.py)
-
-### 代码统计
-- `memory.py`: ~480 行
-- `core.py`: ~360 行
-- `cli.py`: ~200 行
-- `evolution.py`: ~350 行
-- `retrieval.py`: ~200 行
-- 总计: ~1590 行 (Phase 1+2+3 核心功能完成)
-
-### Phase 2 完成
-- [x] `evolution.py` - 自进化系统
-  - TrajectoryAnalyzer (轨迹分析器)
-  - SkillGenerator (技能生成器)
-  - SkillValidator (技能验证器)
-- [x] 轨迹记录和存储
-- [x] 技能自动生成
-- [x] 集成到 core.py
-
-### Phase 3 完成
-- [x] 混合检索 (TF-IDF + 嵌入)
-  - TFIDFRetriever (快速初筛)
-  - EmbeddingRetriever (精确重排)
-  - HybridRetriever (统一接口)
-- [x] 集成到 SemanticMemory
-- [ ] Python 插件支持 (可选)
-- [ ] CLI 增强 (可选)
-
-## 使用说明
-
-### 安装依赖
-```bash
-pip install -r requirements.txt
-```
-
-### 配置
-1. 设置环境变量:
-```bash
-export OPENAI_API_KEY=your_api_key
-```
-
-或在 `config.yaml` 中配置:
-```yaml
-model:
-  api_key: your_api_key
-```
-
-### 运行
-```bash
-# 命令行界面
-python -m lighthermes.cli
-
-# Python API
-python example.py
-```
-
-### 测试记忆系统
-```python
-from lighthermes import LightHermes
-
-agent = LightHermes(model="gpt-4o-mini", api_key="your_key")
-
-# 第一次对话
-agent.run("我喜欢用 TDD 开发", user_id="user1")
-
-# 第二次对话 - 会召回之前的记忆
-agent.run("我应该怎么开发新功能?", user_id="user1")
-```
