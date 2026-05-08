@@ -257,8 +257,32 @@ class CLI:
         print(f"  文件: {self._colorize(filename, 'cyan')}")
         print()
 
+    def end_session(self):
+        """触发会话结束生命周期"""
+        if not (self.agent and self.agent.memory_enabled and self.agent.memory):
+            return
+
+        messages = self.agent.memory.short_term.messages
+        if not messages:
+            return
+
+        summary = "\n".join(
+            f"{msg.get('role', '')}: {str(msg.get('content', ''))[:200]}"
+            for msg in messages[-10:]
+        )
+        try:
+            self.agent.memory.on_session_end(
+                self.session_id or "cli_session",
+                "default_user",
+                summary=summary
+            )
+        except Exception as e:
+            if getattr(self.agent, "debug", False):
+                self._print(f"\n会话结束记忆同步失败: {e}", "red")
+
     def reset_session(self):
         """重置会话但保留记忆"""
+        self.end_session()
         if self.agent.memory_enabled:
             self.agent.memory.short_term.messages = []
 
@@ -294,6 +318,7 @@ class CLI:
         }
 
         if cmd == "/exit":
+            self.end_session()
             return False
 
         handler = commands.get(cmd)
@@ -357,9 +382,11 @@ class CLI:
                     print()
 
             except KeyboardInterrupt:
+                self.end_session()
                 self._print("\n\n再见!", "cyan")
                 break
             except EOFError:
+                self.end_session()
                 break
             except Exception as e:
                 self._print(f"\n✗ 错误: {e}", "red")

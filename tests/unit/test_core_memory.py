@@ -12,6 +12,17 @@ class FakeAdapter:
         raise AssertionError("测试不应调用真实模型")
 
 
+class FakeChoice:
+    def __init__(self, content):
+        self.message = type("Message", (), {"content": content, "tool_calls": None})()
+
+
+class FakeResponse:
+    def __init__(self, content):
+        self.choices = [FakeChoice(content)]
+        self.usage = {"total_tokens": 3}
+
+
 @pytest.mark.unit
 class TestCoreMemoryIntegration:
     """测试核心流程中的记忆集成"""
@@ -145,3 +156,52 @@ context_compression:
         assert agent.evolution_enabled is True
         assert isinstance(agent.evolution.kwargs["client"], FakeAdapter)
         assert agent.evolution.kwargs["model"] == "claude-sonnet-4-6"
+
+    def test_run_uses_memory_lifecycle_hooks(self, temp_memory_dir):
+        """测试 run 接入记忆生命周期钩子"""
+        class FakeMemory:
+            memory_dir = temp_memory_dir
+
+            def __init__(self):
+                self.calls = []
+
+            def on_turn_start(self, query, user_id="default", session_id=""):
+                self.calls.append(("start", query, user_id, session_id))
+                return "<memory-context>测试记忆</memory-context>"
+
+            def on_turn_end(self, user_content, assistant_content, user_id="default", session_id=""):
+                self.calls.append(("end", user_content, assistant_content, user_id, session_id))
+
+            def get_context(self):
+                return []
+
+            def add_message(self, role, content):
+                self.calls.append(("message", role, content))
+
+        agent = LightHermes.__new__(LightHermes)
+        agent.name = "test-agent"
+        agent.role = "你是测试助手"
+        agent.model = "gpt-4o-mini"
+        agent.memory_enabled = True
+        agent.memory = FakeMemory()
+        agent.skill_loader = type("SkillLoader", (), {"match_skill": lambda self, query: None})()
+        agent.compression_enabled = False
+        agent.compressor = None
+        agent.context_window = 128000
+        agent.tool_dispatcher = type("ToolDispatcher", (), {"get_tool_schemas": lambda self: []})()
+        agent.evolution_enabled = False
+        agent.evolution = None
+        agent.query_count = 0
+        agent.total_tokens_used = 0
+        agent.api_call_count = 0
+        agent.debug = False
+        agent.logger = type("Logger", (), {"warning": lambda *args, **kwargs: None, "info": lambda *args, **kwargs: None})()
+        agent._call_api_with_fallback = lambda **kwargs: FakeResponse("测试回复")
+        agent._should_extract_memory = lambda query: False
+
+        reply = agent.run("你好", user_id="user_1", session_id="session_1")
+
+        assert reply == "测试回复"
+        assert ("start", "你好", "user_1", "session_1") in agent.memory.calls
+        assert ("message", "user", "你好") in agent.memory.calls
+        assert ("end", "你好", "测试回复", "user_1", "session_1") in agent.memory.calls

@@ -33,6 +33,23 @@ class FakeCompressor:
         return self.compressed_messages
 
 
+class FakeMemory:
+    def __init__(self):
+        self.short_term = SimpleNamespace(messages=[
+            {"role": "user", "content": "1"},
+            {"role": "assistant", "content": "2"},
+            {"role": "user", "content": "3"},
+            {"role": "assistant", "content": "4"},
+            {"role": "user", "content": "5"}
+        ])
+        self.episodic = SimpleNamespace(storage_dir="missing-episodic-dir")
+        self.semantic = SimpleNamespace(storage_dir="missing-semantic-dir")
+        self.ended_sessions = []
+
+    def on_session_end(self, session_id, user_id="default", summary=None):
+        self.ended_sessions.append((session_id, user_id, summary))
+
+
 class FakeAgent:
     def __init__(self):
         self.name = "LightHermes"
@@ -46,17 +63,7 @@ class FakeAgent:
         self.total_tokens_used = 100
         self.skill_loader = FakeSkillLoader()
         self.compressor = FakeCompressor()
-        self.memory = SimpleNamespace(
-            short_term=SimpleNamespace(messages=[
-                {"role": "user", "content": "1"},
-                {"role": "assistant", "content": "2"},
-                {"role": "user", "content": "3"},
-                {"role": "assistant", "content": "4"},
-                {"role": "user", "content": "5"}
-            ]),
-            episodic=SimpleNamespace(storage_dir="missing-episodic-dir"),
-            semantic=SimpleNamespace(storage_dir="missing-semantic-dir")
-        )
+        self.memory = FakeMemory()
 
     def run(self, user_input, stream=True, session_id=None):
         if stream:
@@ -85,6 +92,7 @@ class TestCLICommands:
 
     def test_exit_command_stops_loop(self, cli):
         assert cli.handle_command("/exit") is False
+        assert cli.agent.memory.ended_sessions
 
     def test_unknown_command_prints_hint(self, cli, capsys):
         assert cli.handle_command("/unknown") is True
@@ -116,6 +124,7 @@ class TestCLICommands:
 
         output = capsys.readouterr().out
         assert "会话已重置" in output
+        assert cli.agent.memory.ended_sessions
         assert cli.agent.memory.short_term.messages == []
         assert cli.agent.query_count == 0
         assert cli.agent.api_call_count == 0

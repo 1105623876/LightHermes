@@ -340,6 +340,16 @@ class LightHermes:
                 return value
         return 128000  # 默认值
 
+    def _run_memory_hook(self, hook_name: str, *args, **kwargs):
+        if not (self.memory_enabled and self.memory):
+            return None
+        try:
+            method = getattr(self.memory, hook_name)
+            return method(*args, **kwargs)
+        except Exception as e:
+            self.logger.warning(f"记忆生命周期钩子 {hook_name} 执行失败: {e}")
+            return None
+
     def _save_compression_summary_to_memory(
         self,
         messages: List[Dict[str, Any]],
@@ -546,10 +556,14 @@ class LightHermes:
             if self.debug:
                 print(f"[使用技能: {matched_skill['name']}]")
 
-        if self.memory_enabled:
-            recalled_context = self.memory.recall(query, user_id)
-            if recalled_context:
-                system_prompt += f"\n\n## 相关记忆\n{recalled_context}"
+        recalled_context = self._run_memory_hook(
+            "on_turn_start",
+            query,
+            user_id=user_id,
+            session_id=session_id
+        )
+        if recalled_context:
+            system_prompt += f"\n\n## 相关记忆\n{recalled_context}"
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -572,6 +586,14 @@ class LightHermes:
         if self.compression_enabled and self.compressor:
             if self.compressor.should_compress(messages, self.context_window):
                 self.logger.info("触发上下文压缩")
+                pre_compress_note = self._run_memory_hook(
+                    "on_pre_compress",
+                    messages,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                if pre_compress_note:
+                    messages.append({"role": "system", "content": pre_compress_note})
                 messages = self.compressor.compress(messages)
                 self._save_compression_summary_to_memory(messages, session_id, user_id)
 
@@ -642,8 +664,13 @@ class LightHermes:
             else:
                 reply = message.content
 
-                if self.memory_enabled:
-                    self.memory.add_message("assistant", reply)
+                self._run_memory_hook(
+                    "on_turn_end",
+                    params["messages"][-1]["content"],
+                    reply,
+                    user_id=user_id,
+                    session_id=session_id
+                )
 
                 # 自适应记忆调整
                 self.query_count += 1
