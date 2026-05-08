@@ -376,7 +376,8 @@ class EvolutionEngine:
         skill_output_dir: str = "skills/generated",
         min_success_count: int = 3,
         min_failure_count: int = 2,
-        skill_validation: str = "sandbox"
+        skill_validation: str = "sandbox",
+        memory_manager: Any = None
     ):
         self.analyzer = TrajectoryAnalyzer(trajectory_dir)
         self.generator = SkillGenerator(client, model)
@@ -388,6 +389,7 @@ class EvolutionEngine:
         self.min_success_count = min_success_count
         self.min_failure_count = min_failure_count
         self.skill_validation = skill_validation
+        self.memory_manager = memory_manager
 
     def record_session(
         self,
@@ -455,6 +457,7 @@ class EvolutionEngine:
                         validation = self.validator.validate_skill(skill)
                         if validation["valid"]:
                             self._save_skill(skill)
+                            self._save_failure_report_memory(skill, pattern)
                             results["failure_reports"].append(skill["name"])
                             results["failure_skills"].append(skill["name"])
                         else:
@@ -464,6 +467,7 @@ class EvolutionEngine:
                             })
                     else:
                         self._save_skill(skill)
+                        self._save_failure_report_memory(skill, pattern)
                         results["failure_reports"].append(skill["name"])
                         results["failure_skills"].append(skill["name"])
             except Exception as e:
@@ -481,3 +485,29 @@ class EvolutionEngine:
 
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(skill["content"])
+
+    def _save_failure_report_memory(self, skill: Dict[str, Any], pattern: Dict[str, Any]):
+        """保存失败报告到情景记忆"""
+        if not self.memory_manager:
+            return
+
+        metadata = skill.get("metadata", {})
+        if metadata.get("type") != "failure_report":
+            return
+
+        name = f"failure_report_{skill['name']}"
+        task_type = metadata.get("task_type") or pattern.get("task_type", "unknown")
+        memory_metadata = {
+            "type": "failure_report",
+            "source": "evolution",
+            "source_skill": skill["name"],
+            "task_type": task_type,
+            "promotion": "distill_memories"
+        }
+        if "count" in pattern:
+            memory_metadata["failure_count"] = pattern["count"]
+
+        try:
+            self.memory_manager.save_episodic(name, skill["content"], memory_metadata)
+        except Exception:
+            pass

@@ -3,7 +3,10 @@ import json
 
 import pytest
 
+from pathlib import Path
+
 from lighthermes.evolution import EvolutionEngine, SkillGenerator, SkillValidator, TrajectoryAnalyzer
+from lighthermes.memory import MemoryManager
 
 
 GENERATED_SKILL = """---
@@ -377,3 +380,39 @@ class TestEvolutionEngineRecordSession:
         assert result["failure_reports"] == ["generated_failure_report"]
         assert result["failure_skills"] == ["generated_failure_report"]
         assert result["errors"] == []
+
+    def test_evolve_saves_failure_report_to_episodic_memory(self, temp_memory_dir):
+        memory = MemoryManager(
+            memory_dir=f"{temp_memory_dir}/memory",
+            use_hybrid_retrieval=False
+        )
+        engine = EvolutionEngine(
+            client=FakeAdapter(GENERATED_FAILURE_REPORT),
+            trajectory_dir=f"{temp_memory_dir}/trajectories",
+            skill_output_dir=f"{temp_memory_dir}/skills",
+            min_failure_count=1,
+            skill_validation="none",
+            memory_manager=memory
+        )
+        engine.record_session(
+            session_id="failure_1",
+            messages=[{"role": "user", "content": "配置失败"}],
+            tool_calls=[{"tool": "write"}],
+            success=False,
+            task_type="配置",
+            iterations=1
+        )
+
+        engine.evolve()
+        engine.evolve()
+
+        skill_file = Path(temp_memory_dir) / "skills" / "generated_failure_report.md"
+        episodic_files = list((Path(temp_memory_dir) / "memory" / "episodic").glob("failure_report_*.md"))
+        episodic = memory.episodic.load("failure_report_generated_failure_report")
+
+        assert skill_file.exists()
+        assert len(episodic_files) == 1
+        assert episodic["metadata"]["type"] == "failure_report"
+        assert episodic["metadata"]["source"] == "evolution"
+        assert episodic["metadata"]["source_skill"] == "generated_failure_report"
+        assert episodic["metadata"]["task_type"] == "配置"

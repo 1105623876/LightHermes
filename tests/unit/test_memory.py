@@ -329,6 +329,34 @@ class TestMemoryManager:
 
         assert len(list((Path(temp_memory_dir) / "semantic").glob("distilled_*.md"))) == 1
 
+    def test_distill_failure_report_from_episodic_memory(self, temp_memory_dir):
+        """测试失败报告情景记忆可蒸馏为语义记忆"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_episodic(
+            "failure_report_bad_config",
+            "不要忽略 API key 配置失败，必须先验证配置再继续。",
+            {
+                "type": "failure_report",
+                "source": "evolution",
+                "source_skill": "bad_config",
+                "task_type": "配置"
+            }
+        )
+
+        distilled = mm.distill_memories(user_id="default")
+        mm.distill_memories(user_id="default")
+
+        files = list((Path(temp_memory_dir) / "semantic").glob("distilled_*.md"))
+        memory = mm.semantic.load(files[0].stem)
+        assert distilled == 1
+        assert len(files) == 1
+        assert memory["metadata"]["type"] == "distilled_semantic"
+        assert memory["metadata"]["distilled_from"] == "failure_report_bad_config"
+        assert memory["metadata"]["source_layer"] == "episodic"
+
 
 @pytest.mark.unit
 class TestMemoryContextBlock:

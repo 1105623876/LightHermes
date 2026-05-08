@@ -359,7 +359,8 @@ class LightHermes:
             self.evolution = EvolutionEngine(
                 client=self.adapter,
                 model=model,
-                skill_validation=skill_validation
+                skill_validation=skill_validation,
+                memory_manager=self.memory
             )
         else:
             self.evolution = None
