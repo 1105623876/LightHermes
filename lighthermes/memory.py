@@ -471,10 +471,21 @@ class EpisodicMemory:
 class SemanticMemory:
     """语义记忆 - 抽象知识和用户偏好"""
 
-    def __init__(self, storage_dir: str, max_entries: int = 1000, use_hybrid_retrieval: bool = False,
-                 embedding_provider: str = "openai", embedding_model: str = "text-embedding-3-small", api_key: str = None):
+    def __init__(
+        self,
+        storage_dir: str,
+        max_entries: int = 1000,
+        max_chars: int = 200000,
+        similarity_threshold: float = 0.85,
+        use_hybrid_retrieval: bool = False,
+        embedding_provider: str = "openai",
+        embedding_model: str = "text-embedding-3-small",
+        api_key: str = None
+    ):
         self.storage_dir = Path(storage_dir)
         self.max_entries = max_entries
+        self.max_chars = max_chars
+        self.similarity_threshold = similarity_threshold
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # 初始化索引
@@ -499,22 +510,78 @@ class SemanticMemory:
         """解析记忆文件内容"""
         return parse_memory_file_content(content)
 
+    def _normalize_content(self, content: str) -> str:
+        return " ".join(str(content).split()).strip()
+
+    def _content_similarity(self, left: str, right: str) -> float:
+        left_tokens = set(self.index._tokenize(self._normalize_content(left)))
+        right_tokens = set(self.index._tokenize(self._normalize_content(right)))
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+    def _find_similar_memory(self, content: str) -> Optional[str]:
+        normalized = self._normalize_content(content)
+        for file_path in self.storage_dir.glob("*.md"):
+            memory = parse_memory_file(str(file_path))
+            if not memory:
+                continue
+            existing = self._normalize_content(memory["content"])
+            if existing == normalized:
+                return file_path.stem
+            if self._content_similarity(existing, normalized) >= self.similarity_threshold:
+                return file_path.stem
+        return None
+
+    def _merge_metadata(self, existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(existing or {})
+        for key, value in (incoming or {}).items():
+            if key in {"distilled_from", "source_layer"}:
+                values = [item.strip() for item in str(merged.get(key, "")).split(",") if item.strip()]
+                for item in str(value).split(","):
+                    item = item.strip()
+                    if item and item not in values:
+                        values.append(item)
+                if values:
+                    merged[key] = ",".join(values)
+            elif key == "source_count":
+                merged[key] = max(int(merged.get(key, 0) or 0), int(value or 0))
+            elif key == "last_verified":
+                merged[key] = max(str(merged.get(key, "")), str(value))
+            elif key == "confidence":
+                merged[key] = max(float(merged.get(key, 0) or 0), float(value or 0))
+            elif key not in merged or not merged[key]:
+                merged[key] = value
+        return merged
+
     def save(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存语义记忆"""
         metadata = metadata or {}
         metadata.setdefault("type", "semantic")
         metadata.setdefault("created", datetime.now().strftime("%Y-%m-%d"))
 
+        target_name = name
+        target_path = self.storage_dir / f"{target_name}.md"
+        merge_enabled = metadata.get("type") in {"distilled_semantic", "user_preference"}
+        if merge_enabled and not target_path.exists():
+            similar_name = self._find_similar_memory(content)
+            if similar_name:
+                target_name = similar_name
+                target_path = self.storage_dir / f"{target_name}.md"
+                existing = self.load(target_name)
+                if existing:
+                    metadata = self._merge_metadata(existing.get("metadata", {}), metadata)
+                    if len(existing.get("content", "")) >= len(content):
+                        content = existing["content"]
+
         frontmatter = "---\n"
         for key, value in metadata.items():
             frontmatter += f"{key}: {value}\n"
         frontmatter += "---\n\n"
 
-        file_path = self.storage_dir / f"{name}.md"
-        file_path.write_text(frontmatter + content, encoding="utf-8")
-
-        # 更新索引
-        self.index.add(name, content)
+        self.index.remove(target_name)
+        target_path.write_text(frontmatter + content, encoding="utf-8")
+        self.index.add(target_name, content)
 
         self._cleanup_if_needed()
 
@@ -596,11 +663,24 @@ class SemanticMemory:
     def _cleanup_if_needed(self):
         """清理过多的记忆条目"""
         files = list(self.storage_dir.glob("*.md"))
-        if len(files) > self.max_entries:
-            # 按修改时间排序,删除最旧的
-            files.sort(key=lambda f: f.stat().st_mtime)
-            for f in files[:len(files) - self.max_entries]:
-                f.unlink()
+
+        def priority(file_path: Path):
+            memory = parse_memory_file(str(file_path))
+            metadata = memory.get("metadata", {}) if memory else {}
+            is_preference = metadata.get("type") == "user_preference"
+            return (is_preference, file_path.stat().st_mtime)
+
+        current_chars = sum(f.stat().st_size for f in files if f.exists())
+
+        while len(files) > self.max_entries or current_chars > self.max_chars:
+            removable = [f for f in files if not priority(f)[0]] or files
+            removable.sort(key=lambda f: f.stat().st_mtime)
+            target = removable[0]
+            target_size = target.stat().st_size
+            self.index.remove(target.stem)
+            target.unlink()
+            current_chars -= target_size
+            files = [f for f in files if f.exists()]
 
 
 class MemoryManager:
@@ -612,13 +692,16 @@ class MemoryManager:
         short_term_turns: int = 50,
         working_memory_days: int = 7,
         semantic_max_entries: int = 1000,
+        semantic_max_chars: int = 200000,
+        semantic_similarity_threshold: float = 0.85,
         use_hybrid_retrieval: bool = False,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
         api_key: str = None,
         working_to_episodic_limit: int = 20,
         episodic_to_semantic_access_threshold: int = 10,
-        archive_inactive_days: int = 30
+        archive_inactive_days: int = 30,
+        distill_recent_limit: int = 20
     ):
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -627,6 +710,7 @@ class MemoryManager:
         self.working_to_episodic_limit = working_to_episodic_limit
         self.episodic_to_semantic_access_threshold = episodic_to_semantic_access_threshold
         self.archive_inactive_days = archive_inactive_days
+        self.distill_recent_limit = distill_recent_limit
         self.logger = setup_logger("lighthermes.memory")
 
         # 初始化统计系统
@@ -645,6 +729,8 @@ class MemoryManager:
         self.semantic = SemanticMemory(
             storage_dir=str(self.memory_dir / "semantic"),
             max_entries=semantic_max_entries,
+            max_chars=semantic_max_chars,
+            similarity_threshold=semantic_similarity_threshold,
             use_hybrid_retrieval=use_hybrid_retrieval,
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
@@ -1011,29 +1097,92 @@ class MemoryManager:
             )
             self.logger.info(f"提升工作记忆到情景记忆: {session_id} → {episodic_name}")
 
-        # 情景记忆 → 语义记忆：反复使用的项目知识抽象为通用知识
+    def _is_distill_worthy(self, content: str) -> bool:
+        content = " ".join(str(content).split())
+        if len(content) < 20:
+            return False
+
+        low_value = ["你好", "谢谢", "再见", "测试", "临时", "今天先到这里"]
+        if any(content == phrase for phrase in low_value):
+            return False
+
+        signals = [
+            "偏好", "喜欢", "要求", "不要", "必须", "应该", "约束", "原则",
+            "决定", "方案", "原因", "经验", "修复", "问题", "失败", "成功",
+            "记住", "记得", "preference", "requirement", "decision", "fix", "avoid"
+        ]
+        return any(signal in content.lower() for signal in signals) or len(content) >= 80
+
+    def _distill_confidence(self, content: str, source_count: int) -> float:
+        base = 0.55
+        if len(content) >= 80:
+            base += 0.1
+        if source_count > 1:
+            base += 0.1
+        if any(word in content for word in ["必须", "不要", "要求", "决定", "修复"]):
+            base += 0.1
+        return min(base, 0.9)
+
+    def distill_memories(self, user_id: str = "default", limit: int = None):
+        """从工作/情景记忆中提炼高价值语义记忆"""
+        import hashlib
+
+        limit = self.distill_recent_limit if limit is None else limit
+        candidates = []
+
+        for session in self.working.get_recent_sessions(user_id, limit=limit):
+            summary = session.get("summary", "")
+            if self._is_distill_worthy(summary):
+                candidates.append({
+                    "content": summary,
+                    "source_id": session["session_id"],
+                    "source_layer": "working",
+                    "timestamp": session.get("timestamp", "")
+                })
+
         for file_path in self.episodic.storage_dir.glob("*.md"):
             memory = self.episodic.load(file_path.stem)
             if not memory:
                 continue
-
             metadata = memory.get("metadata", {})
-            access_count = int(metadata.get("access_count", 0))
+            if metadata.get("status") == "archived":
+                continue
+            content = memory.get("content", "")
+            access_count = int(metadata.get("access_count", 0) or 0)
+            if access_count <= self.episodic_to_semantic_access_threshold and not self._is_distill_worthy(content):
+                continue
+            candidates.append({
+                "content": content,
+                "source_id": file_path.stem,
+                "source_layer": "episodic",
+                "timestamp": metadata.get("last_accessed", "")
+            })
 
-            if access_count > self.episodic_to_semantic_access_threshold:
-                semantic_name = f"knowledge_{file_path.stem}"
-                if not (self.semantic.storage_dir / f"{semantic_name}.md").exists():
-                    self.semantic.save(
-                        semantic_name,
-                        memory["content"],
-                        {
-                            "promoted_from": "episodic",
-                            "original_name": file_path.stem,
-                            "promotion_reason": "high_access_count",
-                            "source_access_count": access_count
-                        }
-                    )
-                    self.logger.info(f"提升情景记忆到语义记忆: {file_path.stem} → {semantic_name}")
+        distilled = 0
+        today = datetime.now().strftime("%Y-%m-%d")
+        for candidate in candidates:
+            content = candidate["content"]
+            source_id = candidate["source_id"]
+            name_seed = f"{candidate['source_layer']}:{source_id}:{content}"
+            name = f"distilled_{hashlib.md5(name_seed.encode()).hexdigest()[:10]}"
+            self.semantic.save(
+                name,
+                content,
+                {
+                    "type": "distilled_semantic",
+                    "distilled_from": source_id,
+                    "source_layer": candidate["source_layer"],
+                    "confidence": self._distill_confidence(content, 1),
+                    "last_verified": today,
+                    "source_count": 1,
+                    "source_timestamp": candidate.get("timestamp", "")
+                }
+            )
+            distilled += 1
+
+        if distilled:
+            self.logger.info(f"记忆蒸馏完成: {distilled} 条候选")
+        return distilled
 
     def migrate_short_to_working(self, session_id: str, user_id: str, summary: str):
         """短期记忆 → 工作记忆：会话结束时迁移"""
@@ -1055,6 +1204,9 @@ class MemoryManager:
 
             # 提升高频记忆
             self.promote_memories()
+
+            # 提炼稳定语义记忆
+            self.distill_memories()
 
             self.logger.info("自动记忆迁移完成")
         except Exception as e:

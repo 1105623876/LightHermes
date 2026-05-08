@@ -33,6 +33,9 @@ memory:
     working_memory_days: 7
     episodic_auto_archive: true
     semantic_max_entries: 1000
+    semantic_max_chars: 200000
+    semantic_similarity_threshold: 0.85
+    distill_recent_limit: 20
 
 # 进化配置
 evolution:

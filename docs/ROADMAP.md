@@ -83,11 +83,11 @@
 - 删除“记忆图谱”计划，不引入图数据库或复杂实体关系层
 
 **具体任务**:
-- [ ] 设计 `distill_memories()`：从工作/情景记忆中提炼高价值语义记忆
-- [ ] 增加记忆容量预算：对语义记忆设置字符/条目上限，避免无限追加
-- [ ] 增加重复与近重复检测：同类记忆优先合并而不是新增
-- [ ] 增加蒸馏元数据：`distilled_from`、`source_layer`、`confidence`、`last_verified`
-- [ ] 为归档、提升、蒸馏补边界测试，尤其是索引同步移除和幂等性
+- [x] 设计 `distill_memories()`：从工作/情景记忆中提炼高价值语义记忆
+- [x] 增加记忆容量预算：对语义记忆设置字符/条目上限，避免无限追加
+- [x] 增加重复与近重复检测：同类记忆优先合并而不是新增
+- [x] 增加蒸馏元数据：`distilled_from`、`source_layer`、`confidence`、`last_verified`
+- [x] 为归档、提升、蒸馏补边界测试，尤其是索引同步移除和幂等性
 
 **参考 Hermes 的取舍**:
 - 借鉴 frozen snapshot / bounded curated memory 思路，避免每次都把无限记忆塞进 prompt

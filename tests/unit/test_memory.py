@@ -147,6 +147,39 @@ class TestSemanticMemory:
         assert semantic.hybrid_retriever.embedding_model == "test-model"
         assert semantic.hybrid_retriever.api_key == "test-key"
 
+    def test_near_duplicate_semantic_memory_merges(self, temp_memory_dir):
+        """测试近重复语义记忆合并"""
+        semantic = SemanticMemory(
+            storage_dir=f"{temp_memory_dir}/semantic",
+            similarity_threshold=0.5
+        )
+
+        semantic.save("first", "用户要求使用中文回复，并保持简洁清晰", {"type": "distilled_semantic", "distilled_from": "s1"})
+        semantic.save("second", "用户要求使用中文回复，保持简洁清晰", {"type": "distilled_semantic", "distilled_from": "s2"})
+
+        files = list((Path(temp_memory_dir) / "semantic").glob("*.md"))
+        memory = semantic.load("first")
+        assert len(files) == 1
+        assert "s1" in memory["metadata"]["distilled_from"]
+        assert "s2" in memory["metadata"]["distilled_from"]
+
+    def test_cleanup_removes_index_entries_and_keeps_preferences(self, temp_memory_dir):
+        """测试容量清理同步索引并优先保留用户偏好"""
+        semantic = SemanticMemory(
+            storage_dir=f"{temp_memory_dir}/semantic",
+            max_entries=2,
+            max_chars=1000
+        )
+
+        semantic.save("old", "旧知识 Python", {"type": "semantic"})
+        semantic.save("pref", "用户偏好 中文", {"type": "user_preference"})
+        semantic.save("new", "新知识 Rust", {"type": "semantic"})
+
+        files = {f.stem for f in (Path(temp_memory_dir) / "semantic").glob("*.md")}
+        assert "pref" in files
+        assert "old" not in files
+        assert "old" not in semantic.index.search(["Python"])
+
 
 @pytest.mark.unit
 class TestMemoryManager:
@@ -249,6 +282,52 @@ class TestMemoryManager:
 
         result = mm._run_lifecycle_hook("on_memory_write", "action", "target", "content")
         assert result is None
+
+    def test_distill_memories_from_working_memory(self, temp_memory_dir):
+        """测试从工作记忆蒸馏语义记忆"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "用户要求后续回复必须使用中文，并保持简洁清晰")
+
+        distilled = mm.distill_memories(user_id="default")
+
+        files = list((Path(temp_memory_dir) / "semantic").glob("distilled_*.md"))
+        memory = mm.semantic.load(files[0].stem)
+        assert distilled == 1
+        assert memory["metadata"]["type"] == "distilled_semantic"
+        assert memory["metadata"]["distilled_from"] == "session_1"
+        assert memory["metadata"]["source_layer"] == "working"
+        assert "confidence" in memory["metadata"]
+        assert "last_verified" in memory["metadata"]
+        assert memory["metadata"]["source_count"] == "1"
+
+    def test_distill_memories_skips_low_value_summary(self, temp_memory_dir):
+        """测试低价值摘要不进入语义记忆"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "你好")
+
+        distilled = mm.distill_memories(user_id="default")
+
+        assert distilled == 0
+        assert list((Path(temp_memory_dir) / "semantic").glob("distilled_*.md")) == []
+
+    def test_distill_memories_is_idempotent(self, temp_memory_dir):
+        """测试重复蒸馏不新增重复语义记忆"""
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "决定采用轻量启发式记忆蒸馏，不引入新依赖")
+
+        mm.distill_memories(user_id="default")
+        mm.distill_memories(user_id="default")
+
+        assert len(list((Path(temp_memory_dir) / "semantic").glob("distilled_*.md"))) == 1
 
 
 @pytest.mark.unit

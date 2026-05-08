@@ -278,8 +278,13 @@ class LightHermes:
         if memory_enabled:
             memory_config = config.get("memory", {})
             hybrid_config = memory_config.get("hybrid_retrieval", {})
+            retention_config = memory_config.get("retention", {})
             self.memory = MemoryManager(
                 memory_dir=memory_dir,
+                semantic_max_entries=retention_config.get("semantic_max_entries", 1000),
+                semantic_max_chars=retention_config.get("semantic_max_chars", 200000),
+                semantic_similarity_threshold=retention_config.get("semantic_similarity_threshold", 0.85),
+                distill_recent_limit=retention_config.get("distill_recent_limit", 20),
                 use_hybrid_retrieval=hybrid_config.get("enabled", False),
                 embedding_provider=hybrid_config.get("provider", embedding_provider),
                 embedding_model=hybrid_config.get("model", embedding_model),

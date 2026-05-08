@@ -102,6 +102,11 @@ memory:
     provider: local
     model: test-embedding
     api_key: test-key
+  retention:
+    semantic_max_entries: 123
+    semantic_max_chars: 4567
+    semantic_similarity_threshold: 0.75
+    distill_recent_limit: 8
 context_compression:
   enabled: false
 """)
@@ -130,6 +135,10 @@ context_compression:
         assert agent.memory.kwargs["embedding_provider"] == "local"
         assert agent.memory.kwargs["embedding_model"] == "test-embedding"
         assert agent.memory.kwargs["api_key"] == "test-key"
+        assert agent.memory.kwargs["semantic_max_entries"] == 123
+        assert agent.memory.kwargs["semantic_max_chars"] == 4567
+        assert agent.memory.kwargs["semantic_similarity_threshold"] == 0.75
+        assert agent.memory.kwargs["distill_recent_limit"] == 8
 
     def test_non_openai_provider_reuses_adapter_for_evolution(self, temp_memory_dir, monkeypatch):
         """测试非 OpenAI provider 不再要求额外 OPENAI_API_KEY"""
