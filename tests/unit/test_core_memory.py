@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from lighthermes.core import LightHermes
+from lighthermes.core import LightHermes, SkillLoader
 from lighthermes.memory import MemoryManager
 
 
@@ -21,6 +21,67 @@ class FakeResponse:
     def __init__(self, content):
         self.choices = [FakeChoice(content)]
         self.usage = {"total_tokens": 3}
+
+
+@pytest.mark.unit
+class TestSkillLoaderFailureReports:
+    """测试失败报告召回"""
+
+    def test_failure_report_is_not_matched_as_skill(self):
+        loader = SkillLoader([])
+        loader.skills = {
+            "bad_config": {
+                "name": "bad_config",
+                "description": "配置失败报告",
+                "type": "failure_report",
+                "trigger": "auto",
+                "content": "不要忽略配置错误",
+                "metadata": {"type": "failure_report", "task_type": "配置"}
+            }
+        }
+
+        assert loader.match_skill("配置错误") is None
+        assert loader.match_skill("/bad_config") is None
+
+    def test_recall_failure_reports_by_task_type_and_query(self):
+        loader = SkillLoader([])
+        loader.skills = {
+            "bad_config": {
+                "name": "bad_config",
+                "description": "配置失败报告",
+                "type": "failure_report",
+                "trigger": "auto",
+                "content": "不要忽略 API key 配置错误，先验证配置",
+                "metadata": {"type": "failure_report", "task_type": "配置"}
+            },
+            "bad_debug": {
+                "name": "bad_debug",
+                "description": "调试失败报告",
+                "type": "failure_report",
+                "trigger": "auto",
+                "content": "不要盲目修复报错",
+                "metadata": {"type": "failure_report", "task_type": "调试"}
+            }
+        }
+
+        reports = loader.recall_failure_reports("配置 API key 报错", "配置")
+
+        assert reports[0]["name"] == "bad_config"
+
+    def test_unrelated_failure_report_is_not_recalled(self):
+        loader = SkillLoader([])
+        loader.skills = {
+            "bad_config": {
+                "name": "bad_config",
+                "description": "配置失败报告",
+                "type": "failure_report",
+                "trigger": "auto",
+                "content": "不要忽略 API key 配置错误",
+                "metadata": {"type": "failure_report", "task_type": "配置"}
+            }
+        }
+
+        assert loader.recall_failure_reports("解释 Python 生成器", "解释") == []
 
 
 @pytest.mark.unit
@@ -165,6 +226,68 @@ context_compression:
         assert agent.evolution_enabled is True
         assert isinstance(agent.evolution.kwargs["client"], FakeAdapter)
         assert agent.evolution.kwargs["model"] == "claude-sonnet-4-6"
+
+    def test_run_injects_failure_report_warning(self, temp_memory_dir):
+        """测试 run 注入失败报告风险提示"""
+        captured = {}
+
+        class FakeMemory:
+            memory_dir = temp_memory_dir
+
+            def on_turn_start(self, query, user_id="default", session_id=""):
+                return ""
+
+            def on_turn_end(self, user_content, assistant_content, user_id="default", session_id=""):
+                pass
+
+            def get_context(self):
+                return []
+
+            def add_message(self, role, content):
+                pass
+
+        class FakeSkillLoader:
+            def match_skill(self, query):
+                return None
+
+            def recall_failure_reports(self, query, task_type, limit=2):
+                return [{
+                    "name": "bad_config",
+                    "description": "不要忽略 API key 配置错误",
+                    "content": "先验证配置再继续"
+                }]
+
+        def fake_call_api(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return FakeResponse("测试回复")
+
+        agent = LightHermes.__new__(LightHermes)
+        agent.name = "test-agent"
+        agent.role = "你是测试助手"
+        agent.model = "gpt-4o-mini"
+        agent.memory_enabled = True
+        agent.memory = FakeMemory()
+        agent.skill_loader = FakeSkillLoader()
+        agent.compression_enabled = False
+        agent.compressor = None
+        agent.context_window = 128000
+        agent.tool_dispatcher = type("ToolDispatcher", (), {"get_tool_schemas": lambda self: []})()
+        agent.evolution_enabled = False
+        agent.evolution = None
+        agent.query_count = 0
+        agent.total_tokens_used = 0
+        agent.api_call_count = 0
+        agent.debug = False
+        agent.logger = type("Logger", (), {"warning": lambda *args, **kwargs: None, "info": lambda *args, **kwargs: None})()
+        agent._call_api_with_fallback = fake_call_api
+        agent._should_extract_memory = lambda query: False
+
+        reply = agent.run("配置 API key 报错", user_id="user_1", session_id="session_1")
+
+        system_prompt = captured["messages"][0]["content"]
+        assert reply == "测试回复"
+        assert "执行前风险提示" in system_prompt
+        assert "不要忽略 API key 配置错误" in system_prompt
 
     def test_run_uses_memory_lifecycle_hooks(self, temp_memory_dir):
         """测试 run 接入记忆生命周期钩子"""

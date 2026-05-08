@@ -603,8 +603,15 @@ class SemanticMemory:
         metadata = memory.get("metadata", {})
         metadata["last_accessed"] = datetime.now().isoformat()
         metadata["access_count"] = int(metadata.get("access_count", 0)) + 1
+        self._write_metadata_only(name, memory["content"], metadata)
 
-        self.save(name, memory["content"], metadata)
+    def _write_metadata_only(self, name: str, content: str, metadata: Dict[str, Any]):
+        frontmatter = "---\n"
+        for key, value in metadata.items():
+            frontmatter += f"{key}: {value}\n"
+        frontmatter += "---\n\n"
+        file_path = self.storage_dir / f"{name}.md"
+        file_path.write_text(frontmatter + content, encoding="utf-8")
 
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """搜索语义记忆 - 自动选择最佳检索方式"""
@@ -635,6 +642,16 @@ class SemanticMemory:
         # 如果索引没有结果，回退到全扫描
         if not candidate_names:
             candidate_names = {f.stem for f in self.storage_dir.glob("*.md")}
+
+        max_candidates = max(limit * 20, 50)
+        if len(candidate_names) > max_candidates:
+            candidate_files = [
+                self.storage_dir / f"{name}.md"
+                for name in candidate_names
+                if (self.storage_dir / f"{name}.md").exists()
+            ]
+            candidate_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            candidate_names = {f.stem for f in candidate_files[:max_candidates]}
 
         results = []
         # 使用相同的分词逻辑

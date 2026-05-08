@@ -100,7 +100,10 @@ class SkillLoader:
         """匹配技能 - 简单的关键词匹配"""
         if query.startswith("/"):
             skill_name = query[1:]
-            return self.skills.get(skill_name)
+            skill = self.skills.get(skill_name)
+            if skill and skill.get("metadata", {}).get("type", "skill") == "skill":
+                return skill
+            return None
 
         query_lower = query.lower()
         query_words = set(query_lower.split())
@@ -109,6 +112,8 @@ class SkillLoader:
         best_score = 0
 
         for skill in self.skills.values():
+            if skill.get("metadata", {}).get("type", "skill") != "skill":
+                continue
             if skill["trigger"] != "auto":
                 continue
 
@@ -125,6 +130,52 @@ class SkillLoader:
                 best_match = skill
 
         return best_match if best_score > 2 else None
+
+    def get_failure_reports(self) -> List[Dict[str, Any]]:
+        """获取失败报告"""
+        return [
+            skill for skill in self.skills.values()
+            if skill.get("metadata", {}).get("type") == "failure_report"
+        ]
+
+    def _tokenize_for_match(self, text: str) -> set:
+        text = text.lower()
+        tokens = set(text.split())
+        tokens.update(char for char in text if '一' <= char <= '鿿')
+        return {token for token in tokens if token.strip()}
+
+    def _score_failure_report(self, report: Dict[str, Any], query_tokens: set, task_type: str) -> int:
+        metadata = report.get("metadata", {})
+        score = 0
+        if metadata.get("task_type") == task_type:
+            score += 4
+
+        searchable = " ".join([
+            report.get("name", ""),
+            report.get("description", ""),
+            report.get("content", "")
+        ])
+        report_tokens = self._tokenize_for_match(searchable)
+        matches = len(query_tokens & report_tokens)
+        score += matches
+
+        if metadata.get("task_type") != task_type and matches < 2:
+            return 0
+        return score
+
+    def recall_failure_reports(self, query: str, task_type: str, limit: int = 2) -> List[Dict[str, Any]]:
+        """按任务类型和关键词召回失败报告"""
+        query_tokens = self._tokenize_for_match(query)
+        scored = []
+        for report in self.get_failure_reports():
+            score = self._score_failure_report(report, query_tokens, task_type)
+            if score > 0:
+                report = dict(report)
+                report["score"] = score
+                scored.append(report)
+
+        scored.sort(key=lambda item: item["score"], reverse=True)
+        return scored[:limit]
 
     def get_all_skills(self) -> List[Dict[str, Any]]:
         """获取所有技能"""
@@ -527,6 +578,24 @@ class LightHermes:
 
         return "通用"
 
+    def _build_failure_report_warning(self, query: str, task_type: str, limit: int = 2) -> str:
+        """构建执行前失败风险提示"""
+        if not hasattr(self.skill_loader, "recall_failure_reports"):
+            return ""
+
+        reports = self.skill_loader.recall_failure_reports(query, task_type, limit=limit)
+        if not reports:
+            return ""
+
+        lines = ["## 执行前风险提示", "以下是相关失败经验，仅作为风险提示，不要阻断执行："]
+        for report in reports:
+            name = report.get("name", "failure_report")
+            description = report.get("description", "")
+            content = " ".join(report.get("content", "").split())[:200]
+            warning = description or content
+            lines.append(f"- {name}: {warning}")
+        return "\n".join(lines)
+
     def run(
         self,
         query: str,
@@ -555,11 +624,17 @@ class LightHermes:
                 user_content = user_path.read_text(encoding="utf-8")
                 system_prompt += f"\n\n## 用户偏好\n{user_content}"
 
+        task_type = self._classify_task(query)
+
         matched_skill = self.skill_loader.match_skill(query)
         if matched_skill:
             system_prompt += f"\n\n## 当前任务指导\n{matched_skill['content']}"
             if self.debug:
                 print(f"[使用技能: {matched_skill['name']}]")
+
+        failure_warning = self._build_failure_report_warning(query, task_type)
+        if failure_warning:
+            system_prompt += f"\n\n{failure_warning}"
 
         recalled_context = self._run_memory_hook(
             "on_turn_start",
