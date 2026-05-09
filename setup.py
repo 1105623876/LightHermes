@@ -2,13 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name="lighthermes",
-    version="0.1.0",
+    version="0.3.2",
     description="轻量级自进化智能体框架",
     author="LightHermes Team",
     packages=find_packages(),
     install_requires=[
         "openai>=1.0.0",
         "pyyaml>=6.0",
+        "anthropic>=0.18.0",
     ],
     extras_require={
         "local": ["sentence-transformers>=2.0.0"],

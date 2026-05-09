@@ -101,7 +101,7 @@ class CLI:
             return
 
         self._print("╭─────────────────────────────────────╮", "cyan", "bright")
-        self._print("│  LightHermes v0.2.0                │", "cyan", "bright")
+        self._print("│  LightHermes v0.3.2                │", "cyan", "bright")
         self._print("│  轻量级自进化智能体框架              │", "cyan", "bright")
         self._print("╰─────────────────────────────────────╯", "cyan", "bright")
         print()
