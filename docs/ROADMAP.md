@@ -133,15 +133,16 @@
 
 ### 2.4 轻量 agent/tool/skill/channel 架构借鉴
 **优先级**: 中
-**工作量**: 4-6 小时
+**状态**: 已完成首轮边界收敛
 
 **目标**: 参考 nanobot 的轻量架构边界，但不直接整体集成。
 
-**关注点**:
-- agent：主循环只负责编排，状态、工具、技能、通道尽量分层
-- tool：统一 schema、注册和调用错误格式，减少 `core.py` 内聚合逻辑
-- skill：保留 Markdown skill 优先，增强 frontmatter、平台/触发条件和加载规则
-- channel：预留 CLI/API/消息通道边界，但 v0.4.0 不急着实现完整多通道
+**已完成**:
+- [x] tool：拆出 `lighthermes/tools.py`，统一工具装饰器、注册和调用边界
+- [x] skill：拆出 `lighthermes/skills.py`，保留 Markdown skill 优先和失败报告召回能力
+- [x] hook：新增 `lighthermes/hooks.py`，封装生命周期钩子的安全调用
+- [x] channel：新增 `lighthermes/channels.py`，预留直接消息通道边界但不接入复杂 bus
+- [x] `core.py` 保持主循环和兼容门面，不移动 `LightHermes`，不破坏现有导入路径
 
 **实施策略**:
 - 先做接口边界和目录职责收敛
