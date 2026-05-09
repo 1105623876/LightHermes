@@ -1,7 +1,7 @@
 # LightHermes 项目状态
 
 **最后更新**: 2026-05-09
-**版本**: v0.3.2（Phase 2 起步）
+**版本**: v0.3.2（Phase 2.4 首轮完成）
 **状态**: 稳定可用，测试基线通过
 
 ## 核心指标
@@ -34,7 +34,14 @@
 - `failure_report` 会按任务类型和关键词召回，并在执行前注入简短非阻断风险提示
 - 生成后的 `failure_report` 会优先沉淀到情景记忆，后续可由蒸馏机制进入语义记忆
 
-### 4) 测试体系
+### 4) 轻量架构边界收敛
+- `tool` 装饰器与 `ToolDispatcher` 已拆到 `lighthermes/tools.py`
+- `SkillLoader` 已拆到 `lighthermes/skills.py`，继续支持 Markdown 技能和 `failure_report` 召回
+- 生命周期钩子的安全调用已收敛到 `lighthermes/hooks.py`
+- `lighthermes/channels.py` 预留 `ChannelMessage` / `DirectChannel`，暂不引入复杂 channel bus
+- `core.py` 保持 `LightHermes` 主循环和兼容门面，避免破坏既有导入与测试 monkeypatch
+
+### 5) 测试体系
 - 已形成单元/集成/性能测试分层
 - 覆盖模块包括 memory / adapters / evolution / compressor / CLI / performance
 - 全量基线稳定（84 项）
@@ -59,7 +66,7 @@
 ## 下一步建议（按优先级）
 
 1. 继续优化 `distill_memories()` 的稳定事实筛选策略
-2. 借鉴 nanobot 的轻量 agent/tool/skill/channel 架构，先收敛边界，不直接整体集成
+2. 评估是否继续拆分 prompt/runner/config 边界，保持小步低风险推进
 3. 若准备发版，增加一轮真实 API smoke test（OpenAI/Anthropic 任一）
 
 ## 参考文档

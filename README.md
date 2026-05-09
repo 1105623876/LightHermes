@@ -126,8 +126,12 @@ LightHermes/
 
 LightHermes 的核心设计是“少量模块 + 清晰边界”：
 
-- `LightHermes` 主引擎负责对话循环、工具调度、记忆注入、上下文压缩和自进化触发。
+- `LightHermes` 主引擎负责对话循环、记忆注入、上下文压缩和自进化触发，并保留兼容导入门面。
+- `ToolDispatcher` 与 `tool` 位于 `lighthermes/tools.py`，统一工具装饰、注册和调用边界。
+- `SkillLoader` 位于 `lighthermes/skills.py`，负责 Markdown 技能加载、自动匹配和 `failure_report` 召回。
 - `MemoryManager` 管理四级记忆，并统一对外提供保存、召回、迁移、生命周期钩子和统计接口。
+- `call_hook_safely` 位于 `lighthermes/hooks.py`，隔离生命周期钩子异常，避免辅助能力阻断主流程。
+- `ChannelMessage` / `DirectChannel` 位于 `lighthermes/channels.py`，预留 CLI/API/消息平台的轻量通道边界。
 - `ContextCompressor` 在上下文接近窗口上限时压缩中间对话，保留开头设定和最近消息。
 - `EvolutionEngine` 记录会话轨迹，分析高质量成功模式和失败模式，生成可复用技能。
 - `BaseAdapter` 统一不同模型供应商的调用方式，核心逻辑不直接绑定 OpenAI/Anthropic SDK。
@@ -212,7 +216,7 @@ model:
 
 ## 开发状态
 
-**v0.3.2 + Phase 2 起步** ✅ 记忆生命周期、蒸馏治理与自进化质量控制完成
+**v0.3.2 + Phase 2.4 首轮完成** ✅ 记忆生命周期、蒸馏治理、自进化质量控制与轻量架构边界收敛完成
 
 - ✅ 上下文压缩系统（智能压缩长对话）
 - ✅ 记忆层级迁移（访问追踪、自动归档、高频提升）
@@ -229,6 +233,7 @@ model:
 - ✅ **自进化成功质量评估**（只从高质量成功轨迹中学习，避免侥幸成功污染技能生成）
 - ✅ **记忆系统四项增强**（混合检索初始化修复、配置透传、工作记忆提升、压缩摘要入库）
 - ✅ **Adapter 测试兼容性修复**（兼容新版 OpenAI SDK base_url 表示）
+- ✅ **轻量架构边界收敛**（拆出 tools/skills/hooks/channels，`core.py` 保持主循环与兼容门面）
 
 **v0.2.0** ✅ 稳定性增强完成
 
@@ -255,6 +260,14 @@ model:
 - 混合检索默认关闭；启用 OpenAI/local embedding 时需要对应 API key 或本地模型依赖
 - 记忆蒸馏当前使用轻量启发式规则，后续可继续优化稳定事实筛选和反模式检索
 
+**最近更新** (2026-05-09):
+- ✅ **轻量 agent/tool/skill/channel 边界收敛**
+  - `lighthermes/tools.py` 承载 `tool` 装饰器与 `ToolDispatcher`
+  - `lighthermes/skills.py` 承载 `SkillLoader`、Markdown 技能匹配和失败报告召回
+  - `lighthermes/hooks.py` 封装生命周期钩子的安全调用
+  - `lighthermes/channels.py` 预留 `ChannelMessage` / `DirectChannel` 轻量通道边界
+  - `core.py` 继续保留 `LightHermes` 主循环和兼容导入路径
+
 **最近更新** (2026-05-08):
 - ✅ **记忆生命周期钩子**
   - `on_turn_start()` 召回记忆并用 `<memory-context>` 安全包装
@@ -279,7 +292,7 @@ model:
 
 **改进方向**:
 - 优化 `distill_memories()` 的稳定事实筛选策略，减少启发式误判
-- 后续再收敛 tool/skill/channel 边界，避免过早引入重框架
+- 后续可继续拆分 prompt/runner/config 边界，但应保持低风险、小步推进
 - 若准备发版，增加一轮真实 API smoke test
 
 ## 对比

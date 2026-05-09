@@ -2,6 +2,14 @@
 
 ## 2026-05-09 - v0.3.2
 
+### 架构
+- ✅ 完成 Phase 2.4 首轮轻量边界收敛
+- ✅ 拆出 `lighthermes/tools.py`，统一工具装饰器、注册和调用边界
+- ✅ 拆出 `lighthermes/skills.py`，保留 Markdown 技能匹配和失败报告召回能力
+- ✅ 新增 `lighthermes/hooks.py`，封装生命周期钩子的安全调用
+- ✅ 新增 `lighthermes/channels.py`，预留轻量消息通道边界但不引入复杂 bus
+- ✅ `core.py` 保持主循环和兼容门面，继续支持既有导入路径
+
 ### 维护
 - ✅ 统一源码、打包元数据、CLI 展示和项目文档版本号为 `0.3.2`
 - ✅ 补齐 `setup.py` 中的 Anthropic 核心依赖声明
