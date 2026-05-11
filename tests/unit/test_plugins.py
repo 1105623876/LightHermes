@@ -71,6 +71,14 @@ class TestToolPluginLoader:
         with pytest.raises(ValueError, match="Plugin directory must stay inside project root"):
             loader.load_tool_plugins(dispatcher, {"dirs": ["../outside"], "enabled": ["x"]}, strict=True)
 
+    @pytest.mark.parametrize("plugin_name", ["../bad", "..\\bad", ".hidden", "bad/name"])
+    def test_unsafe_enabled_plugin_name_is_rejected(self, tmp_path, plugin_name):
+        dispatcher = ToolDispatcher()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        with pytest.raises(ValueError, match="Plugin name must be a safe file stem"):
+            loader.load_tool_plugins(dispatcher, {"dirs": ["plugins/tools"], "enabled": [plugin_name]}, strict=False)
+
     def test_load_error_is_skipped_by_default(self, tmp_path):
         write_plugin(tmp_path, "plugins/tools/bad.py", "raise RuntimeError('boom')")
         dispatcher = ToolDispatcher()

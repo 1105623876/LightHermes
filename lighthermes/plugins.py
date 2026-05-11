@@ -1,6 +1,7 @@
 """LightHermes 本地插件加载器"""
 
 import importlib.util
+import re
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Union
@@ -8,6 +9,8 @@ from typing import Any, Dict, List, Optional, Union
 
 class PluginLoader:
     """安全加载本地工具插件"""
+
+    _SAFE_PLUGIN_STEM = re.compile(r"^[A-Za-z0-9_.-]+$")
 
     def __init__(self, project_root: Union[str, Path] = ".", logger: Any = None):
         self.project_root = Path(project_root).resolve()
@@ -59,11 +62,34 @@ class PluginLoader:
         return resolved
 
     def _find_plugin_file(self, plugin_dirs: List[Path], plugin_name: str) -> Optional[Path]:
+        self._validate_plugin_name(plugin_name)
+
         for plugin_dir in plugin_dirs:
-            candidate = plugin_dir / (plugin_name + ".py")
-            if candidate.is_file():
-                return candidate
+            resolved_dir = plugin_dir.resolve()
+            candidate = resolved_dir / (plugin_name + ".py")
+            resolved_candidate = candidate.resolve()
+            try:
+                resolved_candidate.relative_to(resolved_dir)
+            except ValueError as exc:
+                raise ValueError("Plugin name must be a safe file stem") from exc
+
+            if resolved_candidate.is_file():
+                return resolved_candidate
         return None
+
+    def _validate_plugin_name(self, plugin_name: str) -> None:
+        if not plugin_name:
+            raise ValueError("Plugin name must be a safe file stem")
+        if "/" in plugin_name or "\\" in plugin_name:
+            raise ValueError("Plugin name must be a safe file stem")
+        if ".." in plugin_name:
+            raise ValueError("Plugin name must be a safe file stem")
+        if plugin_name.startswith("."):
+            raise ValueError("Plugin name must be a safe file stem")
+        if Path(plugin_name).is_absolute():
+            raise ValueError("Plugin name must be a safe file stem")
+        if not self._SAFE_PLUGIN_STEM.fullmatch(plugin_name):
+            raise ValueError("Plugin name must be a safe file stem")
 
     def _import_plugin_module(self, plugin_name: str, plugin_file: Path) -> ModuleType:
         module_name = "lighthermes_plugin_tool_" + plugin_name
