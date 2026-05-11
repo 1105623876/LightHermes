@@ -37,7 +37,7 @@ class PluginLoader:
                 if plugin_file is None:
                     continue
 
-                module = self._import_plugin_module(str(name), plugin_file)
+                module = self._import_plugin_module(str(name), plugin_file, kind="tool")
                 self._register_module_tools(module, dispatcher)
                 loaded.append(str(name))
             except Exception as exc:
@@ -45,6 +45,38 @@ class PluginLoader:
                     raise
                 if self.logger and hasattr(self.logger, "warning"):
                     self.logger.warning("Skip tool plugin %s: %s", name, exc)
+
+        return loaded
+
+    def load_channel_plugins(
+        self,
+        registry: Any,
+        config: Optional[Dict[str, Any]],
+        strict: bool = False,
+    ) -> List[str]:
+        plugin_config = config or {}
+        enabled = list(plugin_config.get("enabled") or [])
+        if not enabled:
+            return []
+
+        dirs = list(plugin_config.get("dirs") or [])
+        plugin_dirs = [self._resolve_plugin_dir(item) for item in dirs]
+
+        loaded: List[str] = []
+        for name in enabled:
+            try:
+                plugin_file = self._find_plugin_file(plugin_dirs, str(name))
+                if plugin_file is None:
+                    continue
+
+                module = self._import_plugin_module(str(name), plugin_file, kind="channel")
+                self._register_channel_module(registry, module)
+                loaded.append(str(name))
+            except Exception as exc:
+                if strict:
+                    raise
+                if self.logger and hasattr(self.logger, "warning"):
+                    self.logger.warning("Skip channel plugin %s: %s", name, exc)
 
         return loaded
 
@@ -91,8 +123,8 @@ class PluginLoader:
         if not self._SAFE_PLUGIN_STEM.fullmatch(plugin_name):
             raise ValueError("Plugin name must be a safe file stem")
 
-    def _import_plugin_module(self, plugin_name: str, plugin_file: Path) -> ModuleType:
-        module_name = "lighthermes_plugin_tool_" + plugin_name
+    def _import_plugin_module(self, plugin_name: str, plugin_file: Path, kind: str = "tool") -> ModuleType:
+        module_name = f"lighthermes_plugin_{kind}_{plugin_name}"
         spec = importlib.util.spec_from_file_location(module_name, plugin_file)
         if spec is None or spec.loader is None:
             raise ImportError("Cannot load plugin module: " + str(plugin_file))
@@ -114,3 +146,13 @@ class PluginLoader:
 
         if tools:
             dispatcher.register_tools(tools)
+
+    def _register_channel_module(self, registry: Any, module: ModuleType) -> None:
+        register_channels = getattr(module, "register_channels", None)
+        if callable(register_channels):
+            register_channels(registry)
+            return
+
+        channel = getattr(module, "channel", None)
+        if channel is not None:
+            registry.register(channel)

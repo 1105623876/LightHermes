@@ -4,6 +4,7 @@ import textwrap
 
 import pytest
 
+from lighthermes.channels import ChannelRegistry
 from lighthermes.plugins import PluginLoader
 from lighthermes.tools import ToolDispatcher
 
@@ -135,3 +136,45 @@ class TestToolPluginLoader:
 
         with pytest.raises(RuntimeError, match="boom"):
             loader.load_tool_plugins(dispatcher, {"dirs": ["plugins/tools"], "enabled": ["bad"]}, strict=True)
+
+
+@pytest.mark.unit
+class TestChannelPluginLoader:
+    def test_enabled_channel_plugin_registers_channel_object(self, tmp_path):
+        write_plugin(tmp_path, "plugins/channels/local_debug.py", """
+            from lighthermes.channels import DirectChannel
+
+            channel = DirectChannel(name="local_debug")
+        """)
+        registry = ChannelRegistry()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loader.load_channel_plugins(registry, {"dirs": ["plugins/channels"], "enabled": ["local_debug"]}, strict=False)
+
+        assert registry.get("local_debug") is not None
+        assert registry.list_channels() == ["local_debug"]
+
+    def test_register_channels_function_takes_precedence(self, tmp_path):
+        write_plugin(tmp_path, "plugins/channels/mixed.py", """
+            from lighthermes.channels import DirectChannel
+
+            channel = DirectChannel(name="object_channel")
+
+            def register_channels(registry):
+                registry.register(DirectChannel(name="manual_channel"))
+        """)
+        registry = ChannelRegistry()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loader.load_channel_plugins(registry, {"dirs": ["plugins/channels"], "enabled": ["mixed"]}, strict=False)
+
+        assert registry.list_channels() == ["manual_channel"]
+
+    def test_disabled_channel_plugin_is_not_imported(self, tmp_path):
+        write_plugin(tmp_path, "plugins/channels/bad.py", "raise RuntimeError('imported')")
+        registry = ChannelRegistry()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loader.load_channel_plugins(registry, {"dirs": ["plugins/channels"], "enabled": []}, strict=False)
+
+        assert registry.list_channels() == []
