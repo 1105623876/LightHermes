@@ -248,9 +248,17 @@ class LightHermes:
 
     def _should_extract_memory(self, query: str) -> bool:
         """检测用户是否要求记住某些信息"""
-        query_lower = query.lower()
-        memory_keywords = ["记住", "记得", "记一下", "保存", "remember", "save", "记录"]
-        return any(kw in query_lower for kw in memory_keywords)
+        query_lower = query.lower().strip()
+        memory_questions = [
+            "记得什么", "还记得", "记得我", "记忆", "remember about", "what do you remember"
+        ]
+        if any(kw in query_lower for kw in memory_questions):
+            return False
+
+        memory_commands = [
+            "记住", "记一下", "保存", "请记得", "帮我记", "remember that", "save that", "record that"
+        ]
+        return any(kw in query_lower for kw in memory_commands)
 
     def _extract_and_save_memory(self, query: str):
         """提取并保存用户要求记住的信息到 SOUL.md 或 USER.md"""
@@ -380,6 +388,30 @@ class LightHermes:
             lines.append(f"- {name}: {warning}")
         return "\n".join(lines)
 
+    def _should_list_semantic_memories(self, query: str) -> bool:
+        query_lower = query.lower()
+        return "语义记忆" in query_lower or "semantic memory" in query_lower
+
+    def _build_semantic_memory_list(self, limit: int = 20) -> str:
+        if not (self.memory_enabled and self.memory and hasattr(self.memory, "semantic")):
+            return ""
+
+        from lighthermes.memory import parse_memory_file
+
+        lines = []
+        files = list(Path(self.memory.semantic.storage_dir).glob("*.md"))[:limit]
+        for file_path in files:
+            memory = parse_memory_file(str(file_path))
+            if not memory:
+                continue
+            content = " ".join(memory.get("content", "").split())
+            if content:
+                lines.append(f"- {file_path.stem}: {content[:300]}")
+
+        if not lines:
+            return ""
+        return "## 语义记忆清单\n以下是当前语义记忆文件中的实际内容：\n" + "\n".join(lines)
+
     def run(
         self,
         query: str,
@@ -394,6 +426,13 @@ class LightHermes:
         session_id = session_id or uuid.uuid4().hex
 
         system_prompt = f"{self.role}\n\n你的名字是 {self.name}。"
+
+        if self.memory_enabled:
+            system_prompt += (
+                "\n\n你具备 LightHermes 持久记忆能力。"
+                "当用户询问你记得什么时，应基于智能体设定、用户偏好和相关记忆回答，"
+                "不要声称每次对话都是完全独立且无法保留信息。"
+            )
 
         # 注入 SOUL.md 和 USER.md（固定记忆文件）
         if self.memory_enabled:
@@ -428,6 +467,11 @@ class LightHermes:
         )
         if recalled_context:
             system_prompt += f"\n\n## 相关记忆\n{recalled_context}"
+
+        if self._should_list_semantic_memories(query):
+            semantic_memory_list = self._build_semantic_memory_list()
+            if semantic_memory_list:
+                system_prompt += f"\n\n{semantic_memory_list}"
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -592,7 +636,10 @@ class LightHermes:
             output = ""
             tool_calls = []
 
+            response_finished = False
+
             for chunk in response:
+                response_finished = True
                 if chunk.choices and chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     output += content
@@ -651,6 +698,9 @@ class LightHermes:
 
                     response = self.client.chat.completions.create(**params)
                     break
+
+            if response_finished:
+                return
 
     def load_config(self, config_path: str = "config.yaml"):
         """从配置文件加载配置"""

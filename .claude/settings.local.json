@@ -19,7 +19,29 @@
       "WebSearch",
       "Bash(pip list *)",
       "Bash(awk '{print $2 \": \" $1}')",
-      "Bash(awk '{sum+=$1; print} END {print \"总计: \" sum \" 行\"}')"
+      "Bash(awk '{sum+=$1; print} END {print \"总计: \" sum \" 行\"}')",
+      "PowerShell(git push *)",
+      "PowerShell($env:HTTP_PROXY=\"http://127.0.0.1:7897\"; $env:HTTPS_PROXY=\"http://127.0.0.1:7897\"; .\\\\venv\\\\Scripts\\\\python.exe -m pip install --upgrade pip; if \\($?\\) { .\\\\venv\\\\Scripts\\\\python.exe -m pip install -r requirements.txt })",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_evolution.py -v)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests -v)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_adapters.py -v)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_memory.py tests\\\\unit\\\\test_core_memory.py -v)",
+      "PowerShell(python -m py_compile lighthermes\\\\memory.py lighthermes\\\\core.py tests\\\\unit\\\\test_memory.py tests\\\\unit\\\\test_core_memory.py)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_core_memory.py -v)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_compressor.py -v)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\integration\\\\test_cli.py -v)",
+      "Bash(pytest *)",
+      "Bash(D:/vibecoding/LightHermes/venv/Scripts/python.exe *)",
+      "PowerShell(venv\\\\Scripts\\\\python.exe -m pytest tests/unit/test_memory.py tests/unit/test_core_memory.py)",
+      "PowerShell(venv\\\\Scripts\\\\python.exe -m pytest tests -v)",
+      "PowerShell(Get-Location; venv\\\\Scripts\\\\python.exe -m pytest tests -v)",
+      "PowerShell(Get-Location *)",
+      "PowerShell(venv\\\\Scripts\\\\python.exe -m pytest tests/)",
+      "Skill(claude-api)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\test_stream_response.py tests\\\\unit\\\\test_core_memory.py)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_core_memory.py::TestCoreMemoryIntegration::test_run_does_not_extract_memory_for_memory_query)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests)",
+      "PowerShell(.\\\\venv\\\\Scripts\\\\python.exe -m pytest tests\\\\unit\\\\test_core_memory.py::TestCoreMemoryIntegration::test_run_stream_stops_after_response_without_finish_reason tests\\\\unit\\\\test_core_memory.py::TestCoreMemoryIntegration::test_run_injects_all_semantic_memories_for_memory_list_query)"
     ]
   }
 }

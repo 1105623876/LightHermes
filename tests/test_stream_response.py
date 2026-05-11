@@ -144,6 +144,26 @@ def test_unicode_stream():
     print(f"[PASS] Unicode 测试通过: '{full_text}'")
 
 
+def test_delta_then_cumulative_duplicate_stream():
+    """测试先增量后累积重复文本的 MiniMax 流式响应"""
+    adapter = AnthropicAdapter(model="MiniMax-M2.7", api_key="test")
+
+    mock_events = [
+        MockEvent("content_block_delta", "你好"),
+        MockEvent("content_block_delta", "，世界"),
+        MockEvent("content_block_delta", "你好，世界！"),
+    ]
+
+    result = []
+    for chunk in adapter._handle_stream(iter(mock_events)):
+        result.append(chunk.choices[0].delta.content)
+
+    full_text = "".join(result)
+    expected = "你好，世界！"
+
+    assert full_text == expected, f"期望 '{expected}'，实际 '{full_text}'"
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("流式响应处理测试")

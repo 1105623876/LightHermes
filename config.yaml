@@ -3,11 +3,11 @@
 # 模型配置
 model:
   provider: anthropic
-  model_name: claude-sonnet-4-6
+  model_name: MiniMax-M2.7
   api_key: ${ANTHROPIC_API_KEY}
   base_url: https://api.minimaxi.com/anthropic
   fallback_models:
-    - gpt-3.5-turbo  # API 失败时自动切换
+    - MiniMax-M2.5  # API 失败时自动切换
 
 # 记忆配置
 memory:
@@ -92,7 +92,7 @@ context_compression:
 cli:
   prompt_symbol: ">"
   show_banner: true
-  stream_output: false  # 暂时禁用流式输出，避免 MiniMax 重复响应问题
+  stream_output: true # minimax存在流式问题
   show_skill_usage: true
   color_enabled: true
 

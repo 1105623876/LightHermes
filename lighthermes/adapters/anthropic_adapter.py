@@ -246,23 +246,25 @@ class AnthropicAdapter(BaseAdapter):
 
     def _handle_stream(self, response) -> Generator[Any, None, None]:
         """处理流式响应，返回类 OpenAI 格式的 chunk"""
-        previous_text = ""  # 跟踪之前的累积文本
+        output_text = ""
 
         for event in response:
             if event.type == "content_block_delta":
                 if hasattr(event.delta, "text"):
                     current_text = event.delta.text
 
-                    # 计算增量文本（处理 MiniMax 返回累积文本的情况）
-                    if current_text.startswith(previous_text):
-                        # MiniMax 风格：返回累积文本，提取增量部分
-                        delta_text = current_text[len(previous_text):]
-                        previous_text = current_text
+                    if current_text.startswith(output_text):
+                        delta_text = current_text[len(output_text):]
+                    elif output_text.endswith(current_text):
+                        delta_text = ""
                     else:
-                        # 标准 Anthropic 风格：直接返回增量文本
-                        delta_text = current_text
+                        overlap = min(len(output_text), len(current_text))
+                        while overlap > 0 and not output_text.endswith(current_text[:overlap]):
+                            overlap -= 1
+                        delta_text = current_text[overlap:]
 
-                    if delta_text:  # 只在有新内容时才 yield
+                    if delta_text:
+                        output_text += delta_text
                         # 构造类 OpenAI 格式的 chunk
                         class StreamChunk:
                             def __init__(self, text):
