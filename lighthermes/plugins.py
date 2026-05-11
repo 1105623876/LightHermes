@@ -32,11 +32,11 @@ class PluginLoader:
 
         loaded: List[str] = []
         for name in enabled:
-            plugin_file = self._find_plugin_file(plugin_dirs, str(name))
-            if plugin_file is None:
-                continue
-
             try:
+                plugin_file = self._find_plugin_file(plugin_dirs, str(name))
+                if plugin_file is None:
+                    continue
+
                 module = self._import_plugin_module(str(name), plugin_file)
                 self._register_module_tools(module, dispatcher)
                 loaded.append(str(name))

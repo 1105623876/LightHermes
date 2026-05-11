@@ -72,12 +72,32 @@ class TestToolPluginLoader:
             loader.load_tool_plugins(dispatcher, {"dirs": ["../outside"], "enabled": ["x"]}, strict=True)
 
     @pytest.mark.parametrize("plugin_name", ["../bad", "..\\bad", ".hidden", "bad/name"])
-    def test_unsafe_enabled_plugin_name_is_rejected(self, tmp_path, plugin_name):
+    def test_unsafe_enabled_plugin_name_is_rejected_in_strict_mode(self, tmp_path, plugin_name):
         dispatcher = ToolDispatcher()
         loader = PluginLoader(project_root=tmp_path, logger=None)
 
         with pytest.raises(ValueError, match="Plugin name must be a safe file stem"):
-            loader.load_tool_plugins(dispatcher, {"dirs": ["plugins/tools"], "enabled": [plugin_name]}, strict=False)
+            loader.load_tool_plugins(dispatcher, {"dirs": ["plugins/tools"], "enabled": [plugin_name]}, strict=True)
+
+    def test_unsafe_enabled_plugin_name_is_skipped_in_non_strict_mode(self, tmp_path):
+        write_plugin(tmp_path, "plugins/tools/hello.py", """
+            from lighthermes import tool
+
+            @tool("hello", "Say hello", [{"name": "name", "type": "string", "description": "Name", "required": True}])
+            def hello(name):
+                return f"Hello {name}"
+        """)
+        dispatcher = ToolDispatcher()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loaded = loader.load_tool_plugins(
+            dispatcher,
+            {"dirs": ["plugins/tools"], "enabled": ["../bad", "hello"]},
+            strict=False,
+        )
+
+        assert loaded == ["hello"]
+        assert dispatcher.call_tool("hello", {"name": "Hermes"}) == "Hello Hermes"
 
     def test_load_error_is_skipped_by_default(self, tmp_path):
         write_plugin(tmp_path, "plugins/tools/bad.py", "raise RuntimeError('boom')")
