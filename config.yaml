@@ -59,6 +59,22 @@ skills:
     - skills/generated
   disabled: []
 
+# 工具配置
+# 内置文件工具默认关闭；开启后仍受 roots、敏感文件和大小限制保护
+# file_write 必须单独显式开启，不会被 file_read/file_search 隐式启用
+tools:
+  builtin:
+    enabled: true
+    memory_search: true
+    file_read: false
+    file_search: false
+    file_write: false
+    roots:
+      - .
+    max_read_chars: 20000
+    max_write_chars: 20000
+    max_search_results: 20
+
 # 插件配置
 plugins:
   dirs:

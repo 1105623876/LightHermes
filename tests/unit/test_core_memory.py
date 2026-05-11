@@ -218,6 +218,117 @@ context_compression:
         names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
         assert "search_memory" in names
 
+    def test_file_tools_are_disabled_by_default(self, temp_memory_dir, monkeypatch):
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False
+        )
+
+        names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
+        assert "read_file" not in names
+        assert "search_files" not in names
+
+    def test_file_tools_register_when_enabled_in_config(self, temp_memory_dir, monkeypatch):
+        original_exists = os.path.exists
+        original_open = open
+
+        def fake_exists(path):
+            if path == "config.yaml":
+                return True
+            return original_exists(path)
+
+        def fake_open(path, *args, **kwargs):
+            if path == "config.yaml":
+                from io import StringIO
+                return StringIO(f"""
+model:
+  fallback_models: []
+tools:
+  builtin:
+    enabled: true
+    memory_search: true
+    file_read: true
+    file_search: true
+    roots:
+      - {temp_memory_dir}
+context_compression:
+  enabled: false
+""")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("lighthermes.core.os.path.exists", fake_exists)
+        monkeypatch.setattr("builtins.open", fake_open)
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False
+        )
+
+        names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
+        assert "search_memory" in names
+        assert "read_file" in names
+        assert "search_files" in names
+        assert "write_file" not in names
+
+    def test_write_file_registers_only_when_enabled_in_config(self, temp_memory_dir, monkeypatch):
+        original_exists = os.path.exists
+        original_open = open
+
+        def fake_exists(path):
+            if path == "config.yaml":
+                return True
+            return original_exists(path)
+
+        def fake_open(path, *args, **kwargs):
+            if path == "config.yaml":
+                from io import StringIO
+                return StringIO(f"""
+model:
+  fallback_models: []
+tools:
+  builtin:
+    enabled: true
+    file_write: true
+    roots:
+      - {temp_memory_dir}
+context_compression:
+  enabled: false
+""")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("lighthermes.core.os.path.exists", fake_exists)
+        monkeypatch.setattr("builtins.open", fake_open)
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False
+        )
+
+        names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
+        assert "write_file" in names
+
     def test_memory_disabled_does_not_register_search_memory_builtin_tool(self, temp_memory_dir, monkeypatch):
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
         monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)

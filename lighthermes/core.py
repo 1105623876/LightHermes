@@ -18,7 +18,7 @@ from lighthermes.adapters import get_adapter
 from lighthermes.compressor import ContextCompressor
 from lighthermes.hooks import call_hook_safely
 from lighthermes.skills import SkillLoader
-from lighthermes.builtin_tools import create_memory_tools
+from lighthermes.builtin_tools import create_file_tools, create_memory_tools
 from lighthermes.tools import ToolDispatcher, tool
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
@@ -134,8 +134,12 @@ class LightHermes:
         self.skill_loader = SkillLoader(skill_dirs)
 
         self.tool_dispatcher = ToolDispatcher()
-        if memory_enabled and self.tool_dispatcher:
+        builtin_config = config.get("tools", {}).get("builtin", {})
+        builtin_enabled = builtin_config.get("enabled", True)
+        if builtin_enabled and memory_enabled and builtin_config.get("memory_search", True) and self.tool_dispatcher:
             self.tool_dispatcher.register_tools(create_memory_tools(self.memory))
+        if builtin_enabled and self.tool_dispatcher:
+            self.tool_dispatcher.register_tools(create_file_tools(builtin_config))
         if tools and self.tool_dispatcher:
             for tool in tools:
                 self.tool_dispatcher.register_tool(tool)
