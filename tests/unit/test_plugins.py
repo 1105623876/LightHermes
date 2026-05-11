@@ -99,6 +99,26 @@ class TestToolPluginLoader:
         assert loaded == ["hello"]
         assert dispatcher.call_tool("hello", {"name": "Hermes"}) == "Hello Hermes"
 
+    def test_missing_enabled_plugin_is_skipped(self, tmp_path):
+        write_plugin(tmp_path, "plugins/tools/hello.py", """
+            from lighthermes import tool
+
+            @tool("hello", "Say hello", [{"name": "name", "type": "string", "description": "Name", "required": True}])
+            def hello(name):
+                return f"Hello {name}"
+        """)
+        dispatcher = ToolDispatcher()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loaded = loader.load_tool_plugins(
+            dispatcher,
+            {"dirs": ["plugins/tools"], "enabled": ["missing", "hello"]},
+            strict=False,
+        )
+
+        assert loaded == ["hello"]
+        assert dispatcher.call_tool("hello", {"name": "Hermes"}) == "Hello Hermes"
+
     def test_load_error_is_skipped_by_default(self, tmp_path):
         write_plugin(tmp_path, "plugins/tools/bad.py", "raise RuntimeError('boom')")
         dispatcher = ToolDispatcher()
