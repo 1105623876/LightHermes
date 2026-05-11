@@ -35,6 +35,10 @@ class ToolDispatcher:
         tool_name = tool_info["tool_name"]
 
         self.tools[tool_name] = func
+        self.tool_schemas = [
+            schema for schema in self.tool_schemas
+            if schema["function"]["name"] != tool_name
+        ]
 
         tool_params = {}
         tool_required = []
@@ -61,6 +65,10 @@ class ToolDispatcher:
 
         self.tool_schemas.append(tool_schema)
         return True
+
+    def register_tools(self, funcs: List[Callable]) -> int:
+        """批量注册工具"""
+        return sum(1 for func in funcs if self.register_tool(func))
 
     def call_tool(self, tool_name: str, args: Dict[str, Any]) -> str:
         """调用工具"""

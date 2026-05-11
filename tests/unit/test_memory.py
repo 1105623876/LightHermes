@@ -209,6 +209,47 @@ class TestMemoryManager:
         result = mm.recall("Python编程")
         assert "Python" in result or "python" in result
 
+    def test_recall_items_returns_structured_sources(self, temp_memory_dir):
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_session("session_1", "default", "用户决定使用结构化记忆召回")
+        mm.save_episodic("task_memory", "实现 search_memory 工具", {"type": "task"})
+        mm.save_semantic("pref_memory", "用户偏好中文回复", {"type": "user_preference"})
+
+        items = mm.recall_items("记忆 工具 中文", user_id="default", limit=5)
+
+        assert {item["layer"] for item in items} == {"working", "episodic", "semantic"}
+        assert all({"name", "content", "score", "priority", "metadata", "source"} <= item.keys() for item in items)
+        assert items[0]["priority"] >= items[-1]["priority"]
+
+    def test_search_memory_filters_layer_and_metadata(self, temp_memory_dir):
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_episodic("task_memory", "实现 search_memory 工具", {"type": "task"})
+        mm.save_semantic("pref_memory", "用户偏好中文回复", {"type": "user_preference", "key": "language"})
+
+        results = mm.search_memory("中文", layer="semantic", limit=5, include_metadata=True)
+
+        assert len(results) == 1
+        assert results[0]["layer"] == "semantic"
+        assert results[0]["name"] == "pref_memory"
+        assert results[0]["metadata"]["key"] == "language"
+
+    def test_on_turn_start_marks_memory_sources(self, temp_memory_dir):
+        mm = MemoryManager(
+            memory_dir=temp_memory_dir,
+            use_hybrid_retrieval=False
+        )
+        mm.save_semantic("python", "Python 是一种编程语言")
+
+        context = mm.on_turn_start("Python", user_id="default", session_id="session_1")
+
+        assert "[semantic:python score=" in context
+
     def test_promote_working_memory_to_episodic(self, temp_memory_dir):
         """测试工作记忆提升为情景记忆"""
         mm = MemoryManager(

@@ -8,6 +8,7 @@ import json
 import os
 import yaml
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Generator, Union
 
@@ -17,6 +18,7 @@ from lighthermes.adapters import get_adapter
 from lighthermes.compressor import ContextCompressor
 from lighthermes.hooks import call_hook_safely
 from lighthermes.skills import SkillLoader
+from lighthermes.builtin_tools import create_memory_tools
 from lighthermes.tools import ToolDispatcher, tool
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
@@ -132,7 +134,9 @@ class LightHermes:
         self.skill_loader = SkillLoader(skill_dirs)
 
         self.tool_dispatcher = ToolDispatcher()
-        if tools:
+        if memory_enabled and self.tool_dispatcher:
+            self.tool_dispatcher.register_tools(create_memory_tools(self.memory))
+        if tools and self.tool_dispatcher:
             for tool in tools:
                 self.tool_dispatcher.register_tool(tool)
 
@@ -393,20 +397,15 @@ class LightHermes:
         return "语义记忆" in query_lower or "semantic memory" in query_lower
 
     def _build_semantic_memory_list(self, limit: int = 20) -> str:
-        if not (self.memory_enabled and self.memory and hasattr(self.memory, "semantic")):
+        if not (self.memory_enabled and self.memory and hasattr(self.memory, "search_memory")):
             return ""
 
-        from lighthermes.memory import parse_memory_file
-
         lines = []
-        files = list(Path(self.memory.semantic.storage_dir).glob("*.md"))[:limit]
-        for file_path in files:
-            memory = parse_memory_file(str(file_path))
-            if not memory:
-                continue
+        memories = self.memory.search_memory("", layer="semantic", limit=limit)
+        for memory in memories:
             content = " ".join(memory.get("content", "").split())
             if content:
-                lines.append(f"- {file_path.stem}: {content[:300]}")
+                lines.append(f"- {memory.get('name', 'unknown')}: {content[:300]}")
 
         if not lines:
             return ""

@@ -201,6 +201,67 @@ context_compression:
         assert agent.memory.kwargs["semantic_similarity_threshold"] == 0.75
         assert agent.memory.kwargs["distill_recent_limit"] == 8
 
+    def test_memory_enabled_registers_search_memory_builtin_tool(self, temp_memory_dir, monkeypatch):
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False
+        )
+
+        names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
+        assert "search_memory" in names
+
+    def test_memory_disabled_does_not_register_search_memory_builtin_tool(self, temp_memory_dir, monkeypatch):
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=False,
+            evolution_enabled=False
+        )
+
+        names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
+        assert "search_memory" not in names
+
+    def test_user_tool_overrides_builtin_search_memory(self, temp_memory_dir, monkeypatch):
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        from lighthermes.tools import tool
+
+        @tool("search_memory", "自定义记忆搜索", [])
+        def custom_search_memory():
+            return "custom"
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False,
+            tools=[custom_search_memory]
+        )
+
+        schemas = agent.tool_dispatcher.get_tool_schemas()
+        matching = [schema for schema in schemas if schema["function"]["name"] == "search_memory"]
+        assert len(matching) == 1
+        assert matching[0]["function"]["description"] == "自定义记忆搜索"
+        assert agent.tool_dispatcher.call_tool("search_memory", {}) == "custom"
+
     def test_non_openai_provider_reuses_adapter_for_evolution(self, temp_memory_dir, monkeypatch):
         """测试非 OpenAI provider 不再要求额外 OPENAI_API_KEY"""
         class FakeEvolutionEngine:
@@ -320,6 +381,34 @@ context_compression:
 
         assert chunks == ["测试回复"]
         assert len(calls) == 1
+
+    def test_build_semantic_memory_list_uses_search_memory(self, temp_memory_dir):
+        class FakeMemory:
+            def __init__(self):
+                self.calls = []
+
+            def search_memory(self, query, layer="all", limit=5, include_metadata=False):
+                self.calls.append({
+                    "query": query,
+                    "layer": layer,
+                    "limit": limit,
+                    "include_metadata": include_metadata,
+                })
+                return [{"layer": "semantic", "name": "pref", "content": "用户偏好中文"}]
+
+        agent = LightHermes.__new__(LightHermes)
+        agent.memory_enabled = True
+        agent.memory = FakeMemory()
+
+        result = agent._build_semantic_memory_list()
+
+        assert agent.memory.calls == [{
+            "query": "",
+            "layer": "semantic",
+            "limit": 20,
+            "include_metadata": False,
+        }]
+        assert "- pref: 用户偏好中文" in result
 
     def test_run_injects_all_semantic_memories_for_memory_list_query(self, temp_memory_dir):
         captured = {}

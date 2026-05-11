@@ -443,16 +443,13 @@ class EpisodicMemory:
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """搜索情景记忆 - 使用索引加速"""
         query_words = query.lower().split()
-
-        # 使用索引定位候选文件
         candidate_names = self.index.search(query_words)
 
-        # 如果索引没有结果，回退到全扫描
         if not candidate_names:
             candidate_names = {f.stem for f in self.storage_dir.glob("*.md")}
 
         results = []
-        query_lower = query.lower()
+        query_tokens = set(self.index._tokenize(query))
 
         for name in candidate_names:
             file_path = self.storage_dir / f"{name}.md"
@@ -460,11 +457,17 @@ class EpisodicMemory:
                 continue
 
             memory = parse_memory_file(str(file_path))
+            if not memory:
+                continue
 
-            if memory and query_lower in memory["content"].lower():
+            content_tokens = set(self.index._tokenize(memory["content"]))
+            matches = len(query_tokens & content_tokens)
+            if matches > 0:
                 memory["name"] = name
+                memory["score"] = matches
                 results.append(memory)
 
+        results.sort(key=lambda item: item.get("score", 0), reverse=True)
         return results[:limit]
 
 
@@ -864,123 +867,212 @@ class MemoryManager:
             return "\n".join(preferences)
         return ""
 
-    def recall(self, query: str, user_id: str = "default") -> str:
-        """召回相关记忆 - 优化版：排序、token预算、去重"""
+    def _make_memory_item(
+        self,
+        layer: str,
+        name: str,
+        content: str,
+        score: int = 0,
+        priority: int = 0,
+        metadata: Dict[str, Any] = None,
+        source: str = ""
+    ) -> Dict[str, Any]:
+        return {
+            "layer": layer,
+            "name": name,
+            "content": content,
+            "score": score,
+            "priority": priority,
+            "metadata": metadata or {},
+            "source": source or f"{layer}:{name}",
+        }
+
+    def recall_items(
+        self,
+        query: str,
+        user_id: str = "default",
+        layers: List[str] = None,
+        limit: int = 8,
+        max_chars: int = 2000
+    ) -> List[Dict[str, Any]]:
+        """召回结构化记忆条目"""
         import time
         start_time = time.time()
-
-        # 收集所有记忆
+        selected_layers = set(layers or ["working", "episodic", "semantic"])
         memories = []
 
-        # 1. 工作记忆
-        recent_sessions = self.working.get_recent_sessions(user_id, limit=3)
-        for session in recent_sessions[:2]:
-            memories.append({
-                "type": "working",
-                "content": f"最近对话: {session['summary']}",
-                "priority": 3  # 最高优先级
-            })
-        self.stats.record_hit("working", 1 if recent_sessions else 0, time.time() - start_time)
+        if "working" in selected_layers:
+            recent_sessions = self.working.get_recent_sessions(user_id, limit=max(limit, 3))
+            for session in recent_sessions[:limit]:
+                memories.append(self._make_memory_item(
+                    "working",
+                    session.get("session_id", "recent_session"),
+                    session.get("summary", ""),
+                    score=0,
+                    priority=3,
+                    metadata={"timestamp": session.get("timestamp", "")},
+                    source=f"working:{session.get('session_id', 'recent_session')}"
+                ))
+            self.stats.record_hit("working", len(recent_sessions), time.time() - start_time)
 
-        # 2. 情景记忆
-        episodic_results = self.episodic.search(query, limit=3)
-        for memory in episodic_results:
-            name = memory.get("name", "unknown")
-            content = memory["content"][:500]  # 扩展到500字符
-            memories.append({
-                "type": "episodic",
-                "name": name,
-                "content": f"项目/任务 {name}: {content}",
-                "priority": 2,
-                "score": memory.get("score", 0),
-                "full_content": memory["content"]
-            })
-        self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
+        if "episodic" in selected_layers:
+            episodic_results = self.episodic.search(query, limit=limit)
+            for memory in episodic_results:
+                name = memory.get("name", "unknown")
+                memories.append(self._make_memory_item(
+                    "episodic",
+                    name,
+                    memory.get("content", ""),
+                    score=memory.get("score", 0),
+                    priority=2,
+                    metadata=memory.get("metadata", {}),
+                    source=f"episodic:{name}"
+                ))
+            self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
-        # 3. 语义记忆
-        semantic_results = self.semantic.search(query, limit=3)
-        for memory in semantic_results:
-            name = memory.get("name", "unknown")
-            content = memory["content"][:500]  # 从150扩展到500字符
-            memories.append({
-                "type": "semantic",
-                "name": name,
-                "content": f"知识 {name}: {content}",
-                "priority": 1,
-                "score": memory.get("score", 0),
-                "full_content": memory["content"]
-            })
-        self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
+        if "semantic" in selected_layers:
+            semantic_results = self.semantic.search(query, limit=limit)
+            for memory in semantic_results:
+                name = memory.get("name", "unknown")
+                memories.append(self._make_memory_item(
+                    "semantic",
+                    name,
+                    memory.get("content", ""),
+                    score=memory.get("score", 0),
+                    priority=1,
+                    metadata=memory.get("metadata", {}),
+                    source=f"semantic:{name}"
+                ))
+            self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
 
-        # 去重：检查情景记忆和语义记忆的重叠
         def jaccard_similarity(text1: str, text2: str) -> float:
             words1 = set(text1.lower().split())
             words2 = set(text2.lower().split())
             if not words1 or not words2:
                 return 0.0
-            intersection = len(words1 & words2)
-            union = len(words1 | words2)
-            return intersection / union if union > 0 else 0.0
+            return len(words1 & words2) / len(words1 | words2)
 
-        # 去重逻辑
         filtered_memories = []
-        for i, mem in enumerate(memories):
-            if mem["type"] == "working":
-                filtered_memories.append(mem)
+        for memory in memories:
+            if memory["layer"] == "working":
+                filtered_memories.append(memory)
                 continue
+            if any(
+                existing["layer"] != "working" and
+                jaccard_similarity(memory["content"], existing["content"]) > 0.5
+                for existing in filtered_memories
+            ):
+                continue
+            filtered_memories.append(memory)
 
-            # 检查与已添加的记忆是否重叠
-            is_duplicate = False
-            for existing in filtered_memories:
-                if existing["type"] == "working":
-                    continue
-                sim = jaccard_similarity(
-                    mem.get("full_content", mem["content"]),
-                    existing.get("full_content", existing["content"])
-                )
-                if sim > 0.5:
-                    is_duplicate = True
-                    break
-
-            if not is_duplicate:
-                filtered_memories.append(mem)
-
-        # 按优先级和检索分数排序
         filtered_memories.sort(
-            key=lambda x: (x.get("priority", 0), x.get("score", 0)),
+            key=lambda item: (item.get("priority", 0), item.get("score", 0)),
             reverse=True
         )
 
-        # Token预算：总上限约2000字符
         total_chars = 0
-        max_chars = 2000
-        result_parts = []
-        selected_memories = []
-
-        for mem in filtered_memories:
-            content = mem["content"]
+        selected = []
+        for memory in filtered_memories:
+            content = memory["content"]
             if total_chars + len(content) > max_chars:
-                # 截断以适应预算
                 remaining = max_chars - total_chars
-                if remaining > 100:  # 至少保留100字符
-                    content = content[:remaining] + "..."
-                    result_parts.append(content)
-                    selected_memories.append(mem)
+                if remaining > 100:
+                    memory = dict(memory)
+                    memory["content"] = content[:remaining] + "..."
+                    selected.append(memory)
                 break
-            result_parts.append(content)
-            selected_memories.append(mem)
-            total_chars += len(content)
+            selected.append(memory)
+            total_chars += len(memory["content"])
+            if len(selected) >= limit:
+                break
 
-        for mem in selected_memories:
-            name = mem.get("name")
-            if not name:
-                continue
-            if mem["type"] == "episodic":
+        for memory in selected:
+            name = memory.get("name")
+            if memory["layer"] == "episodic":
                 self.episodic.update_access(name)
-            elif mem["type"] == "semantic":
+            elif memory["layer"] == "semantic":
                 self.semantic.update_access(name)
 
-        return "\n".join(result_parts) if result_parts else ""
+        return selected
+
+    def search_memory(
+        self,
+        query: str,
+        layer: str = "all",
+        limit: int = 5,
+        include_metadata: bool = False
+    ) -> List[Dict[str, Any]]:
+        """显式搜索记忆"""
+        if layer not in {"all", "working", "episodic", "semantic"}:
+            raise ValueError("layer must be one of: all, working, episodic, semantic")
+
+        layers = None if layer == "all" else [layer]
+        if query and query.strip():
+            items = self.recall_items(query, layers=layers, limit=limit, max_chars=10000)
+        else:
+            items = []
+            selected_layers = layers or ["working", "episodic", "semantic"]
+            if "working" in selected_layers:
+                for session in self.working.get_recent_sessions("default", limit=limit):
+                    items.append(self._make_memory_item(
+                        "working",
+                        session.get("session_id", "recent_session"),
+                        session.get("summary", ""),
+                        priority=3,
+                        metadata={"timestamp": session.get("timestamp", "")}
+                    ))
+            if "episodic" in selected_layers:
+                for file_path in self.episodic.storage_dir.glob("*.md"):
+                    memory = parse_memory_file(str(file_path))
+                    if memory:
+                        items.append(self._make_memory_item(
+                            "episodic",
+                            file_path.stem,
+                            memory.get("content", ""),
+                            priority=2,
+                            metadata=memory.get("metadata", {})
+                        ))
+            if "semantic" in selected_layers:
+                for file_path in self.semantic.storage_dir.glob("*.md"):
+                    memory = parse_memory_file(str(file_path))
+                    if memory:
+                        items.append(self._make_memory_item(
+                            "semantic",
+                            file_path.stem,
+                            memory.get("content", ""),
+                            priority=1,
+                            metadata=memory.get("metadata", {})
+                        ))
+            items.sort(key=lambda item: item.get("priority", 0), reverse=True)
+            items = items[:limit]
+
+        results = []
+        for item in items[:limit]:
+            result = {
+                "layer": item["layer"],
+                "name": item["name"],
+                "content": item["content"],
+                "score": item.get("score", 0),
+                "source": item.get("source", ""),
+            }
+            if include_metadata:
+                result["metadata"] = item.get("metadata", {})
+            results.append(result)
+        return results
+
+    def recall(self, query: str, user_id: str = "default") -> str:
+        """召回相关记忆 - 保留字符串兼容接口"""
+        items = self.recall_items(query, user_id=user_id, limit=8, max_chars=2000)
+        parts = []
+        for item in items:
+            name = item.get("name", "unknown")
+            score = item.get("score", 0)
+            content = item.get("content", "")
+            if item["layer"] == "working":
+                parts.append(f"[working] 最近对话: {content}")
+            else:
+                parts.append(f"[{item['layer']}:{name} score={score}] {content[:500]}")
+        return "\n".join(parts)
 
     def save_episodic(self, name: str, content: str, metadata: Dict[str, Any] = None):
         """保存情景记忆"""
