@@ -40,3 +40,53 @@ class TestToolDispatcher:
         assert dispatcher.register_tools([one, two]) == 2
         assert dispatcher.call_tool("one", {}) == "1"
         assert dispatcher.call_tool("two", {}) == "2"
+
+    def test_call_tool_rejects_non_object_args(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("lookup", "查询工具", [{"name": "query", "type": "string", "description": "查询", "required": True}])
+        def lookup(query):
+            return query
+
+        dispatcher.register_tool(lookup)
+
+        result = dispatcher.call_tool("lookup", ["not", "object"])
+
+        assert "Tool `lookup` arguments must be a JSON object" in result
+
+    def test_call_tool_rejects_missing_required_arg(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("lookup", "查询工具", [{"name": "query", "type": "string", "description": "查询", "required": True}])
+        def lookup(query):
+            return query
+
+        dispatcher.register_tool(lookup)
+
+        result = dispatcher.call_tool("lookup", {})
+
+        assert "Missing required argument `query`" in result
+
+    def test_call_tool_rejects_simple_type_mismatch(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("repeat", "重复工具", [{"name": "count", "type": "integer", "description": "次数", "required": True}])
+        def repeat(count):
+            return "x" * count
+
+        dispatcher.register_tool(repeat)
+
+        result = dispatcher.call_tool("repeat", {"count": "3"})
+
+        assert "Argument `count` must be integer" in result
+
+    def test_prepare_call_accepts_valid_arguments(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("repeat", "重复工具", [{"name": "count", "type": "integer", "description": "次数", "required": True}])
+        def repeat(count):
+            return "x" * count
+
+        dispatcher.register_tool(repeat)
+
+        assert dispatcher.call_tool("repeat", {"count": 3}) == "xxx"
