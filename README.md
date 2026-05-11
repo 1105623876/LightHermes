@@ -295,10 +295,10 @@ model:
 **已知问题**:
 - 混合检索默认关闭；启用 OpenAI/local embedding 时需要对应 API key 或本地模型依赖
 - 记忆蒸馏当前使用轻量启发式规则，后续可继续优化稳定事实筛选和反模式检索
-- 真实 API smoke test 仍依赖外部凭据，默认测试套件以 mock/离线路径为主
+- 真实 API smoke test 依赖外部凭据，默认测试套件以 mock/离线路径为主
 
 **下一步计划**:
-- **优先**: 真实 API smoke test 与发版准备，确认 OpenAI/Anthropic/MiniMax 至少一条真实链路可用
+- **优先**: 发版准备，MiniMax 真实非流式与流式 smoke test 已通过，后续发版前可再补 OpenAI/Anthropic 任一路径
 - **中优先**: 插件加载机制和工具生态补齐，继续保持默认安全关闭与最小依赖
 - **中低优先**: 记忆系统性能优化（缓存、批量操作、索引优化评估）
 - **低优先**: 多模态输入、VS Code/Web UI/Docker 等生态扩展
@@ -344,7 +344,7 @@ model:
 **改进方向**:
 - 优化 `distill_memories()` 的稳定事实筛选策略，减少启发式误判
 - 后续可继续拆分 prompt/runner/config 边界，但应保持低风险、小步推进
-- 若准备发版，增加一轮真实 API smoke test
+- 若准备发版，可再补 OpenAI/Anthropic 任一路径真实 API smoke test；MiniMax 非流式与流式 smoke test 已通过
 
 ## 对比
 

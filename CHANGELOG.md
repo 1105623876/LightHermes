@@ -18,6 +18,7 @@
 
 ### 验证
 - ✅ 全量 pytest：`tests/`（112/112）
+- ✅ MiniMax Anthropic 兼容端点真实 smoke test：非流式与流式均返回 `MiniMax smoke test OK`
 
 ---
 

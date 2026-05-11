@@ -85,11 +85,12 @@
 
 5. **真实 API 集成测试仍需外部凭据**
    - 当前 CI/本地主要依赖 mock 与离线测试路径
+   - MiniMax Anthropic 兼容端点已完成一次真实非流式与流式 smoke test
 
 ## 下一步建议（按优先级）
 
-1. **发版准备与真实 API smoke test**
-   - 选择 OpenAI/Anthropic/MiniMax 至少一条真实链路验证
+1. **发版准备**
+   - MiniMax 真实 smoke test 已通过；发版前可再补 OpenAI/Anthropic 任一路径
    - 若发版，再统一更新 `__version__`、`setup.py` 和文档版本号
 
 2. **插件系统完善（Phase 3.1）**
