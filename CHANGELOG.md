@@ -1,5 +1,26 @@
 # LightHermes 开发日志
 
+## 2026-05-11 - 记忆工具计划完成（未发布）
+
+### 记忆工具
+- ✅ 新增结构化记忆召回：`recall_items()` 返回层级、来源、分数、优先级和元数据
+- ✅ 新增显式记忆搜索：`search_memory()` 支持按 `working`、`episodic`、`semantic` 或 `all` 搜索
+- ✅ 默认注册内置 `search_memory` 工具，并允许用户同名工具覆盖内置工具
+- ✅ 新增受控文件工具：`read_file`、`search_files`、`write_file`
+- ✅ 文件工具默认关闭；`write_file` 必须单独显式开启
+- ✅ 文件访问受 `roots` 白名单、排除目录、敏感文件名、二进制文件和大小限制保护
+
+### 配置与文档
+- ✅ `config.yaml` 新增 `tools.builtin` 配置段
+- ✅ README 补充内置工具、结构化记忆召回、受控文件工具和当前路线状态
+- ✅ ROADMAP 更新为 Phase 2 完成状态，并将下一步调整为真实 API smoke test 与发版准备
+- ✅ PROJECT_STATUS 同步 112 项测试基线和记忆工具完成状态
+
+### 验证
+- ✅ 全量 pytest：`tests/`（112/112）
+
+---
+
 ## 2026-05-09 - v0.3.2
 
 ### 架构

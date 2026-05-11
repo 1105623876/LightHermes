@@ -46,6 +46,8 @@ tests/
 │   ├── test_core_memory.py              # 核心记忆集成测试
 │   ├── test_evolution.py                # 自进化系统测试
 │   ├── test_compressor.py               # 上下文压缩测试
+│   ├── test_builtin_tools.py            # 内置工具测试
+│   ├── test_tools.py                    # 工具注册与覆盖测试
 │   └── test_adapters.py                 # Adapter 测试
 ├── integration/                         # 集成测试
 │   └── test_cli.py                      # CLI 集成测试
@@ -62,12 +64,16 @@ tests/
 
 ## 当前测试覆盖
 
+当前基线：112/112 通过（`pytest tests/ -v`）。
+
 ### 已完成
 - ✅ pytest 框架配置（pytest.ini）
 - ✅ 共享 fixtures（conftest.py）
 - ✅ 记忆系统单元测试（test_memory.py）
   - 记忆索引（分词、搜索）
-  - 记忆统计
+  - 结构化召回与显式记忆搜索
+  - 记忆生命周期钩子
+  - 记忆蒸馏、合并和容量治理
   - 短期记忆
   - 记忆管理器
   - 文件解析
@@ -84,6 +90,16 @@ tests/
   - 压缩摘要入库
   - 混合检索配置透传
   - Evolution 复用主模型 Adapter
+  - 内置 `search_memory` 注册与用户工具覆盖
+  - 文件工具默认关闭、按配置开启和写入能力单独控制
+- ✅ Builtin tools 单元测试（test_builtin_tools.py）
+  - 内置记忆搜索工具
+  - 只读文件工具
+  - 文件搜索工具
+  - 默认关闭的写文件工具与安全边界
+- ✅ ToolDispatcher 单元测试（test_tools.py）
+  - 同名工具 schema 覆盖
+  - 批量注册
 - ✅ Compressor 单元测试（test_compressor.py）
   - 压缩触发阈值
   - 工具输出剪枝
