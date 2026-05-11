@@ -27,8 +27,11 @@ class PluginLoader:
         if not enabled:
             return []
 
-        dirs = list(plugin_config.get("dirs") or [])
-        plugin_dirs = [self._resolve_plugin_dir(item) for item in dirs]
+        plugin_dirs = self._resolve_plugin_dirs(
+            list(plugin_config.get("dirs") or []),
+            strict=strict,
+            kind="tool",
+        )
 
         loaded: List[str] = []
         for name in enabled:
@@ -59,8 +62,11 @@ class PluginLoader:
         if not enabled:
             return []
 
-        dirs = list(plugin_config.get("dirs") or [])
-        plugin_dirs = [self._resolve_plugin_dir(item) for item in dirs]
+        plugin_dirs = self._resolve_plugin_dirs(
+            list(plugin_config.get("dirs") or []),
+            strict=strict,
+            kind="channel",
+        )
 
         loaded: List[str] = []
         for name in enabled:
@@ -79,6 +85,18 @@ class PluginLoader:
                     self.logger.warning("Skip channel plugin %s: %s", name, exc)
 
         return loaded
+
+    def _resolve_plugin_dirs(self, dirs: List[str], strict: bool, kind: str) -> List[Path]:
+        plugin_dirs: List[Path] = []
+        for item in dirs:
+            try:
+                plugin_dirs.append(self._resolve_plugin_dir(item))
+            except Exception as exc:
+                if strict:
+                    raise
+                if self.logger and hasattr(self.logger, "warning"):
+                    self.logger.warning("Skip %s plugin dir %s: %s", kind, item, exc)
+        return plugin_dirs
 
     def _resolve_plugin_dir(self, relative_dir: str) -> Path:
         path = Path(relative_dir)

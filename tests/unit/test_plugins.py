@@ -72,6 +72,26 @@ class TestToolPluginLoader:
         with pytest.raises(ValueError, match="Plugin directory must stay inside project root"):
             loader.load_tool_plugins(dispatcher, {"dirs": ["../outside"], "enabled": ["x"]}, strict=True)
 
+    def test_unsafe_plugin_directory_is_skipped_in_non_strict_mode(self, tmp_path):
+        write_plugin(tmp_path, "plugins/tools/hello.py", """
+            from lighthermes import tool
+
+            @tool("hello", "Say hello", [{"name": "name", "type": "string", "description": "Name", "required": True}])
+            def hello(name):
+                return f"Hello {name}"
+        """)
+        dispatcher = ToolDispatcher()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loaded = loader.load_tool_plugins(
+            dispatcher,
+            {"dirs": ["../outside", "plugins/tools"], "enabled": ["hello"]},
+            strict=False,
+        )
+
+        assert loaded == ["hello"]
+        assert dispatcher.call_tool("hello", {"name": "Hermes"}) == "Hello Hermes"
+
     @pytest.mark.parametrize("plugin_name", ["../bad", "..\\bad", ".hidden", "bad/name"])
     def test_unsafe_enabled_plugin_name_is_rejected_in_strict_mode(self, tmp_path, plugin_name):
         dispatcher = ToolDispatcher()
@@ -178,3 +198,21 @@ class TestChannelPluginLoader:
         loader.load_channel_plugins(registry, {"dirs": ["plugins/channels"], "enabled": []}, strict=False)
 
         assert registry.list_channels() == []
+
+    def test_unsafe_channel_plugin_directory_is_skipped_in_non_strict_mode(self, tmp_path):
+        write_plugin(tmp_path, "plugins/channels/local_debug.py", """
+            from lighthermes.channels import DirectChannel
+
+            channel = DirectChannel(name="local_debug")
+        """)
+        registry = ChannelRegistry()
+        loader = PluginLoader(project_root=tmp_path, logger=None)
+
+        loaded = loader.load_channel_plugins(
+            registry,
+            {"dirs": ["../outside", "plugins/channels"], "enabled": ["local_debug"]},
+            strict=False,
+        )
+
+        assert loaded == ["local_debug"]
+        assert registry.list_channels() == ["local_debug"]
