@@ -19,6 +19,8 @@ from lighthermes.compressor import ContextCompressor
 from lighthermes.hooks import call_hook_safely
 from lighthermes.skills import SkillLoader
 from lighthermes.builtin_tools import create_file_tools, create_memory_tools
+from lighthermes.channels import ChannelRegistry
+from lighthermes.plugins import PluginLoader
 from lighthermes.tools import ToolDispatcher, tool
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
@@ -143,6 +145,21 @@ class LightHermes:
         if tools and self.tool_dispatcher:
             for tool in tools:
                 self.tool_dispatcher.register_tool(tool)
+
+        self.channel_registry = ChannelRegistry()
+        plugin_config = config.get("plugins", {})
+        plugin_strict = plugin_config.get("strict", False)
+        plugin_loader = PluginLoader(project_root=Path.cwd(), logger=self.logger)
+        plugin_loader.load_tool_plugins(
+            self.tool_dispatcher,
+            plugin_config.get("tools", {}),
+            strict=plugin_strict
+        )
+        plugin_loader.load_channel_plugins(
+            self.channel_registry,
+            plugin_config.get("channels", {}),
+            strict=plugin_strict
+        )
 
         if evolution_enabled:
             self.evolution = EvolutionEngine(

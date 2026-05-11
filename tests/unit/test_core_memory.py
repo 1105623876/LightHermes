@@ -88,6 +88,88 @@ class TestSkillLoaderFailureReports:
 class TestCoreMemoryIntegration:
     """测试核心流程中的记忆集成"""
 
+    def test_plugins_are_disabled_by_default(self, temp_memory_dir, monkeypatch):
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            evolution_enabled=False
+        )
+
+        assert hasattr(agent, "channel_registry")
+        assert agent.channel_registry.list_channels() == []
+
+    def test_core_loads_enabled_tool_and_channel_plugins(self, tmp_path, temp_memory_dir, monkeypatch):
+        plugin_root = tmp_path
+        tools_dir = plugin_root / "plugins" / "tools"
+        channels_dir = plugin_root / "plugins" / "channels"
+        tools_dir.mkdir(parents=True)
+        channels_dir.mkdir(parents=True)
+        (tools_dir / "hello.py").write_text(
+            "from lighthermes import tool\n"
+            "@tool('hello_plugin', 'Hello plugin', [])\n"
+            "def hello_plugin():\n"
+            "    return 'hello'\n",
+            encoding="utf-8"
+        )
+        (channels_dir / "local_debug.py").write_text(
+            "from lighthermes.channels import DirectChannel\n"
+            "channel = DirectChannel(name='local_debug')\n",
+            encoding="utf-8"
+        )
+
+        original_exists = os.path.exists
+        original_open = open
+
+        def fake_exists(path):
+            if path == "config.yaml":
+                return True
+            return original_exists(path)
+
+        def fake_open(path, *args, **kwargs):
+            if path == "config.yaml":
+                from io import StringIO
+                return StringIO("""
+plugins:
+  strict: false
+  tools:
+    dirs:
+      - plugins/tools
+    enabled:
+      - hello
+  channels:
+    dirs:
+      - plugins/channels
+    enabled:
+      - local_debug
+context_compression:
+  enabled: false
+""")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("lighthermes.core.os.path.exists", fake_exists)
+        monkeypatch.setattr("builtins.open", fake_open)
+        monkeypatch.setattr("lighthermes.core.Path.cwd", lambda: plugin_root)
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            evolution_enabled=False
+        )
+
+        assert agent.tool_dispatcher.call_tool("hello_plugin", {}) == "hello"
+        assert agent.channel_registry.get("local_debug") is not None
+
     def test_save_compression_summary_to_working_memory(self, temp_memory_dir):
         """测试压缩摘要写入工作记忆"""
         agent = LightHermes.__new__(LightHermes)
