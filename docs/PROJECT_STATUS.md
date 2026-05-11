@@ -95,9 +95,9 @@
    - 下一步可创建并推送 `v0.3.3` tag
 
 2. **插件系统完善（Phase 3.1）**
-   - Python 插件加载机制
-   - 插件目录扫描和启停配置
-   - 保持插件依赖管理轻量，不默认安装重依赖
+   - 已完成轻量工具与 Channel 插件系统设计
+   - 下一步实现本地工具插件加载、DirectChannel 风格 Channel 插件注册和 strict 错误模式
+   - 保持插件默认关闭，不自动安装重依赖
 
 3. **工具生态扩展（Phase 3.2）**
    - Docker 镜像、GitHub Actions、VS Code 插件或 Web UI 按需推进

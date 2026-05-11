@@ -76,10 +76,17 @@ tools:
     max_search_results: 20
 
 # 插件配置
+# 本地插件默认关闭；只有 enabled 中显式列出的插件会被加载
 plugins:
-  dirs:
-    - plugins/tools
-    - plugins/memory
+  strict: false
+  tools:
+    dirs:
+      - plugins/tools
+    enabled: []
+  channels:
+    dirs:
+      - plugins/channels
+    enabled: []
 
 # 上下文压缩配置
 context_compression:

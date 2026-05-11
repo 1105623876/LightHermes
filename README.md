@@ -129,12 +129,13 @@ LightHermes/
 LightHermes 的核心设计是“少量模块 + 清晰边界”：
 
 - `LightHermes` 主引擎负责对话循环、记忆注入、上下文压缩和自进化触发，并保留兼容导入门面。
-- `ToolDispatcher` 与 `tool` 位于 `lighthermes/tools.py`，统一工具装饰、注册和调用边界，支持同名工具覆盖。
+- `ToolDispatcher` 与 `tool` 位于 `lighthermes/tools.py`，统一工具装饰、注册、调用边界和运行时参数校验，支持同名工具覆盖。
 - `builtin_tools.py` 提供内置 `search_memory`、`read_file`、`search_files`、`write_file`，文件工具默认关闭并受路径白名单保护。
+- `PluginLoader` 位于 `lighthermes/plugins.py`，按配置显式加载本地工具插件和轻量 Channel 插件，默认关闭并隔离加载失败。
 - `SkillLoader` 位于 `lighthermes/skills.py`，负责 Markdown 技能加载、自动匹配和 `failure_report` 召回。
 - `MemoryManager` 管理四级记忆，并统一对外提供保存、结构化召回、显式搜索、迁移、生命周期钩子和统计接口。
 - `call_hook_safely` 位于 `lighthermes/hooks.py`，隔离生命周期钩子异常，避免辅助能力阻断主流程。
-- `ChannelMessage` / `DirectChannel` 位于 `lighthermes/channels.py`，预留 CLI/API/消息平台的轻量通道边界。
+- `ChannelMessage` / `DirectChannel` / `ChannelRegistry` 位于 `lighthermes/channels.py`，预留 CLI/API/消息平台的轻量通道边界，不引入复杂 bus。
 - `ContextCompressor` 在上下文接近窗口上限时压缩中间对话，保留开头设定和最近消息。
 - `EvolutionEngine` 记录会话轨迹，分析高质量成功模式和失败模式，生成可复用技能。
 - `BaseAdapter` 统一不同模型供应商的调用方式，核心逻辑不直接绑定 OpenAI/Anthropic SDK。
@@ -228,7 +229,23 @@ tools:
 
 文件工具只允许访问 `roots` 内路径，默认排除 `.git`、`.claude`、`venv`、`node_modules`、`memory` 等目录，并拒绝 `.env`、密钥、证书和 credentials/secrets 文件。`write_file` 支持 `create`、`overwrite`、`append` 三种模式，不会自动创建父目录。
 
-**5. 模型降级** (生产环境推荐)
+**5. 本地插件系统** (`config.yaml`)
+```yaml
+plugins:
+  strict: false
+  tools:
+    dirs:
+      - plugins/tools
+    enabled: []
+  channels:
+    dirs:
+      - plugins/channels
+    enabled: []
+```
+
+插件默认关闭，只有 `enabled` 中显式列出的本地插件会被加载。工具插件可使用 `@tool` 自动收集或 `register(dispatcher)` 手动注册；Channel 插件可暴露 `channel` 对象或 `register_channels(registry)`。第一版只支持项目内相对路径，不自动安装依赖，不提供网络 channel 或插件市场。后续可独立评估只读 `self_state` 自省工具。
+
+**6. 模型降级** (生产环境推荐)
 ```yaml
 model:
   fallback_models:
