@@ -1,16 +1,17 @@
 # LightHermes 项目状态
 
 **最后更新**: 2026-05-11
-**版本**: v0.3.2（记忆工具计划完成，待发版时再统一提升版本号）
+**版本**: v0.3.3（记忆工具计划与 Phase 2.7 发版检查完成）
 **状态**: 稳定可用，测试基线通过
 
 ## 核心指标
 
-- **测试通过率**: 112/112（`pytest tests/`）
+- **测试通过率**: 113/113（`pytest tests/`）
 - **核心依赖**: `openai` + `anthropic` + `pyyaml`
 - **可选增强依赖**: `sentence-transformers`、`colorama`
 - **分支状态**: `master` 已推送；仅 `.claude/settings.local.json` 为本地 Claude 配置改动
 - **当前定位**: 轻量智能体框架，围绕四级记忆、生命周期钩子、自进化和受控工具形成闭环
+- **发版检查**: MiniMax 非流式/流式 smoke test 通过；`search_memory` 默认注册不影响普通对话；配置与文档已同步
 
 ## 最近进展（已在代码中）
 
@@ -59,7 +60,7 @@
 ### 7) 测试体系
 - 已形成单元/集成/性能测试分层
 - 覆盖模块包括 memory / builtin_tools / tools / adapters / evolution / compressor / CLI / performance
-- 全量基线稳定（112 项）
+- 全量基线稳定（113 项）
 
 ## 已完成计划判断
 
@@ -89,9 +90,9 @@
 
 ## 下一步建议（按优先级）
 
-1. **发版准备**
-   - MiniMax 真实 smoke test 已通过；发版前可再补 OpenAI/Anthropic 任一路径
-   - 若发版，再统一更新 `__version__`、`setup.py` 和文档版本号
+1. **发布 v0.3.3**
+   - 当前版本号已统一为 `0.3.3`
+   - 下一步可创建并推送 `v0.3.3` tag
 
 2. **插件系统完善（Phase 3.1）**
    - Python 插件加载机制

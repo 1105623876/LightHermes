@@ -2,7 +2,7 @@
 LightHermes - 轻量级自进化智能体框架
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 from lighthermes.core import LightHermes, tool
 

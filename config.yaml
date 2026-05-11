@@ -108,7 +108,7 @@ context_compression:
 cli:
   prompt_symbol: ">"
   show_banner: true
-  stream_output: true # minimax存在流式问题
+  stream_output: true # MiniMax Anthropic 兼容流式已通过 smoke test
   show_skill_usage: true
   color_enabled: true
 

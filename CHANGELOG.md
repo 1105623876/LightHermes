@@ -1,6 +1,6 @@
 # LightHermes 开发日志
 
-## 2026-05-11 - 记忆工具计划完成（未发布）
+## 2026-05-11 - v0.3.3
 
 ### 记忆工具
 - ✅ 新增结构化记忆召回：`recall_items()` 返回层级、来源、分数、优先级和元数据
@@ -11,14 +11,16 @@
 - ✅ 文件访问受 `roots` 白名单、排除目录、敏感文件名、二进制文件和大小限制保护
 
 ### 配置与文档
-- ✅ `config.yaml` 新增 `tools.builtin` 配置段
+- ✅ `config.yaml` 新增 `tools.builtin` 配置段，并同步 MiniMax 流式 smoke test 状态
 - ✅ README 补充内置工具、结构化记忆召回、受控文件工具和当前路线状态
-- ✅ ROADMAP 更新为 Phase 2 完成状态，并将下一步调整为真实 API smoke test 与发版准备
-- ✅ PROJECT_STATUS 同步 112 项测试基线和记忆工具完成状态
+- ✅ ROADMAP 更新为 Phase 2 完成状态，并完成 Phase 2.7 发版检查
+- ✅ PROJECT_STATUS 同步 113 项测试基线和记忆工具完成状态
+- ✅ 统一源码、打包元数据、CLI 展示和项目文档版本号为 `0.3.3`
 
 ### 验证
-- ✅ 全量 pytest：`tests/`（112/112）
+- ✅ 全量 pytest：`tests/`（113/113）
 - ✅ MiniMax Anthropic 兼容端点真实 smoke test：非流式与流式均返回 `MiniMax smoke test OK`
+- ✅ `search_memory` 默认注册不影响普通对话路径
 
 ---
 

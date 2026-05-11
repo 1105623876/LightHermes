@@ -218,6 +218,36 @@ context_compression:
         names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
         assert "search_memory" in names
 
+    def test_search_memory_builtin_does_not_affect_plain_response(self, temp_memory_dir, monkeypatch):
+        captured = {}
+
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: type("SkillLoader", (), {
+            "match_skill": lambda self, query: None,
+            "recall_failure_reports": lambda self, query, task_type, limit=2: []
+        })())
+        monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+        agent = LightHermes(
+            model="gpt-4o-mini",
+            provider="openai",
+            api_key="test-key",
+            memory_dir=temp_memory_dir,
+            memory_enabled=True,
+            evolution_enabled=False
+        )
+
+        def fake_call_api(**kwargs):
+            captured.update(kwargs)
+            return FakeResponse("普通回复")
+
+        agent._call_api_with_fallback = fake_call_api
+        agent.tool_dispatcher.call_tool = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("不应调用工具"))
+
+        assert agent.run("你好", user_id="user_1", session_id="session_1") == "普通回复"
+        assert captured["tool_choice"] == "auto"
+        assert any(tool["function"]["name"] == "search_memory" for tool in captured["tools"])
+
     def test_file_tools_are_disabled_by_default(self, temp_memory_dir, monkeypatch):
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
         monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)

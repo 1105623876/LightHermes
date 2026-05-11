@@ -64,7 +64,7 @@ tests/
 
 ## 当前测试覆盖
 
-当前基线：112/112 通过（`pytest tests/ -v`）。
+当前基线：113/113 通过（`pytest tests/ -v`）。
 
 ### 已完成
 - ✅ pytest 框架配置（pytest.ini）

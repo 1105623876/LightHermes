@@ -1,6 +1,6 @@
 # LightHermes 发展路线图
 
-**版本**: v0.3.2 稳定基线 + 记忆工具计划完成
+**版本**: v0.3.3 发版准备完成
 **更新时间**: 2026-05-11
 **设计理念**: 保持轻量，增强可用性，优先把分级记忆真正用好，再小步扩展工具与生态
 
@@ -10,7 +10,7 @@
 
 - **记忆工具计划已完成**：结构化记忆召回、内置 `search_memory`、受控 `read_file` / `search_files` / `write_file`、配置入口、安全边界和测试覆盖均已落地。
 - **Phase 2 主线已完成**：记忆生命周期、蒸馏治理、反模式提示、轻量架构边界和记忆工具闭环已经形成稳定基线。
-- **下一阶段不应继续堆记忆主线**：MiniMax 真实 API smoke test 已通过，更优路径是完成发版准备，再进入 Phase 3 插件/工具生态或 Phase 4 性能优化。
+- **下一阶段不应继续堆记忆主线**：Phase 2.7 发版检查已完成，更优路径是发布 v0.3.3，再进入 Phase 3 插件/工具生态或 Phase 4 性能优化。
 
 ---
 
@@ -56,7 +56,7 @@
 
 - [x] 添加 pytest 配置和共享 fixtures
 - [x] 完成记忆系统、Adapter、自进化、上下文压缩、CLI、性能测试
-- [x] 当前测试基线：112/112 通过
+- [x] 当前测试基线：113/113 通过
 - [x] 添加测试文档（tests/README.md）
 
 ---
@@ -120,17 +120,17 @@
 
 ---
 
-## Phase 2.7: 发版准备与真实 API smoke test（进行中）
+## Phase 2.7: 发版准备与真实 API smoke test ✅ 已完成
 
 **目标**: 在进入生态扩展前，确认当前稳定基线可发版。
 
 - [x] 选择至少一条真实模型链路做 smoke test：MiniMax Anthropic 兼容端点
 - [x] 验证非流式最小对话路径：`MiniMax-M2.7` 返回 `MiniMax smoke test OK`
 - [x] 验证流式最小对话路径：原始流式和 Adapter 流式均返回 `MiniMax smoke test OK`
-- [ ] 验证 `search_memory` 工具注册不影响普通对话
-- [ ] 检查 `config.yaml` 示例和 README 配置一致
-- [ ] 如准备发版，统一更新 `lighthermes/__init__.py`、`setup.py`、README、CHANGELOG 版本号
-- [ ] 创建发布说明，明确文件工具默认关闭和安全边界
+- [x] 验证 `search_memory` 工具注册不影响普通对话
+- [x] 检查 `config.yaml` 示例和 README 配置一致
+- [x] 统一更新 `lighthermes/__init__.py`、`setup.py`、README、CHANGELOG 版本号到 `0.3.3`
+- [x] 创建发布说明，明确文件工具默认关闭和安全边界
 
 ---
 
@@ -218,7 +218,7 @@
 ## 实施策略
 
 ### 开发节奏
-- **先验证再发版**: MiniMax smoke test 已通过，当前优先补齐发版检查，而不是继续堆功能
+- **先验证再发版**: Phase 2.7 发版检查已完成，发布 v0.3.3 后再继续扩展功能
 - **先收敛再扩展**: 每次只推进一个边界清晰的小功能
 - **文档同步**: 计划、状态和测试说明随代码同步更新
 - **参考不照搬**: Hermes / nanobot 作为架构参考，LightHermes 保持极简实现
