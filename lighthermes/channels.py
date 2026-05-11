@@ -3,7 +3,7 @@ LightHermes 轻量消息通道边界
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class BaseChannel:
@@ -55,6 +55,9 @@ class ChannelRegistry:
         self.channels: Dict[str, BaseChannel] = {}
 
     def register(self, channel: BaseChannel) -> bool:
+        if not isinstance(channel, BaseChannel):
+            return False
+
         name = getattr(channel, "name", None)
         if not name:
             return False
@@ -65,5 +68,5 @@ class ChannelRegistry:
     def get(self, name: str) -> Optional[BaseChannel]:
         return self.channels.get(name)
 
-    def list_channels(self) -> list[str]:
+    def list_channels(self) -> List[str]:
         return sorted(self.channels.keys())

@@ -27,6 +27,15 @@ class TestChannelRegistry:
         assert registry.get("local_debug") is new_channel
         assert registry.list_channels() == ["local_debug"]
 
+    def test_register_rejects_non_channel_object(self):
+        class NotAChannel:
+            name = "not_channel"
+
+        registry = ChannelRegistry()
+
+        assert registry.register(NotAChannel()) is False
+        assert registry.get("not_channel") is None
+
     def test_direct_channel_send_to_agent_uses_message_identity(self):
         class FakeAgent:
             def run(self, content, **kwargs):
