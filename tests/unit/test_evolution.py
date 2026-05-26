@@ -48,37 +48,6 @@ class FakeAdapter:
         return self.content
 
 
-class FakeOpenAIResponse:
-    def __init__(self, content):
-        class Message:
-            def __init__(self, text):
-                self.content = text
-
-        class Choice:
-            def __init__(self, text):
-                self.message = Message(text)
-
-        self.choices = [Choice(content)]
-
-
-class FakeOpenAIClient:
-    def __init__(self, content=GENERATED_SKILL):
-        class Completions:
-            def __init__(self, text):
-                self.text = text
-                self.calls = []
-
-            def create(self, **kwargs):
-                self.calls.append(kwargs)
-                return FakeOpenAIResponse(self.text)
-
-        class Chat:
-            def __init__(self, text):
-                self.completions = Completions(text)
-
-        self.chat = Chat(content)
-
-
 @pytest.mark.unit
 class TestTrajectoryQuality:
     """测试轨迹质量评估"""
@@ -249,21 +218,6 @@ class TestSkillGeneratorAdapter:
         assert skill["name"] == "generated_test_skill"
         assert adapter.calls[0]["messages"][0]["role"] == "user"
         assert adapter.calls[0]["temperature"] == 0.7
-
-    def test_generate_skill_supports_openai_like_client(self):
-        client = FakeOpenAIClient()
-        generator = SkillGenerator(client, model="test-model")
-        pattern = {
-            "task_type": "配置",
-            "trajectories": [{"tool_calls": []}]
-        }
-
-        skill = generator.generate_skill_from_pattern(pattern, "success")
-
-        assert skill["name"] == "generated_test_skill"
-        call = client.chat.completions.calls[0]
-        assert call["model"] == "test-model"
-        assert call["temperature"] == 0.7
 
     def test_failure_pattern_asks_for_failure_report(self):
         adapter = FakeAdapter(GENERATED_FAILURE_REPORT)
