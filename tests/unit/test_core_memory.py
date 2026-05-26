@@ -699,3 +699,73 @@ context_compression:
         assert ("start", "你好", "user_1", "session_1") in agent.memory.calls
         assert ("message", "user", "你好") in agent.memory.calls
         assert ("end", "你好", "测试回复", "user_1", "session_1") in agent.memory.calls
+
+    def test_run_stream_with_tool_calls_uses_fallback(self):
+        class ToolCallFunction:
+            name = "my_tool"
+            arguments = '{"arg": "val"}'
+
+        class ToolCallDelta:
+            id = "call_1"
+            index = 0
+            function = ToolCallFunction()
+
+        class DeltaWithTool:
+            content = None
+            tool_calls = [ToolCallDelta()]
+
+        class ChoiceWithTool:
+            delta = DeltaWithTool()
+            finish_reason = "tool_calls"
+
+        class ChunkWithTool:
+            choices = [ChoiceWithTool()]
+
+        class DeltaNormal:
+            content = "最终回复"
+            tool_calls = None
+
+        class ChoiceNormal:
+            delta = DeltaNormal()
+            finish_reason = "stop"
+
+        class ChunkNormal:
+            choices = [ChoiceNormal()]
+
+        agent = LightHermes.__new__(LightHermes)
+
+        class FakeToolDispatcher:
+            def get_tool_schemas(self):
+                return []
+            def call_tool(self, name, args):
+                return "tool_result"
+        agent.tool_dispatcher = FakeToolDispatcher()
+
+        agent.logger = type("Logger", (), {"error": lambda *args, **kwargs: None})()
+
+        calls = []
+        def fake_call_api(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return iter([ChunkWithTool()])
+            else:
+                return iter([ChunkNormal()])
+
+        agent._call_api_with_fallback = fake_call_api
+
+        chunks = list(agent._run_stream({
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "tools": [],
+            "tool_choice": "auto"
+        }, max_iterations=10))
+
+        assert "最终回复" in chunks
+        assert len(calls) == 2
+        messages = calls[1]["messages"]
+        assert len(messages) == 3
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["tool_calls"][0]["function"]["name"] == "my_tool"
+        assert messages[2]["role"] == "tool"
+        assert messages[2]["content"] == "tool_result"
+

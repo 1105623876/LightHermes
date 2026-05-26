@@ -640,6 +640,7 @@ class LightHermes:
             tool_calls = []
 
             response_finished = False
+            continue_next_iteration = False
 
             for chunk in response:
                 response_finished = True
@@ -699,10 +700,12 @@ class LightHermes:
                                 "content": tool_response
                             })
 
-                    response = self.client.chat.completions.create(**params)
+                    continue_next_iteration = True
                     break
 
             if response_finished:
+                if continue_next_iteration:
+                    continue
                 return
 
     def load_config(self, config_path: str = "config.yaml"):
