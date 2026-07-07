@@ -495,6 +495,11 @@ class SemanticMemory:
         index_file = str(Path(storage_dir).parent / "semantic_index.json")
         self.index = MemoryIndex(index_file)
         self.hybrid_retriever = None
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        self._file_mtimes: Dict[str, float] = {}
+        self._entry_count = 0
+        self._total_chars = 0
+        self._refresh_storage_stats()
 
         if use_hybrid_retrieval:
             try:
@@ -512,6 +517,30 @@ class SemanticMemory:
     def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
         """解析记忆文件内容"""
         return parse_memory_file_content(content)
+
+    def _refresh_storage_stats(self):
+        files = list(self.storage_dir.glob("*.md"))
+        self._entry_count = len(files)
+        self._total_chars = sum(f.stat().st_size for f in files if f.exists())
+
+    def _copy_memory(self, memory: Dict[str, Any]) -> Dict[str, Any]:
+        copied = dict(memory)
+        copied["metadata"] = dict(memory.get("metadata", {}))
+        return copied
+
+    def _cache_memory(self, name: str, content: str, metadata: Dict[str, Any], file_path: Path):
+        self._memory_cache[name] = {
+            "metadata": {key: str(value) for key, value in (metadata or {}).items()},
+            "content": content
+        }
+        try:
+            self._file_mtimes[name] = file_path.stat().st_mtime
+        except OSError:
+            self._file_mtimes.pop(name, None)
+
+    def _drop_cache(self, name: str):
+        self._memory_cache.pop(name, None)
+        self._file_mtimes.pop(name, None)
 
     def _normalize_content(self, content: str) -> str:
         return " ".join(str(content).split()).strip()
@@ -562,6 +591,8 @@ class SemanticMemory:
         metadata = metadata or {}
         metadata.setdefault("type", "semantic")
         metadata.setdefault("created", datetime.now().strftime("%Y-%m-%d"))
+        metadata.setdefault("last_accessed", datetime.now().isoformat())
+        metadata.setdefault("access_count", 0)
 
         target_name = name
         target_path = self.storage_dir / f"{target_name}.md"
@@ -582,9 +613,16 @@ class SemanticMemory:
             frontmatter += f"{key}: {value}\n"
         frontmatter += "---\n\n"
 
+        old_size = target_path.stat().st_size if target_path.exists() else 0
+        existed = target_path.exists()
         self.index.remove(target_name)
         target_path.write_text(frontmatter + content, encoding="utf-8")
         self.index.add(target_name, content)
+        new_size = target_path.stat().st_size
+        if not existed:
+            self._entry_count += 1
+        self._total_chars += new_size - old_size
+        self._cache_memory(target_name, content, metadata, target_path)
 
         self._cleanup_if_needed()
 
@@ -592,10 +630,31 @@ class SemanticMemory:
         """加载语义记忆"""
         file_path = self.storage_dir / f"{name}.md"
         if not file_path.exists():
+            self._drop_cache(name)
             return None
 
+        try:
+            mtime = file_path.stat().st_mtime
+        except OSError:
+            self._drop_cache(name)
+            return None
+
+        cached = self._memory_cache.get(name)
+        if cached and self._file_mtimes.get(name) == mtime:
+            return self._copy_memory(cached)
+
         content = file_path.read_text(encoding="utf-8")
-        return self._parse_memory(content)
+        memory = self._parse_memory(content)
+        if memory:
+            self._cache_memory(
+                name,
+                memory.get("content", ""),
+                memory.get("metadata", {}),
+                file_path
+            )
+            return self._copy_memory(memory)
+        self._drop_cache(name)
+        return None
 
     def update_access(self, name: str):
         """更新访问记录"""
@@ -604,9 +663,21 @@ class SemanticMemory:
             return
 
         metadata = memory.get("metadata", {})
+        last_accessed = metadata.get("last_accessed")
+        should_persist = True
+        if last_accessed:
+            try:
+                last_access_time = datetime.fromisoformat(last_accessed)
+                should_persist = datetime.now() - last_access_time > timedelta(minutes=5)
+            except ValueError:
+                should_persist = True
+
         metadata["last_accessed"] = datetime.now().isoformat()
         metadata["access_count"] = int(metadata.get("access_count", 0)) + 1
-        self._write_metadata_only(name, memory["content"], metadata)
+        file_path = self.storage_dir / f"{name}.md"
+        self._cache_memory(name, memory["content"], metadata, file_path)
+        if should_persist:
+            self._write_metadata_only(name, memory["content"], metadata)
 
     def _write_metadata_only(self, name: str, content: str, metadata: Dict[str, Any]):
         frontmatter = "---\n"
@@ -614,7 +685,11 @@ class SemanticMemory:
             frontmatter += f"{key}: {value}\n"
         frontmatter += "---\n\n"
         file_path = self.storage_dir / f"{name}.md"
+        old_size = file_path.stat().st_size if file_path.exists() else 0
         file_path.write_text(frontmatter + content, encoding="utf-8")
+        new_size = file_path.stat().st_size
+        self._total_chars += new_size - old_size
+        self._cache_memory(name, content, metadata, file_path)
 
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """搜索语义记忆 - 自动选择最佳检索方式"""
@@ -665,7 +740,7 @@ class SemanticMemory:
             if not file_path.exists():
                 continue
 
-            memory = parse_memory_file(str(file_path))
+            memory = self.load(name)
 
             if memory:
                 # 使用相同的分词逻辑
@@ -682,6 +757,9 @@ class SemanticMemory:
 
     def _cleanup_if_needed(self):
         """清理过多的记忆条目"""
+        if self._entry_count <= self.max_entries and self._total_chars <= self.max_chars:
+            return
+
         files = list(self.storage_dir.glob("*.md"))
 
         def priority(file_path: Path):
@@ -690,7 +768,7 @@ class SemanticMemory:
             is_preference = metadata.get("type") == "user_preference"
             return (is_preference, file_path.stat().st_mtime)
 
-        current_chars = sum(f.stat().st_size for f in files if f.exists())
+        current_chars = self._total_chars
 
         while len(files) > self.max_entries or current_chars > self.max_chars:
             removable = [f for f in files if not priority(f)[0]] or files
@@ -699,8 +777,11 @@ class SemanticMemory:
             target_size = target.stat().st_size
             self.index.remove(target.stem)
             target.unlink()
+            self._drop_cache(target.stem)
             current_chars -= target_size
             files = [f for f in files if f.exists()]
+        self._entry_count = len(files)
+        self._total_chars = current_chars
 
 
 class MemoryManager:

@@ -1,20 +1,24 @@
 # LightHermes 开发日志
 
-## 2026-05-26 - v0.3.4
+## 2026-07-07 - v0.3.4
 
 ### 修复
 - ✅ 修复 `_run_stream` 流式工具调用二次请求完全不可用的 Bug
   - `self.client` 属性不存在，改为统一走 `_call_api_with_fallback` 路径
   - 重构控制流：引入 `continue_next_iteration`，由外层循环自然驱动多轮工具链
 - ✅ 清理 `evolution.py` 中 `SkillGenerator._create_completion` 的死代码 fallback
+- ✅ 修复语义记忆性能回归
+  - 为 `SemanticMemory` 增加轻量内存缓存和容量计数，避免热召回反复扫描 Markdown 文件
+  - 语义记忆访问计数改为短时间内去抖写入，降低召回路径磁盘写放大
 
 ### 维护
 - ✅ 补充流式工具调用回归测试 `test_run_stream_with_tool_calls_uses_fallback`
 - ✅ 更新 `docs/implementation-vs-design.md` 代码量统计
 - ✅ 创建 `skills/user/` 目录
+- ✅ 统一源码版本、打包元数据、CLI 展示和状态文档到 `0.3.4`
 
 ### 验证
-- ✅ 全量 pytest：`tests/`（114/114）
+- ✅ 全量 pytest：`tests/`（113/113）
 
 ---
 
