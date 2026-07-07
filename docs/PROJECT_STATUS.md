@@ -9,7 +9,7 @@
 - **测试通过率**: 113/113（`pytest tests/`）
 - **核心依赖**: `openai` + `anthropic` + `pyyaml`
 - **可选增强依赖**: `sentence-transformers`、`colorama`
-- **分支状态**: 本地有收口改动待提交；另有 `.claude/settings.local.json`、`.qoder/`、`GEMINI.md` 等用户/本地配置状态未纳入本次修改
+- **分支状态**: `master` 已推送到 `origin`；本地配置文件和临时工具目录不属于发布范围
 - **当前定位**: 轻量智能体框架，围绕四级记忆、生命周期钩子、自进化和受控工具形成闭环
 - **发版检查**: MiniMax 非流式/流式 smoke test 通过；`search_memory` 默认注册不影响普通对话；配置与文档已同步
 
