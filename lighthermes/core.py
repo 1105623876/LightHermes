@@ -51,11 +51,13 @@ class LightHermes:
         log_level: str = "INFO",
         log_file: str = None,
         fallback_models: List[str] = None,
+        config_path: str = "config.yaml",
+        config: Dict[str, Any] = None,
     ):
         # 读取配置文件
-        config = {}
-        config_path = "config.yaml"
-        if os.path.exists(config_path):
+        if config is None:
+            config = {}
+        if not config and config_path and os.path.exists(config_path):
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f) or {}
@@ -168,6 +170,53 @@ class LightHermes:
         else:
             self.compressor = None
             self.context_window = 128000  # 默认值
+
+    @staticmethod
+    def _resolve_config_value(value: Any) -> Any:
+        """解析形如 ${ENV_VAR} 的配置值"""
+        if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+            return os.environ.get(value[2:-1])
+        return value
+
+    @classmethod
+    def from_config(cls, config_path: str = "config.yaml", **overrides):
+        """从配置文件创建 LightHermes 实例，参数覆盖配置文件"""
+        config = {}
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+
+        agent_config = config.get("agent", {})
+        model_config = config.get("model", {})
+        memory_config = config.get("memory", {})
+        evolution_config = config.get("evolution", {})
+        skills_config = config.get("skills", {})
+        cli_config = config.get("cli", {})
+        logging_config = config.get("logging", {})
+
+        params = {
+            "name": agent_config.get("name"),
+            "role": agent_config.get("role"),
+            "model": model_config.get("model_name", model_config.get("model", "gpt-4o-mini")),
+            "provider": model_config.get("provider", "openai"),
+            "api_key": cls._resolve_config_value(model_config.get("api_key")),
+            "base_url": model_config.get("base_url"),
+            "memory_enabled": memory_config.get("enabled", True),
+            "memory_dir": memory_config.get("storage_dir", "memory"),
+            "evolution_enabled": evolution_config.get("enabled", True),
+            "auto_generate_skills": evolution_config.get("auto_generate_skills", True),
+            "skill_validation": evolution_config.get("skill_validation", "sandbox"),
+            "skill_dirs": skills_config.get("dirs", ["skills/core", "skills/user", "skills/generated"]),
+            "disabled_skills": skills_config.get("disabled", []),
+            "debug": cli_config.get("show_skill_usage", logging_config.get("debug", False)),
+            "log_level": logging_config.get("level", "INFO"),
+            "log_file": logging_config.get("file"),
+            "fallback_models": model_config.get("fallback_models"),
+            "config_path": config_path,
+            "config": config,
+        }
+        params.update(overrides)
+        return cls(**params)
 
     def _get_context_window(self, model: str) -> int:
         """获取模型的上下文窗口大小"""

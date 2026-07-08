@@ -88,6 +88,65 @@ class TestSkillLoaderFailureReports:
 class TestCoreMemoryIntegration:
     """测试核心流程中的记忆集成"""
 
+    def test_from_config_uses_config_file_and_env_references(self, temp_memory_dir, tmp_path, monkeypatch):
+        """测试 from_config 统一加载模型、记忆和运行配置"""
+        captured_adapter_kwargs = {}
+        memory_dir = temp_memory_dir.replace("\\", "/")
+        config_path = tmp_path / "lighthermes.yaml"
+        config_path.write_text(f"""
+agent:
+  name: ConfigAgent
+  role: 配置驱动助手
+model:
+  provider: anthropic
+  model_name: config-model
+  api_key: ${{LIGHTHERMES_TEST_KEY}}
+  base_url: https://example.test/anthropic
+  fallback_models:
+    - fallback-model
+memory:
+  enabled: true
+  storage_dir: "{memory_dir}"
+  hybrid_retrieval:
+    enabled: false
+evolution:
+  enabled: false
+skills:
+  dirs: []
+tools:
+  builtin:
+    enabled: false
+context_compression:
+  enabled: false
+logging:
+  level: DEBUG
+cli:
+  show_skill_usage: true
+""", encoding="utf-8")
+
+        def fake_get_adapter(**kwargs):
+            captured_adapter_kwargs.update(kwargs)
+            return FakeAdapter()
+
+        monkeypatch.setenv("LIGHTHERMES_TEST_KEY", "env-api-key")
+        monkeypatch.setattr("lighthermes.core.get_adapter", fake_get_adapter)
+
+        agent = LightHermes.from_config(str(config_path))
+
+        assert agent.name == "ConfigAgent"
+        assert agent.role == "配置驱动助手"
+        assert agent.model == "config-model"
+        assert agent.provider == "anthropic"
+        assert agent.fallback_models == ["fallback-model"]
+        assert agent.memory_enabled is True
+        assert str(agent.memory.memory_dir) == temp_memory_dir
+        assert agent.evolution_enabled is False
+        assert agent.compression_enabled is False
+        assert agent.debug is True
+        assert agent.tool_dispatcher.get_tool_schemas() == []
+        assert captured_adapter_kwargs["api_key"] == "env-api-key"
+        assert captured_adapter_kwargs["base_url"] == "https://example.test/anthropic"
+
     def test_save_compression_summary_to_working_memory(self, temp_memory_dir):
         """测试压缩摘要写入工作记忆"""
         agent = LightHermes.__new__(LightHermes)
@@ -768,4 +827,3 @@ context_compression:
         assert messages[1]["tool_calls"][0]["function"]["name"] == "my_tool"
         assert messages[2]["role"] == "tool"
         assert messages[2]["content"] == "tool_result"
-

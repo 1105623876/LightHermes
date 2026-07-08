@@ -66,30 +66,12 @@ class CLI:
 
     def init_agent(self):
         """初始化 Agent"""
-        model_config = self.config.get("model", {})
-        memory_config = self.config.get("memory", {})
-        evolution_config = self.config.get("evolution", {})
-        skills_config = self.config.get("skills", {})
         cli_config = self.config.get("cli", {})
 
-        api_key = model_config.get("api_key")
-        if api_key and api_key.startswith("${") and api_key.endswith("}"):
-            env_var = api_key[2:-1]
-            api_key = os.environ.get(env_var)
-
-        self.agent = LightHermes(
+        self.agent = LightHermes.from_config(
+            config_path="config.yaml",
             name="LightHermes",
             role="你是 LightHermes,一个轻量级自进化智能体助手",
-            model=model_config.get("model_name", "gpt-4o-mini"),
-            provider=model_config.get("provider", "openai"),
-            api_key=api_key,
-            base_url=model_config.get("base_url"),
-            memory_enabled=memory_config.get("enabled", True),
-            memory_dir=memory_config.get("storage_dir", "memory"),
-            evolution_enabled=evolution_config.get("enabled", True),
-            auto_generate_skills=evolution_config.get("auto_generate_skills", True),
-            skill_validation=evolution_config.get("skill_validation", "sandbox"),
-            skill_dirs=skills_config.get("dirs", ["skills/core", "skills/user", "skills/generated"]),
             debug=cli_config.get("show_skill_usage", False)
         )
 

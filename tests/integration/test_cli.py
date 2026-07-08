@@ -110,6 +110,28 @@ class TestCLICommands:
         assert "自进化: 启用" in output
         assert "上下文压缩: 启用" in output
 
+    def test_init_agent_uses_from_config(self, monkeypatch):
+        instance = CLI()
+        instance.config = {"cli": {"show_skill_usage": True, "color_enabled": False}}
+        captured = {}
+
+        def fake_from_config(**kwargs):
+            captured.update(kwargs)
+            return FakeAgent()
+
+        monkeypatch.setattr(
+            "lighthermes.cli.LightHermes.from_config",
+            staticmethod(fake_from_config)
+        )
+
+        instance.init_agent()
+
+        assert isinstance(instance.agent, FakeAgent)
+        assert captured["config_path"] == "config.yaml"
+        assert captured["name"] == "LightHermes"
+        assert captured["debug"] is True
+        assert instance.cli_config == {"show_skill_usage": True, "color_enabled": False}
+
     def test_manual_compress_replaces_short_term_messages(self, cli, capsys):
         cli.handle_command("/compress")
 
