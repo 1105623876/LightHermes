@@ -40,7 +40,7 @@ class OpenAIAdapter(BaseAdapter):
             **kwargs: 其他参数
 
         Returns:
-            流式: Generator[str]
+            流式: OpenAI-like chunk generator
             非流式: OpenAI response 对象
         """
         params = {
@@ -60,8 +60,7 @@ class OpenAIAdapter(BaseAdapter):
         else:
             return response
 
-    def _handle_stream(self, response) -> Generator[str, None, None]:
-        """处理流式响应"""
+    def _handle_stream(self, response) -> Generator[Any, None, None]:
+        """处理流式响应，保持 OpenAI chunk 对象格式"""
         for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            yield chunk

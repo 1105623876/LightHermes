@@ -62,6 +62,28 @@ class TestOpenAIAdapter:
         )
         assert str(adapter.client.base_url).rstrip("/") == custom_url
 
+    def test_stream_handling_preserves_openai_chunks(self, mock_api_key):
+        """测试 OpenAI 流式响应保持 chunk 对象格式"""
+        adapter = OpenAIAdapter(
+            model="gpt-4o-mini",
+            api_key=mock_api_key
+        )
+
+        class MockDelta:
+            content = "Hello"
+            tool_calls = None
+
+        class MockChoice:
+            delta = MockDelta()
+            finish_reason = None
+
+        class MockChunk:
+            choices = [MockChoice()]
+
+        chunks = list(adapter._handle_stream(iter([MockChunk()])))
+
+        assert chunks[0].choices[0].delta.content == "Hello"
+
 
 @pytest.mark.unit
 class TestAnthropicAdapter:
