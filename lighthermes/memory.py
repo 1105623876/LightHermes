@@ -483,7 +483,14 @@ class SemanticMemory:
         use_hybrid_retrieval: bool = False,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        api_key: str = None
+        api_key: str = None,
+        embedding_base_url: str = None,
+        hybrid_min_candidates: int = 5,
+        hybrid_fallback_to_all: bool = True,
+        hybrid_semantic_threshold: float = None,
+        hybrid_score_margin: float = 0.12,
+        hybrid_full_rerank_max_docs: int = 200,
+        hybrid_tfidf_candidate_limit: int = 20
     ):
         self.storage_dir = Path(storage_dir)
         self.max_entries = max_entries
@@ -507,7 +514,14 @@ class SemanticMemory:
                 self.hybrid_retriever = HybridRetriever(
                     embedding_provider=embedding_provider,
                     embedding_model=embedding_model,
-                    api_key=api_key
+                    api_key=api_key,
+                    embedding_base_url=embedding_base_url,
+                    min_candidates=hybrid_min_candidates,
+                    fallback_to_all=hybrid_fallback_to_all,
+                    semantic_threshold=hybrid_semantic_threshold,
+                    score_margin=hybrid_score_margin,
+                    full_rerank_max_docs=hybrid_full_rerank_max_docs,
+                    tfidf_candidate_limit=hybrid_tfidf_candidate_limit
                 )
             except ImportError:
                 print("混合检索不可用,使用简单关键词匹配")
@@ -799,6 +813,13 @@ class MemoryManager:
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
         api_key: str = None,
+        embedding_base_url: str = None,
+        hybrid_min_candidates: int = 5,
+        hybrid_fallback_to_all: bool = True,
+        hybrid_semantic_threshold: float = None,
+        hybrid_score_margin: float = 0.12,
+        hybrid_full_rerank_max_docs: int = 200,
+        hybrid_tfidf_candidate_limit: int = 20,
         working_to_episodic_limit: int = 20,
         episodic_to_semantic_access_threshold: int = 10,
         archive_inactive_days: int = 30,
@@ -835,7 +856,14 @@ class MemoryManager:
             use_hybrid_retrieval=use_hybrid_retrieval,
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
-            api_key=api_key
+            api_key=api_key,
+            embedding_base_url=embedding_base_url,
+            hybrid_min_candidates=hybrid_min_candidates,
+            hybrid_fallback_to_all=hybrid_fallback_to_all,
+            hybrid_semantic_threshold=hybrid_semantic_threshold,
+            hybrid_score_margin=hybrid_score_margin,
+            hybrid_full_rerank_max_docs=hybrid_full_rerank_max_docs,
+            hybrid_tfidf_candidate_limit=hybrid_tfidf_candidate_limit
         )
 
     def add_message(self, role: str, content: str):

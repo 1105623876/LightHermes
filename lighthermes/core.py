@@ -40,6 +40,8 @@ class LightHermes:
         memory_dir: str = "memory",
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
+        embedding_api_key: str = None,
+        embedding_base_url: str = None,
         evolution_enabled: bool = True,
         auto_generate_skills: bool = True,
         skill_validation: str = "sandbox",
@@ -63,6 +65,8 @@ class LightHermes:
                     config = yaml.safe_load(f) or {}
             except Exception as e:
                 print(f"警告: 读取配置文件失败: {e}")
+
+        self._load_local_env_files(config_path, config)
 
         # 应用配置（参数优先级高于配置文件）
         if not fallback_models and config.get("model", {}).get("fallback_models"):
@@ -113,8 +117,16 @@ class LightHermes:
         self.memory_enabled = memory_enabled
         if memory_enabled:
             memory_config = config.get("memory", {})
+            embedding_config = config.get("embedding", {})
             hybrid_config = memory_config.get("hybrid_retrieval", {})
             retention_config = memory_config.get("retention", {})
+            configured_embedding_api_key = hybrid_config.get("api_key", embedding_api_key)
+            if configured_embedding_api_key is None:
+                configured_embedding_api_key = embedding_config.get("api_key")
+            configured_embedding_base_url = hybrid_config.get("base_url", embedding_base_url)
+            if configured_embedding_base_url is None:
+                configured_embedding_base_url = embedding_config.get("base_url")
+
             self.memory = MemoryManager(
                 memory_dir=memory_dir,
                 semantic_max_entries=retention_config.get("semantic_max_entries", 1000),
@@ -122,9 +134,28 @@ class LightHermes:
                 semantic_similarity_threshold=retention_config.get("semantic_similarity_threshold", 0.85),
                 distill_recent_limit=retention_config.get("distill_recent_limit", 20),
                 use_hybrid_retrieval=hybrid_config.get("enabled", False),
-                embedding_provider=hybrid_config.get("provider", embedding_provider),
-                embedding_model=hybrid_config.get("model", embedding_model),
-                api_key=hybrid_config.get("api_key")
+                embedding_provider=hybrid_config.get(
+                    "provider",
+                    embedding_config.get("provider", embedding_provider)
+                ),
+                embedding_model=hybrid_config.get(
+                    "model",
+                    hybrid_config.get(
+                        "model_name",
+                        embedding_config.get(
+                            "model_name",
+                            embedding_config.get("model", embedding_model)
+                        )
+                    )
+                ),
+                api_key=self._resolve_config_value(configured_embedding_api_key),
+                embedding_base_url=self._resolve_config_value(configured_embedding_base_url),
+                hybrid_min_candidates=hybrid_config.get("min_candidates", 5),
+                hybrid_fallback_to_all=hybrid_config.get("fallback_to_all", True),
+                hybrid_semantic_threshold=hybrid_config.get("semantic_threshold"),
+                hybrid_score_margin=hybrid_config.get("score_margin", 0.12),
+                hybrid_full_rerank_max_docs=hybrid_config.get("full_rerank_max_docs", 200),
+                hybrid_tfidf_candidate_limit=hybrid_config.get("tfidf_candidate_limit", 20)
             )
         else:
             self.memory = None
@@ -173,10 +204,100 @@ class LightHermes:
 
     @staticmethod
     def _resolve_config_value(value: Any) -> Any:
-        """解析形如 ${ENV_VAR} 的配置值"""
-        if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
-            return os.environ.get(value[2:-1])
+        """解析形如 ${ENV_VAR} 或 $(ENV_VAR) 的配置值"""
+        if isinstance(value, str):
+            if value.startswith("${") and value.endswith("}"):
+                return LightHermes._lookup_env(value[2:-1])
+            if value.startswith("$(") and value.endswith(")"):
+                return LightHermes._lookup_env(value[2:-1])
         return value
+
+    @staticmethod
+    def _lookup_env(name: str) -> Any:
+        value = os.environ.get(name)
+        if value is not None:
+            return value
+
+        if os.name != "nt":
+            return None
+
+        try:
+            import winreg
+        except ImportError:
+            return None
+
+        registry_paths = [
+            (winreg.HKEY_CURRENT_USER, "Environment"),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+            ),
+        ]
+        for root, path in registry_paths:
+            try:
+                with winreg.OpenKey(root, path) as key:
+                    return winreg.QueryValueEx(key, name)[0]
+            except OSError:
+                continue
+        return None
+
+    @staticmethod
+    def _load_local_env_files(config_path: str, config: Dict[str, Any]):
+        config_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
+        secrets_config = config.get("secrets", {}) if isinstance(config, dict) else {}
+        env_files = []
+
+        if isinstance(secrets_config, dict):
+            env_file = secrets_config.get("env_file")
+            if env_file:
+                env_files.append(env_file)
+            configured_files = secrets_config.get("env_files", [])
+            if isinstance(configured_files, str):
+                env_files.append(configured_files)
+            elif isinstance(configured_files, list):
+                env_files.extend(configured_files)
+
+        env_files.extend([".env", ".env.local"])
+        seen = set()
+        for env_file in env_files:
+            if not env_file:
+                continue
+            env_path = Path(str(env_file))
+            if not env_path.is_absolute():
+                env_path = config_dir / env_path
+            env_path = env_path.resolve()
+            if env_path in seen:
+                continue
+            seen.add(env_path)
+            LightHermes._load_env_file(env_path)
+
+    @staticmethod
+    def _load_env_file(env_path: Path):
+        if not env_path.exists() or not env_path.is_file():
+            return
+
+        try:
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ.setdefault(key, value)
 
     @classmethod
     def from_config(cls, config_path: str = "config.yaml", **overrides):
@@ -186,8 +307,11 @@ class LightHermes:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
 
+        cls._load_local_env_files(config_path, config)
+
         agent_config = config.get("agent", {})
         model_config = config.get("model", {})
+        embedding_config = config.get("embedding", {})
         memory_config = config.get("memory", {})
         evolution_config = config.get("evolution", {})
         skills_config = config.get("skills", {})
@@ -203,6 +327,13 @@ class LightHermes:
             "base_url": model_config.get("base_url"),
             "memory_enabled": memory_config.get("enabled", True),
             "memory_dir": memory_config.get("storage_dir", "memory"),
+            "embedding_provider": embedding_config.get("provider", "openai"),
+            "embedding_model": embedding_config.get(
+                "model_name",
+                embedding_config.get("model", "text-embedding-3-small")
+            ),
+            "embedding_api_key": cls._resolve_config_value(embedding_config.get("api_key")),
+            "embedding_base_url": cls._resolve_config_value(embedding_config.get("base_url")),
             "evolution_enabled": evolution_config.get("enabled", True),
             "auto_generate_skills": evolution_config.get("auto_generate_skills", True),
             "skill_validation": evolution_config.get("skill_validation", "sandbox"),

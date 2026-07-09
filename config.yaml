@@ -1,13 +1,22 @@
 # LightHermes 配置文件
 
+secrets:
+  env_file: .env.local
+
 # 模型配置
 model:
-  provider: anthropic
-  model_name: MiniMax-M2.7
-  api_key: ${ANTHROPIC_API_KEY}
-  base_url: https://api.minimaxi.com/anthropic
+  provider: openai
+  model_name: gpt-5.4-mini
+  api_key: ${OPENAI_API_KEY}
+  base_url: https://api.api2cn.com/v1
   fallback_models:
-    - MiniMax-M2.5  # API 失败时自动切换
+    - gpt-5.4  # API 失败时自动切换
+
+embedding:
+  provider: openai
+  model_name: BAAI/bge-m3
+  api_key: ${SILICONFLOW_API_KEY}
+  base_url: https://api.siliconflow.cn/v1
 
 # 记忆配置
 memory:
@@ -24,9 +33,13 @@ memory:
   # 默认使用简单关键词匹配,无需额外依赖
   # 启用混合检索需要: pip install sentence-transformers (本地) 或使用 OpenAI API
   hybrid_retrieval:
-    enabled: false                # 是否启用混合检索 (默认 false)
-    provider: openai              # openai 或 local
-    model: text-embedding-3-small # OpenAI 模型或本地模型名
+    enabled: true                # 是否启用混合检索 (默认 false)
+    min_candidates: 5            # TF-IDF 候选少于该值时触发 embedding fallback
+    fallback_to_all: true        # 候选不足时回退到全量语义记忆 embedding rerank
+    semantic_threshold: 0.35     # 过滤低于该相似度的结果；可按模型调参
+    score_margin: 0.12           # 只保留接近 top 分数的结果，减少尾部噪声
+    full_rerank_max_docs: 200    # 全量 rerank 的最大语义记忆条数
+    tfidf_candidate_limit: 20    # TF-IDF 初筛候选上限
 
   retention:
     short_term_turns: 50
@@ -89,7 +102,7 @@ context_compression:
   trigger_threshold: 0.75
 
   # 摘要模型（默认使用便宜模型节省成本）
-  summary_model: gpt-4o-mini
+  summary_model: gpt-5.4-mini
   # summary_model: null  # 使用主模型
 
   # 保护策略

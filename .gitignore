@@ -11,6 +11,14 @@ test_minimax_anthropic.py
 diagnose_api.py
 test_anthropic_api.py
 
+# 本地密钥
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+secrets*.env
+
 # Python 缓存
 __pycache__/
 *.py[cod]

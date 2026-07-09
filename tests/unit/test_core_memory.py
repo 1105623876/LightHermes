@@ -200,8 +200,8 @@ cli:
         sessions = agent.memory.working.get_recent_sessions("default", limit=1)
         assert sessions == []
 
-    def test_hybrid_retrieval_config_passed_to_memory_manager(self, temp_memory_dir, monkeypatch):
-        """测试混合检索配置传入记忆管理器"""
+    def test_embedding_config_passed_to_memory_manager(self, temp_memory_dir, monkeypatch):
+        """测试独立 embedding 配置传入记忆管理器"""
         original_exists = os.path.exists
         original_open = open
 
@@ -216,12 +216,20 @@ cli:
                 return StringIO("""
 model:
   fallback_models: []
+embedding:
+  provider: openai
+  model_name: BAAI/bge-m3
+  api_key: $(LIGHTHERMES_EMBEDDING_KEY)
+  base_url: $(LIGHTHERMES_EMBEDDING_BASE_URL)
 memory:
   hybrid_retrieval:
     enabled: true
-    provider: local
-    model: test-embedding
-    api_key: test-key
+    min_candidates: 3
+    fallback_to_all: true
+    semantic_threshold: 0.42
+    score_margin: 0.11
+    full_rerank_max_docs: 99
+    tfidf_candidate_limit: 12
   retention:
     semantic_max_entries: 123
     semantic_max_chars: 4567
@@ -238,6 +246,8 @@ context_compression:
 
         monkeypatch.setattr("lighthermes.core.os.path.exists", fake_exists)
         monkeypatch.setattr("builtins.open", fake_open)
+        monkeypatch.setenv("LIGHTHERMES_EMBEDDING_KEY", "env-embedding-key")
+        monkeypatch.setenv("LIGHTHERMES_EMBEDDING_BASE_URL", "https://embedding.example.test/v1")
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
         monkeypatch.setattr("lighthermes.core.MemoryManager", FakeMemoryManager)
         monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
@@ -252,13 +262,78 @@ context_compression:
         )
 
         assert agent.memory.kwargs["use_hybrid_retrieval"] is True
-        assert agent.memory.kwargs["embedding_provider"] == "local"
-        assert agent.memory.kwargs["embedding_model"] == "test-embedding"
-        assert agent.memory.kwargs["api_key"] == "test-key"
+        assert agent.memory.kwargs["embedding_provider"] == "openai"
+        assert agent.memory.kwargs["embedding_model"] == "BAAI/bge-m3"
+        assert agent.memory.kwargs["api_key"] == "env-embedding-key"
+        assert agent.memory.kwargs["embedding_base_url"] == "https://embedding.example.test/v1"
+        assert agent.memory.kwargs["hybrid_min_candidates"] == 3
+        assert agent.memory.kwargs["hybrid_fallback_to_all"] is True
+        assert agent.memory.kwargs["hybrid_semantic_threshold"] == 0.42
+        assert agent.memory.kwargs["hybrid_score_margin"] == 0.11
+        assert agent.memory.kwargs["hybrid_full_rerank_max_docs"] == 99
+        assert agent.memory.kwargs["hybrid_tfidf_candidate_limit"] == 12
         assert agent.memory.kwargs["semantic_max_entries"] == 123
         assert agent.memory.kwargs["semantic_max_chars"] == 4567
         assert agent.memory.kwargs["semantic_similarity_threshold"] == 0.75
         assert agent.memory.kwargs["distill_recent_limit"] == 8
+
+    def test_from_config_loads_local_env_file_for_embedding(self, temp_memory_dir, tmp_path, monkeypatch):
+        """测试项目级 env 文件可提供 embedding 密钥"""
+        captured_memory_kwargs = {}
+        memory_dir = temp_memory_dir.replace("\\", "/")
+        config_path = tmp_path / "lighthermes.yaml"
+        env_path = tmp_path / ".env.local"
+
+        env_path.write_text(
+            "LOCAL_EMBEDDING_KEY=local-embedding-key\n"
+            "LOCAL_EMBEDDING_BASE_URL=https://local-embedding.example.test/v1\n",
+            encoding="utf-8"
+        )
+        config_path.write_text(f"""
+model:
+  provider: openai
+  model_name: gpt-5.4-mini
+  api_key: test-main-key
+embedding:
+  provider: openai
+  model_name: BAAI/bge-m3
+  api_key: $(LOCAL_EMBEDDING_KEY)
+  base_url: $(LOCAL_EMBEDDING_BASE_URL)
+memory:
+  enabled: true
+  storage_dir: "{memory_dir}"
+  hybrid_retrieval:
+    enabled: true
+secrets:
+  env_file: .env.local
+evolution:
+  enabled: false
+skills:
+  dirs: []
+tools:
+  builtin:
+    enabled: false
+context_compression:
+  enabled: false
+""", encoding="utf-8")
+
+        class FakeMemoryManager:
+            def __init__(self, **kwargs):
+                captured_memory_kwargs.update(kwargs)
+
+        monkeypatch.delenv("LOCAL_EMBEDDING_KEY", raising=False)
+        monkeypatch.delenv("LOCAL_EMBEDDING_BASE_URL", raising=False)
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+        monkeypatch.setattr("lighthermes.core.MemoryManager", FakeMemoryManager)
+        monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: None)
+        monkeypatch.setattr("lighthermes.core.ToolDispatcher", lambda *args, **kwargs: None)
+
+        LightHermes.from_config(str(config_path))
+
+        assert captured_memory_kwargs["use_hybrid_retrieval"] is True
+        assert captured_memory_kwargs["embedding_model"] == "BAAI/bge-m3"
+        assert captured_memory_kwargs["api_key"] == "local-embedding-key"
+        assert captured_memory_kwargs["embedding_base_url"] == "https://local-embedding.example.test/v1"
 
     def test_memory_enabled_registers_search_memory_builtin_tool(self, temp_memory_dir, monkeypatch):
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())

@@ -89,16 +89,26 @@ class TFIDFRetriever:
 class EmbeddingRetriever:
     """嵌入检索器 - 精确重排"""
 
-    def __init__(self, provider: str = "openai", model: str = "text-embedding-3-small", api_key: str = None):
+    def __init__(
+        self,
+        provider: str = "openai",
+        model: str = "text-embedding-3-small",
+        api_key: str = None,
+        base_url: str = None
+    ):
         self.provider = provider
         self.model = model
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.base_url = base_url
         self.embeddings_cache: Dict[str, List[float]] = {}
         self.cache_file = Path("memory/.embeddings/cache.json")
 
         if self.provider == "openai":
             from openai import OpenAI
-            self.client = OpenAI(api_key=self.api_key)
+            client_kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self.client = OpenAI(**client_kwargs)
         elif self.provider == "local":
             try:
                 from sentence_transformers import SentenceTransformer
@@ -147,7 +157,14 @@ class EmbeddingRetriever:
         norm2 = math.sqrt(sum(b * b for b in vec2))
         return dot_product / (norm1 * norm2) if norm1 and norm2 else 0
 
-    def rerank(self, query: str, documents: List[Dict[str, Any]], top_k: int = 5) -> List[Dict[str, Any]]:
+    def rerank(
+        self,
+        query: str,
+        documents: List[Dict[str, Any]],
+        top_k: int = 5,
+        min_score: float = None,
+        score_margin: float = None
+    ) -> List[Dict[str, Any]]:
         """使用嵌入模型重排"""
         query_embedding = self.embed(query)
         scores = []
@@ -155,9 +172,17 @@ class EmbeddingRetriever:
         for doc in documents:
             doc_embedding = self.embed(doc["content"][:500])
             score = self.cosine_similarity(query_embedding, doc_embedding)
-            scores.append((score, doc))
+            if min_score is not None and score < min_score:
+                continue
+            ranked_doc = dict(doc)
+            ranked_doc["score"] = score
+            ranked_doc["embedding_score"] = score
+            scores.append((score, ranked_doc))
 
         scores.sort(reverse=True, key=lambda x: x[0])
+        if score_margin is not None and scores:
+            cutoff = scores[0][0] - score_margin
+            scores = [item for item in scores if item[0] >= cutoff]
         return [doc for _, doc in scores[:top_k]]
 
 
@@ -168,13 +193,27 @@ class HybridRetriever:
         self,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        api_key: str = None
+        api_key: str = None,
+        embedding_base_url: str = None,
+        min_candidates: int = 5,
+        fallback_to_all: bool = True,
+        semantic_threshold: float = None,
+        score_margin: float = 0.12,
+        full_rerank_max_docs: int = 200,
+        tfidf_candidate_limit: int = 20
     ):
         self.tfidf = TFIDFRetriever()
+        self.min_candidates = min_candidates
+        self.fallback_to_all = fallback_to_all
+        self.semantic_threshold = semantic_threshold
+        self.score_margin = score_margin
+        self.full_rerank_max_docs = full_rerank_max_docs
+        self.tfidf_candidate_limit = tfidf_candidate_limit
         self.embedding = EmbeddingRetriever(
             provider=embedding_provider,
             model=embedding_model,
-            api_key=api_key
+            api_key=api_key,
+            base_url=embedding_base_url
         )
 
     def index_documents(self, documents: List[Dict[str, Any]]):
@@ -183,11 +222,23 @@ class HybridRetriever:
 
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """混合检索"""
-        candidates = self.tfidf.search(query, top_k=20)
+        candidates = self.tfidf.search(query, top_k=self.tfidf_candidate_limit)
+        documents = self.tfidf.documents
+
+        if self.fallback_to_all and (
+            len(documents) <= self.full_rerank_max_docs or
+            len(candidates) < self.min_candidates
+        ):
+            candidates = documents[:self.full_rerank_max_docs]
 
         if not candidates:
             return []
 
-        results = self.embedding.rerank(query, candidates, top_k=top_k)
+        results = self.embedding.rerank(
+            query,
+            candidates,
+            top_k=top_k,
+            min_score=self.semantic_threshold,
+            score_margin=self.score_margin
+        )
         return results
-

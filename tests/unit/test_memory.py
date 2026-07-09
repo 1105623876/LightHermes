@@ -124,10 +124,19 @@ class TestSemanticMemory:
     def test_hybrid_retriever_initialization(self, temp_memory_dir, monkeypatch):
         """测试混合检索初始化"""
         class FakeHybridRetriever:
-            def __init__(self, embedding_provider, embedding_model, api_key):
+            def __init__(
+                self,
+                embedding_provider,
+                embedding_model,
+                api_key,
+                embedding_base_url=None,
+                **kwargs
+            ):
                 self.embedding_provider = embedding_provider
                 self.embedding_model = embedding_model
                 self.api_key = api_key
+                self.embedding_base_url = embedding_base_url
+                self.kwargs = kwargs
 
         monkeypatch.setattr(
             "lighthermes.retrieval.HybridRetriever",
@@ -139,13 +148,18 @@ class TestSemanticMemory:
             use_hybrid_retrieval=True,
             embedding_provider="local",
             embedding_model="test-model",
-            api_key="test-key"
+            api_key="test-key",
+            embedding_base_url="https://embedding.example.test/v1"
         )
 
         assert semantic.hybrid_retriever is not None
         assert semantic.hybrid_retriever.embedding_provider == "local"
         assert semantic.hybrid_retriever.embedding_model == "test-model"
         assert semantic.hybrid_retriever.api_key == "test-key"
+        assert semantic.hybrid_retriever.embedding_base_url == "https://embedding.example.test/v1"
+        assert semantic.hybrid_retriever.kwargs["min_candidates"] == 5
+        assert semantic.hybrid_retriever.kwargs["fallback_to_all"] is True
+        assert semantic.hybrid_retriever.kwargs["score_margin"] == 0.12
 
     def test_near_duplicate_semantic_memory_merges(self, temp_memory_dir):
         """测试近重复语义记忆合并"""
