@@ -194,6 +194,30 @@ class TestSemanticMemory:
         assert "old" not in files
         assert "old" not in semantic.index.search(["Python"])
 
+    def test_large_candidate_search_uses_cached_mtimes(self, temp_memory_dir):
+        """大量候选裁剪复用缓存时间，避免重复扫描文件元数据"""
+        semantic = SemanticMemory(storage_dir=f"{temp_memory_dir}/semantic")
+        for index in range(250):
+            semantic.save(
+                f"memory_{index}",
+                f"共享关键词 memory {index}",
+                {"type": "test"}
+            )
+
+        semantic._file_mtimes = {
+            f"memory_{index}": 1000 - index
+            for index in range(250)
+        }
+
+        results = semantic.search("共享关键词", limit=5)
+
+        result_indexes = {
+            int(result["name"].split("_")[-1])
+            for result in results
+        }
+        assert result_indexes
+        assert max(result_indexes) < 100
+
 
 @pytest.mark.unit
 class TestMemoryManager:
@@ -237,6 +261,104 @@ class TestMemoryManager:
         assert {item["layer"] for item in items} == {"working", "episodic", "semantic"}
         assert all({"name", "content", "score", "priority", "metadata", "source"} <= item.keys() for item in items)
         assert items[0]["priority"] >= items[-1]["priority"]
+
+    def test_hybrid_recall_reranks_candidates_across_memory_layers(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        captured = {}
+
+        mm.use_hybrid_retrieval = True
+        mm.working.get_recent_sessions = lambda *args, **kwargs: []
+        mm.episodic.search = lambda *args, **kwargs: [{
+            "name": "episodic_noise",
+            "content": "情景层关键词噪声",
+            "metadata": {"type": "incident"},
+            "score": 10,
+        }]
+        mm.semantic.search = lambda *args, **kwargs: [{
+            "name": "semantic_target",
+            "content": "真正相关的语义答案",
+            "metadata": {"type": "project_fact"},
+            "score": 0.8,
+        }]
+        mm.episodic.update_access = lambda *args, **kwargs: None
+        mm.semantic.update_access = lambda *args, **kwargs: None
+
+        class FakeHybridRetriever:
+            def index_documents(self, documents):
+                captured["sources"] = [document["source"] for document in documents]
+                self.documents = documents
+
+            def search(self, query, top_k=5):
+                target = next(
+                    document for document in self.documents
+                    if document["source"] == "semantic:semantic_target"
+                )
+                target = dict(target)
+                target["score"] = 0.9
+                target["embedding_score"] = 0.9
+                return [target]
+
+        mm.semantic.hybrid_retriever = FakeHybridRetriever()
+
+        items = mm.recall_items("语义答案", limit=2)
+
+        assert set(captured["sources"]) == {
+            "episodic:episodic_noise",
+            "semantic:semantic_target",
+        }
+        assert [item["source"] for item in items] == ["semantic:semantic_target"]
+
+    def test_recall_filters_stale_and_rejected_context_unless_requested(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.episodic.search = lambda *args, **kwargs: [
+            {
+                "name": "current",
+                "content": "当前方案使用 SQLite",
+                "metadata": {"type": "decision"},
+                "score": 2,
+            },
+            {
+                "name": "rejected",
+                "content": "被否决方案使用 PostgreSQL",
+                "metadata": {"type": "rejected"},
+                "score": 3,
+            },
+        ]
+        mm.semantic.search = lambda *args, **kwargs: []
+        mm.working.get_recent_sessions = lambda *args, **kwargs: []
+        mm.episodic.update_access = lambda *args, **kwargs: None
+
+        current = mm.recall_items("当前方案", limit=5)
+        historical = mm.recall_items("历史上被否决的方案", limit=5)
+
+        assert [item["source"] for item in current] == ["episodic:current"]
+        assert "episodic:rejected" in [item["source"] for item in historical]
+        assert mm._query_requests_noncurrent_memory("current threshold") is False
+        assert mm._query_requests_noncurrent_memory("old threshold") is True
+
+    def test_hybrid_recall_keeps_only_top_working_memory(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.use_hybrid_retrieval = True
+        mm.working.get_recent_sessions = lambda *args, **kwargs: [
+            {"session_id": "target", "summary": "当前相关工作", "timestamp": "2026-01-02"},
+            {"session_id": "noise", "summary": "最近无关工作", "timestamp": "2026-01-01"},
+        ]
+        mm.episodic.search = lambda *args, **kwargs: []
+        mm.semantic.search = lambda *args, **kwargs: []
+
+        class FakeHybridRetriever:
+            def index_documents(self, documents):
+                self.documents = documents
+
+            def search(self, query, top_k=5):
+                return [dict(document, score=0.9 - index * 0.01)
+                        for index, document in enumerate(self.documents)]
+
+        mm.semantic.hybrid_retriever = FakeHybridRetriever()
+
+        items = mm.recall_items("当前工作", limit=5)
+
+        assert [item["source"] for item in items] == ["working:target"]
 
     def test_search_memory_filters_layer_and_metadata(self, temp_memory_dir):
         mm = MemoryManager(

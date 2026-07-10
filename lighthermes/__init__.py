@@ -10,7 +10,10 @@ from lighthermes.evaluation import (
     MemoryEvalReport,
     MemoryEvalResult,
     MemoryEvalSeed,
+    MemoryEvalSuite,
     MemoryQualityEvaluator,
+    build_memory_eval_v2_extended_suite,
+    build_memory_eval_v2_suite,
 )
 
 __all__ = [
@@ -20,5 +23,8 @@ __all__ = [
     "MemoryEvalReport",
     "MemoryEvalResult",
     "MemoryEvalSeed",
+    "MemoryEvalSuite",
     "MemoryQualityEvaluator",
+    "build_memory_eval_v2_extended_suite",
+    "build_memory_eval_v2_suite",
 ]

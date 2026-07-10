@@ -36,8 +36,8 @@ memory:
     enabled: true                # 是否启用混合检索 (默认 false)
     min_candidates: 5            # TF-IDF 候选少于该值时触发 embedding fallback
     fallback_to_all: true        # 候选不足时回退到全量语义记忆 embedding rerank
-    semantic_threshold: 0.35     # 过滤低于该相似度的结果；可按模型调参
-    score_margin: 0.12           # 只保留接近 top 分数的结果，减少尾部噪声
+    semantic_threshold: 0.50     # BGE-M3 评测起点；其他模型需按相似度分布调参
+    score_margin: 0.08           # BGE-M3 保留接近 top 的结果，抑制语义尾部噪声
     full_rerank_max_docs: 200    # 全量 rerank 的最大语义记忆条数
     tfidf_candidate_limit: 20    # TF-IDF 初筛候选上限
 

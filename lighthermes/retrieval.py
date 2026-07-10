@@ -126,29 +126,59 @@ class EmbeddingRetriever:
 
     def _save_cache(self):
         """保存嵌入缓存"""
-        self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.cache_file, "w", encoding="utf-8") as f:
-            json.dump(self.embeddings_cache, f)
+        temp_file = self.cache_file.with_suffix(self.cache_file.suffix + ".tmp")
+        try:
+            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(self.embeddings_cache, f)
+            temp_file.replace(self.cache_file)
+            return True
+        except (OSError, ValueError):
+            try:
+                temp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
 
     def embed(self, text: str) -> List[float]:
         """生成文本嵌入"""
-        if text in self.embeddings_cache:
-            return self.embeddings_cache[text]
+        return self.embed_many([text])[0]
 
-        if self.provider == "openai":
-            response = self.client.embeddings.create(
-                model=self.model,
-                input=text
-            )
-            embedding = response.data[0].embedding
-        elif self.provider == "local":
-            embedding = self.model_instance.encode(text).tolist()
-        else:
-            raise ValueError(f"不支持的提供者: {self.provider}")
+    def embed_many(self, texts: List[str]) -> List[List[float]]:
+        """批量生成文本嵌入，并复用本地缓存"""
+        if not texts:
+            return []
 
-        self.embeddings_cache[text] = embedding
-        self._save_cache()
-        return embedding
+        missing_texts = []
+        seen = set()
+        for text in texts:
+            if text not in self.embeddings_cache and text not in seen:
+                missing_texts.append(text)
+                seen.add(text)
+
+        if missing_texts:
+            if self.provider == "openai":
+                response = self.client.embeddings.create(
+                    model=self.model,
+                    input=missing_texts
+                )
+                response_data = sorted(
+                    response.data,
+                    key=lambda item: getattr(item, "index", 0)
+                )
+                embeddings = [item.embedding for item in response_data]
+            elif self.provider == "local":
+                embeddings = self.model_instance.encode(missing_texts).tolist()
+            else:
+                raise ValueError(f"不支持的提供者: {self.provider}")
+
+            if len(embeddings) != len(missing_texts):
+                raise ValueError("嵌入接口返回数量与输入数量不一致")
+
+            self.embeddings_cache.update(zip(missing_texts, embeddings))
+            self._save_cache()
+
+        return [self.embeddings_cache[text] for text in texts]
 
     def cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度"""
@@ -166,11 +196,15 @@ class EmbeddingRetriever:
         score_margin: float = None
     ) -> List[Dict[str, Any]]:
         """使用嵌入模型重排"""
-        query_embedding = self.embed(query)
+        if not documents:
+            return []
+
+        document_texts = [doc["content"][:500] for doc in documents]
+        embeddings = self.embed_many([query, *document_texts])
+        query_embedding = embeddings[0]
         scores = []
 
-        for doc in documents:
-            doc_embedding = self.embed(doc["content"][:500])
+        for doc, doc_embedding in zip(documents, embeddings[1:]):
             score = self.cosine_similarity(query_embedding, doc_embedding)
             if min_score is not None and score < min_score:
                 continue

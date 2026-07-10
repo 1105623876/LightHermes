@@ -1,38 +1,47 @@
 # LightHermes
 
-**极简自进化智能体框架** — 在 LightAgent 的轻量哲学上，加入记忆与自进化能力
+轻量级记忆增强智能体框架。在不引入 LangChain、LlamaIndex 或 LangGraph 的前提下，提供分级记忆、工具调用、上下文压缩和轻量自进化能力。
 
-## 设计理念
+当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、批量 embedding、跨层统一重排和流式生命周期收口。
 
-- **极简主义**: 核心约 3700 行，无重框架依赖（无 LangChain/LlamaIndex/LangGraph）
-- **开箱即用**: 默认关键词检索和 `search_memory`，可选语义增强与受控文件工具
-- **渐进增强**: 从最简实现开始，按需启用高级特性；所有高风险能力默认关闭
+## 核心能力
 
-## 核心特性
+| 能力 | 说明 |
+|------|------|
+| 四级记忆 | 短期、工作、情景、语义记忆分层存储和迁移 |
+| 混合检索 | 关键词初筛、embedding 重排、跨层候选融合和噪声过滤 |
+| 生命周期 | 回合开始/结束、压缩前、会话结束和记忆写入钩子 |
+| 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
+| 工具系统 | 默认提供 `search_memory`，文件工具按配置显式开启 |
+| 自进化 | 记录轨迹，从高质量成功经验生成 Markdown 技能，并沉淀失败报告 |
+| 多模型端点 | OpenAI、OpenAI 兼容端点、Anthropic 和 MiniMax Anthropic 兼容端点 |
+| CLI | 交互对话、记忆统计、压缩、导出和会话重置 |
 
-- **四级记忆系统**: 短期/工作/情景/语义分层管理，对话上下文、会话摘要、项目经验和长期知识各自落在合适层级。
-- **记忆生命周期钩子**: 在回合开始、回合结束、压缩前、会话结束和记忆写入时沉淀上下文，并用 `<memory-context>` 隔离召回内容。
-- **记忆层级迁移**: 根据访问频率自动在层级间流动，低频归档、高频提升，避免长期记忆无限堆积。
-- **自适应记忆**: 记录检索命中率、耗时和结果数，为后续动态调参和检索策略优化保留数据基础。
-- **内置工具**: 默认提供 `search_memory` 记忆搜索工具，并可通过配置显式开启受控的文件读、搜索和写入工具。
-- **上下文压缩**: 智能压缩长对话，保留关键决策、待办和解决方案，防止 token 溢出。
-- **自进化能力**: 记录任务轨迹、分析成功/失败模式，并从高质量成功轨迹中生成 Markdown 技能。
-- **生产稳定性**: 轻量日志、模型降级、错误处理和测试基线，保持小框架的可维护性。
-- **技能系统**: 支持 Markdown 技能和 Python 插件，默认优先生成无需执行代码的 Markdown 技能。
-- **多 API 支持**: OpenAI / OpenAI 兼容端点 + Anthropic + MiniMax (Anthropic 兼容)，通过统一 Adapter 隔离供应商差异。
-- **交互式 CLI**: 支持记忆统计、配置查看、手动压缩、历史导出和会话重置。
+LightHermes 当前更适合单用户、本地运行或嵌入 Python 应用。多用户记忆隔离、网络 Channel 和插件生态仍属于后续阶段。
 
 ## 快速开始
 
 ### 安装
 
-```bash
-pip install -r requirements.txt
+建议使用项目虚拟环境：
+
+```powershell
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-### 配置
+核心依赖为 `openai`、`anthropic` 和 `pyyaml`。本地 embedding 的 `sentence-transformers` 属于可选依赖。
 
-建议通过环境变量保存 API key，再在 `config.yaml` 中引用：
+### 配置密钥
+
+密钥可以只放在项目级 `.env.local`，不需要设置全局环境变量：
+
+```env
+OPENAI_API_KEY=your_main_model_key
+SILICONFLOW_API_KEY=your_embedding_key
+```
+
+在 `config.yaml` 中引用变量：
 
 ```yaml
 secrets:
@@ -45,49 +54,47 @@ model:
   base_url: https://api.openai.com/v1
 ```
 
-PowerShell 临时设置：
+支持 `${ENV_VAR}` 和 `$(ENV_VAR)` 两种形式。`.env`、`.env.local` 和 `*.env` 默认不会被 Git 跟踪。
+
+### 运行
+
+```python
+from lighthermes import LightHermes
+
+agent = LightHermes.from_config("config.yaml")
+response = agent.run("帮我分析这段代码")
+print(response)
+```
+
+流式调用：
+
+```python
+for chunk in agent.run("解释当前项目架构", stream=True):
+    print(chunk, end="", flush=True)
+```
+
+流式和非流式路径共享同一套回合收尾逻辑。只有流被完整消费并正常结束时，最终回复才会写入完成态记忆和轨迹。
+
+### CLI
 
 ```powershell
-$env:OPENAI_API_KEY="your_key"
+.\venv\Scripts\python.exe -m lighthermes.cli
 ```
 
-也可以只放在项目本地 `.env.local`，不用设置全局环境变量：
+| 命令 | 作用 |
+|------|------|
+| `/skills` | 列出技能 |
+| `/memory` | 查看记忆概况 |
+| `/stats` | 查看 API、token 和记忆统计 |
+| `/config` | 查看当前配置 |
+| `/compress` | 手动压缩上下文 |
+| `/export` | 导出对话历史 |
+| `/reset` | 重置会话并保留长期记忆 |
+| `/exit` | 结束会话并触发会话收尾 |
 
-```env
-OPENAI_API_KEY=your_key
-SILICONFLOW_API_KEY=your_siliconflow_key
-```
+## 模型端点
 
-`.env`、`.env.local` 和 `*.env` 默认会被 `.gitignore` 忽略。
-
-**使用 Anthropic API**:
-
-```python
-agent = LightHermes(
-    name="MyAgent",
-    role="编程助手",
-    model="claude-sonnet-4-6",
-    provider="anthropic",
-    api_key="your_anthropic_key"
-)
-```
-
-**使用 MiniMax (Anthropic 兼容端点)**:
-
-```python
-agent = LightHermes(
-    name="MyAgent",
-    role="编程助手",
-    model="claude-sonnet-4-6",
-    provider="anthropic",
-    api_key="your_minimax_key",
-    base_url="https://api.minimaxi.com/anthropic"
-)
-```
-
-> **注意**: MiniMax 的流式响应返回累积文本而非增量文本，但 LightHermes 已自动处理此差异，可正常使用流式输出。
-
-**使用 OpenAI 兼容中转站**:
+### OpenAI 兼容端点
 
 ```yaml
 model:
@@ -95,139 +102,31 @@ model:
   model_name: gpt-5.4-mini
   api_key: ${SUB2API_KEY}
   base_url: https://your-gateway.example.com/v1
-
-context_compression:
-  enabled: true
-  summary_model: gpt-5.4-mini
 ```
 
-> `base_url` 通常填到 `/v1`，不要填完整的 `/chat/completions`。不要把真实 key 明文提交到仓库。
+`base_url` 通常填写到 `/v1`，不要填写完整的 `/chat/completions` 路径。
 
-### 使用
-
-**Python API**:
+### Anthropic / MiniMax
 
 ```python
 from lighthermes import LightHermes
 
-agent = LightHermes.from_config("config.yaml")
-
-response = agent.run("帮我解释这段代码")
-print(response)
-```
-
-也可以直接用构造函数传参：
-
-```python
 agent = LightHermes(
     name="MyAgent",
     role="编程助手",
-    model="gpt-5.4-mini",
-    provider="openai",
+    model="claude-sonnet-4-6",
+    provider="anthropic",
     api_key="your_key",
-    base_url="https://your-gateway.example.com/v1"
+    base_url="https://api.minimaxi.com/anthropic",
 )
 ```
 
-**CLI**:
+MiniMax 累积式流文本会在 Adapter 层转换为增量文本。
 
-```bash
-# 启动 CLI（需先在 config.yaml 中配置 API key）
-python -m lighthermes.cli
+### 独立 embedding 端点
 
-# 可用命令
-/help       # 显示帮助信息
-/skills     # 列出所有可用技能
-/memory     # 显示记忆系统统计
-/stats      # 显示详细统计（API 调用、token 使用、记忆命中率）
-/config     # 显示当前配置
-/compress   # 压缩当前对话上下文
-/export     # 导出对话历史到 JSON 文件
-/reset      # 重置会话但保留长期记忆
-/exit       # 退出
-```
+主模型与 embedding 可以使用不同供应商：
 
-## 项目结构
-
-```
-LightHermes/
-├── lighthermes/       # 核心代码
-│   ├── core.py         # 主引擎
-│   ├── memory.py       # 四级记忆系统
-│   ├── builtin_tools.py # 内置工具（记忆搜索、受控文件工具）
-│   ├── evolution.py    # 自进化系统
-│   └── cli.py          # 命令行界面
-├── skills/             # 技能库
-│   ├── core/           # 内置技能
-│   ├── user/           # 用户自定义
-│   └── generated/      # 自动生成
-├── plugins/            # 插件
-├── memory/             # 记忆存储
-└── config.yaml         # 配置文件
-```
-
-## 系统架构
-
-LightHermes 的核心设计是“少量模块 + 清晰边界”：
-
-- `LightHermes` 主引擎负责对话循环、记忆注入、上下文压缩和自进化触发，并保留兼容导入门面。
-- `ToolDispatcher` 与 `tool` 位于 `lighthermes/tools.py`，统一工具装饰、注册和调用边界，支持同名工具覆盖。
-- `builtin_tools.py` 提供内置 `search_memory`、`read_file`、`search_files`、`write_file`，文件工具默认关闭并受路径白名单保护。
-- `SkillLoader` 位于 `lighthermes/skills.py`，负责 Markdown 技能加载、自动匹配和 `failure_report` 召回。
-- `MemoryManager` 管理四级记忆，并统一对外提供保存、结构化召回、显式搜索、迁移、生命周期钩子和统计接口。
-- `call_hook_safely` 位于 `lighthermes/hooks.py`，隔离生命周期钩子异常，避免辅助能力阻断主流程。
-- `ChannelMessage` / `DirectChannel` 位于 `lighthermes/channels.py`，预留 CLI/API/消息平台的轻量通道边界。
-- `ContextCompressor` 在上下文接近窗口上限时压缩中间对话，保留开头设定和最近消息。
-- `EvolutionEngine` 记录会话轨迹，分析高质量成功模式和失败模式，生成可复用技能。
-- `BaseAdapter` 统一不同模型供应商的调用方式，核心逻辑不直接绑定 OpenAI/Anthropic SDK。
-- `LightHermes.from_config()` 统一 Python API 与 CLI 的配置入口，支持 `${ENV_VAR}` 形式引用环境变量。
-- `CLI` 提供本地交互入口，适合快速测试记忆、压缩、技能和模型配置。
-
-## 记忆系统设计
-
-LightHermes 内置四级记忆，默认先使用轻量关键词检索，按需启用语义增强：
-
-| 层级 | 作用 | 典型内容 |
-|------|------|----------|
-| 短期记忆 | 当前对话窗口 | 最近用户消息、助手回复、工具结果 |
-| 工作记忆 | 当前会话摘要 | 压缩后的会话重点、阶段性任务上下文 |
-| 情景记忆 | 项目/任务经验 | 某次调试、实现、设计讨论的沉淀 |
-| 语义记忆 | 长期知识 | 稳定事实、用户明确要求记住的信息、可复用知识 |
-
-关键机制：
-
-- **中英文混合分词**: 关键词索引支持中文字符和英文 token，避免中文记忆无法命中。
-- **结构化召回**: `recall_items()` 返回层级、来源、分数、优先级和元数据，`recall()` 保持旧字符串接口兼容。
-- **显式记忆搜索**: `search_memory()` 支持按 `working`、`episodic`、`semantic` 或 `all` 搜索，供内置工具和显式列表请求复用。
-- **召回上下文隔离**: 召回记忆通过 `<memory-context>` 注入，明确标记为背景信息而不是新的用户指令。
-- **固定记忆注入**: `memory/SOUL.md` 和 `memory/USER.md` 可直接注入 system prompt，用于稳定保存智能体设定和用户偏好。
-- **生命周期沉淀**: 回合结束同步短期记忆，压缩前提取轻量线索，CLI 退出或重置时生成会话摘要并触发迁移。
-- **工作记忆提升**: 工作记忆可幂等迁移到情景记忆，避免重要会话摘要丢失。
-- **压缩摘要入库**: 可配置将上下文压缩摘要写入工作记忆，让长对话压缩结果继续被后续召回。
-- **可选混合检索**: 默认不开启 embedding；需要更精确召回时可启用 OpenAI 兼容 embedding endpoint 或 local embedding。
-
-## 自进化系统设计
-
-自进化模块目前保持轻量，不追求复杂强化学习，而是记录轨迹、筛选高质量经验、生成可读技能：
-
-1. **轨迹记录**: 保存会话消息、工具调用、任务类型、成功状态、迭代次数和用户纠正次数。
-2. **质量评估**: 为成功轨迹计算 `quality_score`、`quality_level`、`learning_worthy` 和 `quality_metrics`。
-3. **选择性学习**: 只从高质量成功轨迹中学习，避免把多次试错后的“侥幸成功”固化为技能。
-4. **技能生成**: 从成功模式生成 Markdown 技能，优先产出提示词模板而非可执行插件。
-5. **失败报告**: 从失败模式生成 `failure_report` 文档，记录失败模式、不要这样做、可能原因、替代建议和识别信号。
-6. **反模式提示**: 在任务执行前按任务类型和关键词召回相关 `failure_report`，生成简短非阻断风险提示。
-7. **反模式记忆沉淀**: 失败报告会先写入情景记忆，再由 `distill_memories()` 蒸馏为稳定语义记忆。
-8. **Adapter 解耦**: Evolution 复用主模型 Adapter，不再为非 OpenAI provider 额外要求 `OPENAI_API_KEY`。
-
-当前 Evolution 已完成基础闭环；失败报告已可作为执行前轻量风险提示参与上下文，并进入记忆生命周期。
-
-## 渐进增强
-
-**默认**: 关键词检索，零额外依赖
-
-**可选增强**:
-
-**1. 语义检索** (`config.yaml`)
 ```yaml
 embedding:
   provider: openai
@@ -240,40 +139,113 @@ memory:
     enabled: true
     min_candidates: 5
     fallback_to_all: true
-    semantic_threshold: 0.35
-    score_margin: 0.12
+    semantic_threshold: 0.50
+    score_margin: 0.08
     full_rerank_max_docs: 200
     tfidf_candidate_limit: 20
 ```
 
-> `embedding` 与主 `model` 独立配置，适合主模型走 sub2api、embedding 走硅基流动这类场景。`api_key` 和 `base_url` 支持 `${ENV_VAR}` 或 `$(ENV_VAR)` 引用，括号里填环境变量名；变量可来自系统环境或项目级 `.env`/`.env.local`。OpenAI 兼容端点通常填到 `/v1`。混合检索会在 TF-IDF 候选不足时回退到全量 embedding rerank，并用 `semantic_threshold` 与 `score_margin` 过滤低相关噪声。
+示例中的 `0.50` / `0.08` 是 BGE-M3 合成评测后的建议起点。不同 embedding 模型的分数分布不同，切换模型后应重新评估。
 
-**2. 自适应记忆** (默认启用)
-```yaml
-memory:
-  adaptive:
-    enabled: true
-    adapt_interval: 100  # 每 100 次查询评估一次
-    archive_days: 30     # 30 天未访问则归档
+## 架构
+
+```text
+CLI / Python API
+        |
+   LightHermes core
+        |
+        +-- adapters/       模型供应商适配
+        +-- tools.py        工具注册与调用
+        +-- builtin_tools.py 记忆与受控文件工具
+        +-- skills.py       Markdown 技能和失败报告召回
+        +-- memory.py       四级记忆、迁移、蒸馏和跨层召回
+        +-- retrieval.py    TF-IDF、批量 embedding 和混合重排
+        +-- compressor.py   上下文压缩
+        +-- evolution.py    轨迹分析和技能生成
+        +-- evaluation.py   Memory Eval v2.1
 ```
 
-**3. 上下文压缩** (默认启用)
-```yaml
-context_compression:
-  enabled: true
-  trigger_threshold: 0.75  # 75% 上下文窗口时触发
-  summary_model: gpt-4o-mini  # 使用便宜模型节省成本
+核心边界：
+
+- `LightHermes` 负责对话循环、记忆注入、工具迭代和统一回合收尾。
+- `BaseAdapter` 隔离 OpenAI、Anthropic 和兼容端点差异。
+- `MemoryManager` 统一管理保存、结构化召回、迁移、蒸馏和统计。
+- `ToolDispatcher` 负责 schema、注册、同名覆盖和调用。
+- `SkillLoader` 负责 Markdown 技能匹配以及 `failure_report` 风险提示。
+- `ContextCompressor` 处理长上下文；`EvolutionEngine` 记录轨迹并生成可读技能。
+
+## 记忆系统
+
+| 层级 | 存储 | 典型内容 |
+|------|------|----------|
+| 短期记忆 | 进程内消息 | 当前对话窗口 |
+| 工作记忆 | SQLite | 会话摘要、阶段任务 |
+| 情景记忆 | Markdown | 调试经验、项目决策、任务事件 |
+| 语义记忆 | Markdown + 索引 | 稳定事实、用户偏好、长期知识 |
+
+关键行为：
+
+- 召回内容通过 `<memory-context>` 包装，明确标记为背景信息而非新指令。
+- `SOUL.md` 和 `USER.md` 用于稳定设定与固定用户偏好。
+- hybrid 模式扩大各层候选池，再使用同一个 embedding 统一重排。
+- 普通自动上下文默认排除 `historical`、`rejected` 和 `failure_report`；明确询问历史或失败经验时仍可召回。
+- hybrid 工作记忆只保留最相关项，减少最近但无关的摘要占位。
+- embedding 支持批量请求；缓存使用原子替换，缓存写失败不会让本次检索降级。
+- 语义记忆支持容量预算、重复合并、访问统计、归档和蒸馏。
+
+### 关键词还是 hybrid
+
+关键词检索零额外成本，适合小规模记忆和直接词面查询。记忆数量增长，或出现跨语言、近义表达、冲突事实和硬负例时，应启用 hybrid。
+
+同一组扩展合成评测结果：
+
+| 指标 | 关键词 | BGE-M3 hybrid |
+|------|------:|--------------:|
+| 记忆条目 | 64 | 64 |
+| 查询数 | 27 | 27 |
+| 通过率 | 3.7% | **100%** |
+| Recall@K | 55.6% | **100%** |
+| MRR | 44.3% | **98.1%** |
+| Precision@K | 11.0% | **96.3%** |
+| 噪声率 | 89.0% | **3.7%** |
+| 平均延迟 | 105ms | 314ms |
+
+评测覆盖偏好、项目决策、故障经验、跨语言、冲突事实、硬负例、跨层召回和多领域干扰。数据全部为合成内容；这些结果证明当前配置在该基准上的表现，不等同于真实生产数据的最终结论。
+
+### Memory Eval v2.1
+
+```python
+from lighthermes import (
+    MemoryQualityEvaluator,
+    build_memory_eval_v2_extended_suite,
+)
+from lighthermes.memory import MemoryManager
+
+suite = build_memory_eval_v2_extended_suite()
+memory = MemoryManager(memory_dir="eval-memory", use_hybrid_retrieval=False)
+evaluator = MemoryQualityEvaluator(memory)
+
+evaluator.seed(suite.seeds)
+report = evaluator.run(suite.cases)
+
+print(report.to_dict())
+print(report.evaluate_quality_gates(suite.quality_gates))
 ```
 
-**4. 内置工具** (`config.yaml`)
+Eval v2.1 提供来源级 Recall@K、MRR、Precision@K、噪声率、延迟、分类汇总和显式质量门槛。若需测试真实 embedding，请按上面的 `embedding` 配置构造启用 hybrid 的 `MemoryManager`。
+
+## 工具与安全边界
+
+默认只开启 `search_memory`。文件读、搜索和写入必须显式配置：
+
 ```yaml
 tools:
   builtin:
     enabled: true
-    memory_search: true   # 默认启用 search_memory
-    file_read: false      # 默认关闭 read_file
-    file_search: false    # 默认关闭 search_files
-    file_write: false     # 默认关闭 write_file，必须单独显式开启
+    memory_search: true
+    file_read: false
+    file_search: false
+    file_write: false
     roots:
       - .
     max_read_chars: 20000
@@ -281,164 +253,54 @@ tools:
     max_search_results: 20
 ```
 
-文件工具只允许访问 `roots` 内路径，默认排除 `.git`、`.claude`、`venv`、`node_modules`、`memory` 等目录，并拒绝 `.env`、密钥、证书和 credentials/secrets 文件。`write_file` 支持 `create`、`overwrite`、`append` 三种模式，不会自动创建父目录。
+文件工具遵守以下边界：
 
-**5. 模型降级** (生产环境推荐)
-```yaml
-model:
-  fallback_models:
-    - gpt-3.5-turbo  # API 失败时自动切换
-```
+- 只能访问 `roots` 内路径。
+- 默认排除 `.git`、`.claude`、`venv`、`node_modules` 和 `memory` 等目录。
+- 拒绝 `.env`、密钥、证书及 credentials/secrets 文件。
+- 拒绝二进制文件并限制读写大小。
+- `write_file` 必须单独开启，不会自动创建父目录。
 
-**权衡**: 关键词快速零依赖，语义检索更精确但需 API/本地模型；文件工具能力更强但应按需开启最小权限
+## 自进化
+
+自进化保持轻量，不实现复杂强化学习：
+
+1. 保存消息、工具调用、任务类型和迭代次数。
+2. 计算 `quality_score`、`quality_level` 和 `learning_worthy`。
+3. 只从高质量完成轨迹生成 Markdown 技能。
+4. 失败轨迹生成 `failure_report`，作为非阻断风险提示。
+5. 失败报告先进入情景记忆，稳定后可蒸馏为语义记忆。
+
+当前 `success=True` 表示流程正常完成，不等同于经过外部事实验证的任务成功。更严格的成功信号仍是后续改进项。
 
 ## 开发状态
 
-**当前状态（2026-07-09）**: v0.3.4 已发布；`from_config()` 配置入口、OpenAI 兼容流式修复、embedding endpoint 配置、项目级 `.env.local` 和混合检索 fallback 策略已完成。
+- 发布版本：`v0.3.4`
+- 当前开发基线：`144/144` 测试通过
+- 测试层次：单元、集成、性能和离线记忆质量评估
+- 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成记忆评测
 
-**记忆工具计划** ✅ 已完成
-- ✅ 结构化记忆召回：`recall_items()`、`search_memory()`、带来源/分数/元数据的记忆项
-- ✅ 内置记忆搜索工具：默认注册 `search_memory`，支持用户同名工具覆盖
-- ✅ 受控文件工具：`read_file`、`search_files`、`write_file`，默认关闭文件能力，路径白名单与敏感文件保护
-- ✅ 配置入口：`tools.builtin` 控制内置工具、根目录和读写/搜索限制
-- ✅ 测试覆盖：新增内置工具、工具覆盖、核心注册和安全边界测试
+运行测试：
 
-**Phase 2 主线** ✅ 已完成
+```powershell
+.\venv\Scripts\python.exe -m pytest tests
+```
 
-- ✅ 上下文压缩系统（智能压缩长对话）
-- ✅ 记忆层级迁移（访问追踪、自动归档、高频提升）
-- ✅ 记忆生命周期钩子（回合开始/结束、压缩前、会话结束、记忆写入）
-- ✅ 召回上下文安全包装（`<memory-context>`，避免记忆被误当作新用户输入）
-- ✅ 记忆蒸馏与容量治理（`distill_memories()`、语义记忆预算、重复/近重复合并、蒸馏元数据）
-- ✅ 失败报告反模式提示（按任务类型/关键词召回 `failure_report`，执行前生成非阻断 warning）
-- ✅ 反模式记忆沉淀（`failure_report` 优先写入情景记忆，再通过蒸馏进入语义记忆）
-- ✅ CLI 增强（/stats、/export、/reset 命令，退出/重置时沉淀会话摘要）
-- ✅ MiniMax 流式响应修复（智能处理累积文本，添加单元测试）
-- ✅ OpenAI 兼容流式响应修复（保持 chunk 对象格式，支持核心流式工具路径）
-- ✅ `LightHermes.from_config()` 配置入口（Python API 与 CLI 共用配置加载逻辑）
-- ✅ “记住”功能（SOUL.md/USER.md 固定记忆文件，自动注入上下文）
-- ✅ **记忆系统检索修复**（中英文混合分词，索引搜索恢复正常）
-- ✅ **记忆性能回归修复**（语义记忆缓存与容量计数，恢复性能测试基线）
-- ✅ **pytest 测试框架**（单元测试、性能测试、完整测试套件）
-- ✅ **自进化成功质量评估**（只从高质量成功轨迹中学习，避免侥幸成功污染技能生成）
-- ✅ **记忆系统四项增强**（混合检索初始化修复、配置透传、工作记忆提升、压缩摘要入库）
-- ✅ **Adapter 测试兼容性修复**（兼容新版 OpenAI SDK base_url 表示）
-- ✅ **轻量架构边界收敛**（拆出 tools/skills/hooks/channels，`core.py` 保持主循环与兼容门面）
-- ✅ **结构化记忆召回**（`recall_items()`、`search_memory()`、带来源/分数的记忆注入）
-- ✅ **内置记忆搜索工具**（默认注册 `search_memory`，支持用户同名工具覆盖）
-- ✅ **受控文件工具**（`read_file`、`search_files`、`write_file`，默认关闭文件能力，路径白名单与敏感文件保护）
+当前限制：
 
-**v0.2.0** ✅ 稳定性增强完成
+- 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
+- Memory Eval v2.1 目前使用合成数据，仍需补充蒸馏污染和真实长期使用回放。
+- 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
+- 插件加载、网络 Channel、多模态和 Web UI 尚未进入稳定主线。
 
-- ✅ 四级记忆系统（短期/工作/情景/语义）
-- ✅ 自适应记忆调整（根据命中率动态优化）
-- ✅ 记忆归档功能（低频记忆自动归档）
-- ✅ 自进化能力（轨迹分析、技能生成）
-- ✅ 混合检索（可选）
-- ✅ 多 API 支持（OpenAI + Anthropic + MiniMax）
-- ✅ 轻量日志系统
-- ✅ 模型降级机制
-- ✅ 配置集成（config.yaml）
+近期方向：
 
-**测试覆盖**:
-- pytest 测试：126/126 通过 (100%)
-- 覆盖模块：记忆系统、混合检索配置、Adapter、MiniMax 流式响应、自进化质量评估、失败报告、反模式提示、记忆生命周期、记忆蒸馏、上下文压缩、CLI、性能基准
-- 新增 Memory 生命周期单元测试：召回包装、回合结束同步、钩子失败隔离、上下文 fencing 清理
-- 新增记忆蒸馏与容量治理测试：蒸馏幂等、低价值过滤、近重复合并、索引同步移除、配置透传
-- 新增 failure_report 风险提示测试：反模式召回、正向技能隔离、执行前 warning 注入
-- 新增反模式记忆沉淀测试：失败报告写入情景记忆、情景反模式蒸馏到语义记忆
-- 新增 Core/CLI 集成测试：主循环接入生命周期钩子，退出和重置时触发会话结束沉淀，CLI 复用 `from_config()`
-- 新增内置工具测试：结构化记忆搜索、同名工具覆盖、只读文件工具、默认关闭的写文件工具与安全边界
-- 新增 Adapter 流式测试：OpenAI 流式 chunk 透传、Anthropic/MiniMax 流式兼容
-- 新增 Retrieval 配置测试：OpenAI 兼容 embedding `base_url` 初始化、混合检索透传、候选不足 fallback 和相似度阈值过滤
+1. 多用户记忆隔离与隐私边界。
+2. 蒸馏污染、反模式误召回和长期回放评测。
+3. 更可靠的任务成功信号和用户反馈闭环。
+4. 评审并移植轻量本地工具插件能力。
 
-**已知问题**:
-- 混合检索默认关闭；启用 OpenAI 兼容/local embedding 时需要单独配置 `embedding.api_key`、`embedding.base_url` 或本地模型依赖
-- 记忆蒸馏当前使用轻量启发式规则，后续可继续优化稳定事实筛选和反模式检索
-- 真实 API smoke test 依赖外部凭据，默认测试套件以 mock/离线路径为主
-
-**下一步计划**:
-- **优先**: 扩展记忆质量评估集，覆盖真实使用中的偏好写入、召回准确率、蒸馏污染和反模式误召回
-- **中优先**: 补齐流式工具调用兼容测试，覆盖 OpenAI 兼容端点、Anthropic 和 MiniMax 路径
-- **中优先**: 插件加载机制和工具生态补齐，继续保持默认安全关闭与最小依赖
-- **中低优先**: 记忆系统性能优化（缓存、批量操作、索引优化评估）
-- **低优先**: 多模态输入、VS Code/Web UI/Docker 等生态扩展
-
-**最近更新** (2026-07-09):
-- ✅ **混合检索召回策略优化**
-  - TF-IDF 候选不足时回退到全量语义记忆 embedding rerank
-  - embedding rerank 返回 `score` / `embedding_score`，便于诊断和过滤
-  - 支持 `semantic_threshold`、`score_margin`、`min_candidates`、`fallback_to_all`、`full_rerank_max_docs` 等配置
-  - 新增离线单元测试覆盖 fallback 和阈值过滤
-  - 全量测试基线更新为 126/126 通过
-
-**最近更新** (2026-07-08):
-- ✅ **配置入口、OpenAI 兼容流式与 embedding endpoint 收口**
-  - 新增 `LightHermes.from_config()`，CLI 复用同一配置入口
-  - 支持 `config.yaml` 中使用 `${ENV_VAR}` 或 `$(ENV_VAR)` 引用模型和 embedding API key
-  - 支持项目级 `.env`/`.env.local`，避免把密钥写入全局环境变量
-  - 支持独立 `embedding` 配置块，为 embedding 模型配置不同于主模型的 endpoint
-  - 修复 OpenAI 兼容端点流式响应被 Adapter 转成字符串的问题
-  - sub2api 非流式和流式 smoke test 均已通过
-  - 全量测试基线更新为 122/122 通过
-
-**最近更新** (2026-07-07):
-- ✅ **v0.3.4 收口完成**
-  - 统一源码、打包元数据、CLI 展示和项目文档版本号为 `0.3.4`
-  - 修复语义记忆大批量召回性能回归，性能测试恢复通过
-  - 保留 v0.3.3 的 Phase 2.7 发版检查结论：MiniMax smoke test、普通对话回归、配置与文档一致性检查
-- ✅ **记忆工具计划完成**
-  - `MemoryManager` 提供结构化召回与显式记忆搜索
-  - 默认注册内置 `search_memory`，并允许用户工具覆盖同名工具
-  - 新增受控 `read_file` / `search_files` / `write_file`，文件能力默认关闭
-  - `config.yaml` 新增 `tools.builtin` 安全配置
-  - 全量测试基线更新为 113/113 通过
-
-**最近更新** (2026-05-09):
-- ✅ **轻量 agent/tool/skill/channel 边界收敛**
-  - `lighthermes/tools.py` 承载 `tool` 装饰器与 `ToolDispatcher`
-  - `lighthermes/skills.py` 承载 `SkillLoader`、Markdown 技能匹配和失败报告召回
-  - `lighthermes/hooks.py` 封装生命周期钩子的安全调用
-  - `lighthermes/channels.py` 预留 `ChannelMessage` / `DirectChannel` 轻量通道边界
-  - `core.py` 继续保留 `LightHermes` 主循环和兼容导入路径
-
-**最近更新** (2026-05-08):
-- ✅ **记忆生命周期钩子**
-  - `on_turn_start()` 召回记忆并用 `<memory-context>` 安全包装
-  - `on_turn_end()` 同步助手回复到短期记忆
-  - `on_pre_compress()` 在压缩前提取即将丢失的轻量线索
-  - `on_session_end()` 在 CLI 退出、重置、KeyboardInterrupt/EOF 时保存摘要并触发迁移
-  - `on_memory_write()` 作为固定记忆与用户偏好写入后的统一入口
-- ✅ **记忆蒸馏与容量治理**
-  - `distill_memories()` 从工作/情景记忆提炼高价值语义记忆
-  - 语义记忆支持条目数/字符预算，清理时同步索引并优先保留用户偏好
-  - 重复/近重复蒸馏记忆自动合并，保留 `distilled_from`、`source_layer`、`confidence`、`last_verified` 等元数据
-- ✅ **失败报告反模式提示**
-  - `failure_report` 不再被当作正向技能匹配
-  - 执行前按任务类型和关键词召回相关失败报告，生成简短非阻断 warning
-  - 生成后的失败报告优先沉淀到情景记忆，后续由蒸馏机制进入语义记忆
-- ✅ **Phase 2 路线重排**
-  - 删除过重的记忆图谱主线，优先推进记忆蒸馏、合并和容量治理
-  - 借鉴 Hermes 的记忆生命周期与上下文安全包装
-  - 借鉴 nanobot 的轻量 agent/tool/skill/channel 边界，但不直接整体集成
-- ✅ **测试更新**
-  - 全量测试从 67 项扩展到 84 项，并保持全部通过
-
-**改进方向**:
-- 建立小型 memory eval，先评估召回准确率、偏好保持、蒸馏污染和反模式误召回
-- 补齐流式工具调用兼容测试，优先覆盖 OpenAI 兼容端点和 Anthropic/MiniMax 差异
-- 后续再推进最小插件系统，保持显式启停、错误隔离和默认安全关闭
-
-## 对比
-
-| 特性 | LightAgent | LightHermes |
-|------|-----------|-------------|
-| 核心代码 | ~1000 行 | ~3700 行 |
-| 记忆系统 | mem0 外挂 | 内置四级记忆 + 生命周期钩子 + 自适应 |
-| 自进化 | 自学习 | 轨迹分析 + 技能生成 |
-| 稳定性 | 基础 | 日志 + 降级 + 错误处理 |
-| 依赖 | 零依赖 | 2 个核心依赖（可选增强）|
-| 定位 | 极简基础 | 轻量 + 生产就绪 |
+详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可证
 
@@ -446,6 +308,7 @@ Apache 2.0
 
 ## 参考
 
-- 设计文档: `docs/superpowers/specs/2026-04-25-lighthermes-design.md`
-- LightAgent: 极简智能体框架
-- Hermes: 生产级记忆管理
+- [设计文档](docs/superpowers/specs/2026-04-25-lighthermes-design.md)
+- LightAgent：轻量工具与 Agent 主循环参考
+- Hermes：记忆生命周期与自进化参考
+- nanobot：工具、技能、Hook 和 Channel 边界参考

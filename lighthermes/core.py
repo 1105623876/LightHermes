@@ -701,18 +701,144 @@ class LightHermes:
             params["tool_choice"] = "auto"
 
         if stream:
-            return self._run_stream(params, max_iterations)
-        else:
-            return self._run_non_stream(params, max_iterations, user_id, session_id)
+            return self._run_stream(
+                params,
+                max_iterations,
+                query,
+                user_id,
+                session_id
+            )
+        return self._run_non_stream(
+            params,
+            max_iterations,
+            query,
+            user_id,
+            session_id
+        )
+
+    @staticmethod
+    def _get_field(value: Any, name: str, default: Any = None) -> Any:
+        if isinstance(value, dict):
+            return value.get(name, default)
+        return getattr(value, name, default)
+
+    def _normalize_tool_call(self, tool_call: Any, index: int = 0) -> Dict[str, Any]:
+        function = self._get_field(tool_call, "function", {})
+        arguments = self._get_field(function, "arguments", "{}")
+        if not isinstance(arguments, str):
+            arguments = json.dumps(arguments, ensure_ascii=False)
+
+        return {
+            "id": self._get_field(tool_call, "id") or f"call_{index}",
+            "type": "function",
+            "function": {
+                "name": self._get_field(function, "name", ""),
+                "arguments": arguments,
+            }
+        }
+
+    def _append_tool_exchange(
+        self,
+        messages: List[Dict[str, Any]],
+        tool_calls: List[Dict[str, Any]],
+        assistant_content: str = ""
+    ) -> List[Dict[str, Any]]:
+        valid_calls = [
+            tool_call for tool_call in tool_calls
+            if tool_call.get("function", {}).get("name")
+        ]
+        if not valid_calls:
+            return []
+
+        messages.append({
+            "role": "assistant",
+            "content": assistant_content or "",
+            "tool_calls": valid_calls,
+        })
+
+        recorded_calls = []
+        for tool_call in valid_calls:
+            function = tool_call["function"]
+            arguments = function.get("arguments", "{}")
+            recorded_calls.append({
+                "tool": function["name"],
+                "name": function["name"],
+                "arguments": arguments,
+            })
+
+            try:
+                function_args = json.loads(arguments)
+            except (json.JSONDecodeError, TypeError):
+                self.logger.error(f"工具参数解析失败: {arguments}")
+                tool_response = "Tool call error: arguments must be valid JSON."
+            else:
+                tool_response = self.tool_dispatcher.call_tool(
+                    function["name"],
+                    function_args
+                )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": tool_response,
+            })
+
+        return recorded_calls
+
+    def _finish_turn(
+        self,
+        query: str,
+        reply: str,
+        messages: List[Dict[str, Any]],
+        tool_calls: List[Dict[str, Any]],
+        user_id: str,
+        session_id: str
+    ):
+        self._run_memory_hook(
+            "on_turn_end",
+            query,
+            reply,
+            user_id=user_id,
+            session_id=session_id
+        )
+
+        self.query_count = getattr(self, "query_count", 0) + 1
+        if self.memory_enabled and self.query_count % 100 == 0:
+            self.memory.adapt_weights()
+            self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
+
+        if not (self.evolution_enabled and self.evolution):
+            return
+
+        try:
+            self.evolution.record_session(
+                session_id=session_id,
+                messages=messages,
+                tool_calls=tool_calls,
+                success=True,
+                task_type=self._classify_task(query),
+                iterations=len(tool_calls)
+            )
+
+            if getattr(self, "auto_generate_skills", True) and self.query_count % 50 == 0:
+                self.logger.info(f"触发自动进化（已完成 {self.query_count} 次对话）")
+                result = self.evolution.evolve()
+                if result.get("success_skills"):
+                    self.skill_loader.load_all()
+                    self.logger.info(f"热加载了 {len(result['success_skills'])} 个新技能")
+        except Exception as e:
+            self.logger.warning(f"记录自进化轨迹失败: {e}")
 
     def _run_non_stream(
         self,
         params: Dict[str, Any],
         max_iterations: int,
+        query: str,
         user_id: str,
         session_id: str
     ) -> str:
         """非流式运行"""
+        recorded_tool_calls = []
         for _ in range(max_iterations):
             self.api_call_count += 1
             response = self._call_api_with_fallback(
@@ -732,83 +858,42 @@ class LightHermes:
                     self.total_tokens_used += usage.total_tokens
 
             if message.tool_calls:
-                params["messages"].append(message)
-
-                for tool_call in message.tool_calls:
-                    function_call = tool_call.function
-                    try:
-                        function_args = json.loads(function_call.arguments)
-                    except json.JSONDecodeError:
-                        self.logger.error(f"工具参数解析失败: {function_call.arguments}")
-                        continue
-
-                    tool_response = self.tool_dispatcher.call_tool(
-                        function_call.name,
-                        function_args
-                    )
-
-                    params["messages"].append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": tool_response
-                    })
+                normalized_calls = [
+                    self._normalize_tool_call(tool_call, index)
+                    for index, tool_call in enumerate(message.tool_calls)
+                ]
+                recorded_tool_calls.extend(self._append_tool_exchange(
+                    params["messages"],
+                    normalized_calls,
+                    message.content or ""
+                ))
             else:
-                reply = message.content
-
-                self._run_memory_hook(
-                    "on_turn_end",
-                    params["messages"][-1]["content"],
+                reply = message.content or ""
+                params["messages"].append({"role": "assistant", "content": reply})
+                self._finish_turn(
+                    query,
                     reply,
-                    user_id=user_id,
-                    session_id=session_id
+                    params["messages"],
+                    recorded_tool_calls,
+                    user_id,
+                    session_id
                 )
-
-                # 自适应记忆调整
-                self.query_count += 1
-                if self.memory_enabled and self.query_count % 100 == 0:
-                    self.memory.adapt_weights()
-                    self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
-
-                # 自动记录轨迹并触发进化
-                if self.evolution_enabled and self.evolution:
-                    task_type = self._classify_task(params["messages"][-1]["content"])
-                    tool_calls_list = []
-
-                    # 收集本次对话的工具调用
-                    for msg in params["messages"]:
-                        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("tool_calls"):
-                            for tc in msg["tool_calls"]:
-                                tool_calls_list.append({
-                                    "tool": tc["function"]["name"],
-                                    "name": tc["function"]["name"],
-                                    "arguments": tc["function"]["arguments"]
-                                })
-
-                    # 记录轨迹
-                    self.evolution.record_session(
-                        session_id=session_id,
-                        messages=params["messages"],
-                        tool_calls=tool_calls_list,
-                        success=True,
-                        task_type=task_type,
-                        iterations=len(tool_calls_list)
-                    )
-
-                    # 每 50 次对话触发一次进化
-                    if self.query_count % 50 == 0:
-                        self.logger.info(f"触发自动进化（已完成 {self.query_count} 次对话）")
-                        result = self.evolution.evolve()
-                        if result.get("success_skills"):
-                            self.skill_loader.load_all()
-                            self.logger.info(f"热加载了 {len(result['success_skills'])} 个新技能")
-
                 return reply
 
         return "达到最大迭代次数"
 
-    def _run_stream(self, params: Dict[str, Any], max_iterations: int) -> Generator:
+    def _run_stream(
+        self,
+        params: Dict[str, Any],
+        max_iterations: int,
+        query: str,
+        user_id: str,
+        session_id: str
+    ) -> Generator:
         """流式运行"""
+        recorded_tool_calls = []
         for _ in range(max_iterations):
+            self.api_call_count = getattr(self, "api_call_count", 0) + 1
             response = self._call_api_with_fallback(
                 messages=params["messages"],
                 stream=params.get("stream", True),
@@ -830,55 +915,54 @@ class LightHermes:
                     yield content
 
                 if chunk.choices and chunk.choices[0].delta.tool_calls:
-                    tool_call_delta = chunk.choices[0].delta.tool_calls[0]
-                    tool_call_index = tool_call_delta.index or 0
+                    for tool_call_delta in chunk.choices[0].delta.tool_calls:
+                        tool_call_index = self._get_field(tool_call_delta, "index", 0) or 0
 
-                    if len(tool_calls) <= tool_call_index:
-                        tool_calls.append({"name": "", "arguments": "", "id": ""})
+                        while len(tool_calls) <= tool_call_index:
+                            tool_calls.append({"name": "", "arguments": "", "id": ""})
 
-                    if tool_call_delta.id:
-                        tool_calls[tool_call_index]["id"] = tool_call_delta.id
-                    if tool_call_delta.function.name:
-                        tool_calls[tool_call_index]["name"] = tool_call_delta.function.name
-                    if tool_call_delta.function.arguments:
-                        tool_calls[tool_call_index]["arguments"] += tool_call_delta.function.arguments
+                        call_id = self._get_field(tool_call_delta, "id")
+                        if call_id:
+                            tool_calls[tool_call_index]["id"] = call_id
+
+                        function = self._get_field(tool_call_delta, "function")
+                        if function:
+                            name = self._get_field(function, "name")
+                            arguments = self._get_field(function, "arguments")
+                            if name:
+                                tool_calls[tool_call_index]["name"] = name
+                            if arguments:
+                                tool_calls[tool_call_index]["arguments"] += arguments
 
                 finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
                 if finish_reason == "stop" and not any(tc["name"] for tc in tool_calls):
+                    params["messages"].append({"role": "assistant", "content": output})
+                    self._finish_turn(
+                        query,
+                        output,
+                        params["messages"],
+                        recorded_tool_calls,
+                        user_id,
+                        session_id
+                    )
                     return
 
                 elif finish_reason in ("tool_calls", "stop") and any(tc["name"] for tc in tool_calls):
-                    for tool_call in tool_calls:
-                        if tool_call["name"]:
-                            try:
-                                function_args = json.loads(tool_call["arguments"])
-                            except json.JSONDecodeError:
-                                self.logger.error(f"工具参数解析失败: {tool_call['arguments']}")
-                                continue
-
-                            tool_response = self.tool_dispatcher.call_tool(
-                                tool_call["name"],
-                                function_args
-                            )
-
-                            params["messages"].append({
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{
-                                    "id": tool_call["id"],
-                                    "type": "function",
-                                    "function": {
-                                        "name": tool_call["name"],
-                                        "arguments": tool_call["arguments"]
-                                    }
-                                }]
-                            })
-
-                            params["messages"].append({
-                                "role": "tool",
-                                "tool_call_id": tool_call["id"],
-                                "content": tool_response
-                            })
+                    normalized_calls = [
+                        self._normalize_tool_call({
+                            "id": tool_call["id"],
+                            "function": {
+                                "name": tool_call["name"],
+                                "arguments": tool_call["arguments"]
+                            }
+                        }, index)
+                        for index, tool_call in enumerate(tool_calls)
+                    ]
+                    recorded_tool_calls.extend(self._append_tool_exchange(
+                        params["messages"],
+                        normalized_calls,
+                        output
+                    ))
 
                     continue_next_iteration = True
                     break
@@ -886,6 +970,33 @@ class LightHermes:
             if response_finished:
                 if continue_next_iteration:
                     continue
+                if any(tool_call["name"] for tool_call in tool_calls):
+                    normalized_calls = [
+                        self._normalize_tool_call({
+                            "id": tool_call["id"],
+                            "function": {
+                                "name": tool_call["name"],
+                                "arguments": tool_call["arguments"]
+                            }
+                        }, index)
+                        for index, tool_call in enumerate(tool_calls)
+                    ]
+                    recorded_tool_calls.extend(self._append_tool_exchange(
+                        params["messages"],
+                        normalized_calls,
+                        output
+                    ))
+                    continue
+
+                params["messages"].append({"role": "assistant", "content": output})
+                self._finish_turn(
+                    query,
+                    output,
+                    params["messages"],
+                    recorded_tool_calls,
+                    user_id,
+                    session_id
+                )
                 return
 
     def load_config(self, config_path: str = "config.yaml"):

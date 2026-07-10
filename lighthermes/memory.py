@@ -535,7 +535,14 @@ class SemanticMemory:
     def _refresh_storage_stats(self):
         files = list(self.storage_dir.glob("*.md"))
         self._entry_count = len(files)
-        self._total_chars = sum(f.stat().st_size for f in files if f.exists())
+        self._total_chars = 0
+        for file_path in files:
+            try:
+                file_stat = file_path.stat()
+            except OSError:
+                continue
+            self._total_chars += file_stat.st_size
+            self._file_mtimes[file_path.stem] = file_stat.st_mtime
 
     def _copy_memory(self, memory: Dict[str, Any]) -> Dict[str, Any]:
         copied = dict(memory)
@@ -737,23 +744,29 @@ class SemanticMemory:
 
         max_candidates = max(limit * 20, 50)
         if len(candidate_names) > max_candidates:
-            candidate_files = [
-                self.storage_dir / f"{name}.md"
-                for name in candidate_names
-                if (self.storage_dir / f"{name}.md").exists()
-            ]
-            candidate_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-            candidate_names = {f.stem for f in candidate_files[:max_candidates]}
+            def candidate_mtime(name: str) -> float:
+                cached_mtime = self._file_mtimes.get(name)
+                if cached_mtime is not None:
+                    return cached_mtime
+
+                try:
+                    cached_mtime = (self.storage_dir / f"{name}.md").stat().st_mtime
+                except OSError:
+                    return -1.0
+                self._file_mtimes[name] = cached_mtime
+                return cached_mtime
+
+            candidate_names = set(sorted(
+                candidate_names,
+                key=candidate_mtime,
+                reverse=True
+            )[:max_candidates])
 
         results = []
         # 使用相同的分词逻辑
         query_tokens = set(self.index._tokenize(query))
 
         for name in candidate_names:
-            file_path = self.storage_dir / f"{name}.md"
-            if not file_path.exists():
-                continue
-
             memory = self.load(name)
 
             if memory:
@@ -829,6 +842,7 @@ class MemoryManager:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_hybrid_retrieval = use_hybrid_retrieval
+        self.hybrid_full_rerank_max_docs = hybrid_full_rerank_max_docs
         self.working_to_episodic_limit = working_to_episodic_limit
         self.episodic_to_semantic_access_threshold = episodic_to_semantic_access_threshold
         self.archive_inactive_days = archive_inactive_days
@@ -996,6 +1010,64 @@ class MemoryManager:
             "source": source or f"{layer}:{name}",
         }
 
+    def _query_requests_noncurrent_memory(self, query: str) -> bool:
+        query_lower = query.lower()
+        chinese_signals = [
+            "历史", "旧", "过去", "曾经", "被否决", "失败报告", "反模式",
+        ]
+        if any(signal in query_lower for signal in chinese_signals):
+            return True
+
+        english_tokens = set(re.findall(r"[a-z]+(?:-[a-z]+)?", query_lower))
+        return bool(
+            english_tokens & {"historical", "previous", "old", "rejected", "anti-pattern"}
+        ) or "failure report" in query_lower
+
+    def _filter_context_candidates(
+        self,
+        query: str,
+        memories: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        if self._query_requests_noncurrent_memory(query):
+            return memories
+
+        excluded_types = {"historical", "rejected", "failure_report"}
+        return [
+            memory for memory in memories
+            if str(memory.get("metadata", {}).get("type", "")).lower() not in excluded_types
+        ]
+
+    def _rerank_context_candidates(
+        self,
+        query: str,
+        memories: List[Dict[str, Any]],
+        limit: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        retriever = getattr(self.semantic, "hybrid_retriever", None)
+        if not (self.use_hybrid_retrieval and retriever and memories):
+            return None
+
+        try:
+            retriever.index_documents(memories)
+            return retriever.search(query, top_k=limit)
+        except Exception as e:
+            self.logger.warning(f"跨层记忆重排失败，回退到层级排序: {e}")
+            return None
+
+    def _limit_hybrid_working_context(
+        self,
+        memories: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        selected = []
+        working_added = False
+        for memory in memories:
+            if memory.get("layer") == "working":
+                if working_added:
+                    continue
+                working_added = True
+            selected.append(memory)
+        return selected
+
     def recall_items(
         self,
         query: str,
@@ -1009,10 +1081,19 @@ class MemoryManager:
         start_time = time.time()
         selected_layers = set(layers or ["working", "episodic", "semantic"])
         memories = []
+        candidate_limit = limit
+        if self.use_hybrid_retrieval and getattr(self.semantic, "hybrid_retriever", None):
+            candidate_limit = min(
+                self.hybrid_full_rerank_max_docs,
+                max(limit * 4, 20)
+            )
 
         if "working" in selected_layers:
-            recent_sessions = self.working.get_recent_sessions(user_id, limit=max(limit, 3))
-            for session in recent_sessions[:limit]:
+            recent_sessions = self.working.get_recent_sessions(
+                user_id,
+                limit=max(candidate_limit, 3)
+            )
+            for session in recent_sessions[:candidate_limit]:
                 memories.append(self._make_memory_item(
                     "working",
                     session.get("session_id", "recent_session"),
@@ -1025,7 +1106,7 @@ class MemoryManager:
             self.stats.record_hit("working", len(recent_sessions), time.time() - start_time)
 
         if "episodic" in selected_layers:
-            episodic_results = self.episodic.search(query, limit=limit)
+            episodic_results = self.episodic.search(query, limit=candidate_limit)
             for memory in episodic_results:
                 name = memory.get("name", "unknown")
                 memories.append(self._make_memory_item(
@@ -1040,7 +1121,7 @@ class MemoryManager:
             self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
         if "semantic" in selected_layers:
-            semantic_results = self.semantic.search(query, limit=limit)
+            semantic_results = self.semantic.search(query, limit=candidate_limit)
             for memory in semantic_results:
                 name = memory.get("name", "unknown")
                 memories.append(self._make_memory_item(
@@ -1053,6 +1134,12 @@ class MemoryManager:
                     source=f"semantic:{name}"
                 ))
             self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
+
+        memories = self._filter_context_candidates(query, memories)
+        reranked_memories = self._rerank_context_candidates(query, memories, limit)
+        hybrid_ranked = reranked_memories is not None
+        if hybrid_ranked:
+            memories = self._limit_hybrid_working_context(reranked_memories)
 
         def jaccard_similarity(text1: str, text2: str) -> float:
             words1 = set(text1.lower().split())
@@ -1074,10 +1161,11 @@ class MemoryManager:
                 continue
             filtered_memories.append(memory)
 
-        filtered_memories.sort(
-            key=lambda item: (item.get("priority", 0), item.get("score", 0)),
-            reverse=True
-        )
+        if not hybrid_ranked:
+            filtered_memories.sort(
+                key=lambda item: (item.get("priority", 0), item.get("score", 0)),
+                reverse=True
+            )
 
         total_chars = 0
         selected = []

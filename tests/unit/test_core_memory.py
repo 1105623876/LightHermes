@@ -644,6 +644,11 @@ context_compression:
         agent = LightHermes.__new__(LightHermes)
         agent.tool_dispatcher = type("ToolDispatcher", (), {"get_tool_schemas": lambda self: []})()
         agent.logger = type("Logger", (), {"error": lambda *args, **kwargs: None})()
+        agent.api_call_count = 0
+        agent.query_count = 0
+        agent.memory_enabled = False
+        agent.evolution_enabled = False
+        agent.evolution = None
         calls = []
 
         def fake_call_api(**kwargs):
@@ -652,10 +657,280 @@ context_compression:
 
         agent._call_api_with_fallback = fake_call_api
 
-        chunks = list(agent._run_stream({"messages": [], "stream": True}, max_iterations=10))
+        chunks = list(agent._run_stream(
+            {"messages": [], "stream": True},
+            max_iterations=10,
+            query="测试",
+            user_id="user_1",
+            session_id="session_1"
+        ))
 
         assert chunks == ["测试回复"]
         assert len(calls) == 1
+        assert agent.api_call_count == 1
+        assert agent.query_count == 1
+
+    def test_run_stream_completes_memory_lifecycle(self, temp_memory_dir):
+        class FakeMemory:
+            memory_dir = temp_memory_dir
+
+            def __init__(self):
+                self.calls = []
+
+            def on_turn_start(self, query, user_id="default", session_id=""):
+                self.calls.append(("start", query, user_id, session_id))
+                return ""
+
+            def on_turn_end(self, user_content, assistant_content, user_id="default", session_id=""):
+                self.calls.append(("end", user_content, assistant_content, user_id, session_id))
+
+            def get_context(self):
+                return []
+
+            def add_message(self, role, content):
+                self.calls.append(("message", role, content))
+
+        class Delta:
+            content = "流式回复"
+            tool_calls = None
+
+        class Choice:
+            delta = Delta()
+            finish_reason = "stop"
+
+        class Chunk:
+            choices = [Choice()]
+
+        agent = LightHermes.__new__(LightHermes)
+        agent.name = "test-agent"
+        agent.role = "你是测试助手"
+        agent.model = "gpt-4o-mini"
+        agent.memory_enabled = True
+        agent.memory = FakeMemory()
+        agent.skill_loader = type("SkillLoader", (), {
+            "match_skill": lambda self, query: None,
+            "recall_failure_reports": lambda self, query, task_type, limit=2: []
+        })()
+        agent.compression_enabled = False
+        agent.compressor = None
+        agent.context_window = 128000
+        agent.tool_dispatcher = type("ToolDispatcher", (), {"get_tool_schemas": lambda self: []})()
+        agent.evolution_enabled = False
+        agent.evolution = None
+        agent.query_count = 0
+        agent.total_tokens_used = 0
+        agent.api_call_count = 0
+        agent.debug = False
+        agent.logger = type("Logger", (), {
+            "warning": lambda *args, **kwargs: None,
+            "info": lambda *args, **kwargs: None,
+            "error": lambda *args, **kwargs: None,
+        })()
+        agent._call_api_with_fallback = lambda **kwargs: iter([Chunk()])
+        agent._should_extract_memory = lambda query: False
+
+        chunks = list(agent.run(
+            "原始问题",
+            stream=True,
+            user_id="user_1",
+            session_id="session_1"
+        ))
+
+        assert chunks == ["流式回复"]
+        assert ("start", "原始问题", "user_1", "session_1") in agent.memory.calls
+        assert ("message", "user", "原始问题") in agent.memory.calls
+        assert ("end", "原始问题", "流式回复", "user_1", "session_1") in agent.memory.calls
+        assert agent.query_count == 1
+        assert agent.api_call_count == 1
+
+    def test_run_stream_records_trajectory_only_after_completion(self):
+        class Delta:
+            content = "完整回复"
+            tool_calls = None
+
+        class Choice:
+            delta = Delta()
+            finish_reason = "stop"
+
+        class Chunk:
+            choices = [Choice()]
+
+        class FakeEvolution:
+            def __init__(self):
+                self.recorded = None
+
+            def record_session(self, **kwargs):
+                self.recorded = kwargs
+
+        def make_agent():
+            agent = LightHermes.__new__(LightHermes)
+            agent.model = "gpt-4o-mini"
+            agent.memory_enabled = False
+            agent.memory = None
+            agent.evolution_enabled = True
+            agent.evolution = FakeEvolution()
+            agent.auto_generate_skills = False
+            agent.tool_dispatcher = type("ToolDispatcher", (), {})()
+            agent.query_count = 0
+            agent.api_call_count = 0
+            agent.logger = type("Logger", (), {
+                "warning": lambda *args, **kwargs: None,
+                "info": lambda *args, **kwargs: None,
+                "error": lambda *args, **kwargs: None,
+            })()
+            agent._call_api_with_fallback = lambda **kwargs: iter([Chunk()])
+            return agent
+
+        interrupted_agent = make_agent()
+        interrupted = interrupted_agent._run_stream(
+            {"messages": [{"role": "user", "content": "原始问题"}], "stream": True},
+            max_iterations=1,
+            query="原始问题",
+            user_id="user_1",
+            session_id="session_1"
+        )
+        assert next(interrupted) == "完整回复"
+        interrupted.close()
+        assert interrupted_agent.evolution.recorded is None
+        assert interrupted_agent.query_count == 0
+
+        completed_agent = make_agent()
+        chunks = list(completed_agent._run_stream(
+            {"messages": [{"role": "user", "content": "原始问题"}], "stream": True},
+            max_iterations=1,
+            query="原始问题",
+            user_id="user_1",
+            session_id="session_1"
+        ))
+
+        assert chunks == ["完整回复"]
+        recorded = completed_agent.evolution.recorded
+        assert recorded["task_type"] == completed_agent._classify_task("原始问题")
+        assert recorded["messages"][-1] == {"role": "assistant", "content": "完整回复"}
+        assert recorded["tool_calls"] == []
+        assert completed_agent.query_count == 1
+
+    def test_non_stream_tool_trajectory_keeps_query_reply_and_tool_call(self):
+        class ToolFunction:
+            name = "lookup"
+            arguments = '{"query": "LightHermes"}'
+
+        class ToolCall:
+            id = "call_1"
+            function = ToolFunction()
+
+        class ToolMessage:
+            content = ""
+            tool_calls = [ToolCall()]
+
+        class FinalMessage:
+            content = "最终答案"
+            tool_calls = None
+
+        class Response:
+            def __init__(self, message):
+                self.choices = [type("Choice", (), {"message": message})()]
+                self.usage = {"total_tokens": 3}
+
+        class FakeEvolution:
+            def __init__(self):
+                self.recorded = None
+
+            def record_session(self, **kwargs):
+                self.recorded = kwargs
+
+        agent = LightHermes.__new__(LightHermes)
+        agent.model = "gpt-4o-mini"
+        agent.memory_enabled = False
+        agent.memory = None
+        agent.evolution_enabled = True
+        agent.evolution = FakeEvolution()
+        agent.auto_generate_skills = False
+        agent.skill_loader = type("SkillLoader", (), {"load_all": lambda self: None})()
+        agent.tool_dispatcher = type("ToolDispatcher", (), {
+            "call_tool": lambda self, name, args: "工具结果"
+        })()
+        agent.query_count = 0
+        agent.total_tokens_used = 0
+        agent.api_call_count = 0
+        agent.logger = type("Logger", (), {
+            "warning": lambda *args, **kwargs: None,
+            "info": lambda *args, **kwargs: None,
+            "error": lambda *args, **kwargs: None,
+        })()
+
+        responses = iter([Response(ToolMessage()), Response(FinalMessage())])
+        agent._call_api_with_fallback = lambda **kwargs: next(responses)
+
+        reply = agent._run_non_stream(
+            {"messages": [{"role": "user", "content": "原始问题"}], "stream": False},
+            max_iterations=3,
+            query="原始问题",
+            user_id="user_1",
+            session_id="session_1"
+        )
+
+        assert reply == "最终答案"
+        recorded = agent.evolution.recorded
+        assert recorded["task_type"] == agent._classify_task("原始问题")
+        assert recorded["tool_calls"] == [{
+            "tool": "lookup",
+            "name": "lookup",
+            "arguments": '{"query": "LightHermes"}'
+        }]
+        assert recorded["messages"][-1] == {"role": "assistant", "content": "最终答案"}
+        assert recorded["messages"][0] == {"role": "user", "content": "原始问题"}
+
+    def test_non_stream_accepts_anthropic_dict_tool_calls(self):
+        tool_message = type("Message", (), {
+            "content": "",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": '{"query": "test"}'}
+            }]
+        })()
+        final_message = type("Message", (), {
+            "content": "完成",
+            "tool_calls": None
+        })()
+
+        class Response:
+            def __init__(self, message):
+                self.choices = [type("Choice", (), {"message": message})()]
+                self.usage = None
+
+        calls = []
+        agent = LightHermes.__new__(LightHermes)
+        agent.model = "gpt-4o-mini"
+        agent.memory_enabled = False
+        agent.memory = None
+        agent.evolution_enabled = False
+        agent.evolution = None
+        agent.tool_dispatcher = type("ToolDispatcher", (), {
+            "call_tool": lambda self, name, args: calls.append((name, args)) or "ok"
+        })()
+        agent.query_count = 0
+        agent.total_tokens_used = 0
+        agent.api_call_count = 0
+        agent.logger = type("Logger", (), {
+            "warning": lambda *args, **kwargs: None,
+            "info": lambda *args, **kwargs: None,
+            "error": lambda *args, **kwargs: None,
+        })()
+        responses = iter([Response(tool_message), Response(final_message)])
+        agent._call_api_with_fallback = lambda **kwargs: next(responses)
+
+        reply = agent._run_non_stream(
+            {"messages": [{"role": "user", "content": "问题"}], "stream": False},
+            max_iterations=3,
+            query="问题",
+            user_id="user_1",
+            session_id="session_1"
+        )
+
+        assert reply == "完成"
+        assert calls == [("lookup", {"query": "test"})]
 
     def test_build_semantic_memory_list_uses_search_memory(self, temp_memory_dir):
         class FakeMemory:
@@ -876,6 +1151,11 @@ context_compression:
         agent.tool_dispatcher = FakeToolDispatcher()
 
         agent.logger = type("Logger", (), {"error": lambda *args, **kwargs: None})()
+        agent.api_call_count = 0
+        agent.query_count = 0
+        agent.memory_enabled = False
+        agent.evolution_enabled = False
+        agent.evolution = None
 
         calls = []
         def fake_call_api(**kwargs):
@@ -887,18 +1167,27 @@ context_compression:
 
         agent._call_api_with_fallback = fake_call_api
 
-        chunks = list(agent._run_stream({
-            "messages": [{"role": "user", "content": "hello"}],
-            "stream": True,
-            "tools": [],
-            "tool_choice": "auto"
-        }, max_iterations=10))
+        chunks = list(agent._run_stream(
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+                "tools": [],
+                "tool_choice": "auto"
+            },
+            max_iterations=10,
+            query="hello",
+            user_id="user_1",
+            session_id="session_1"
+        ))
 
         assert "最终回复" in chunks
         assert len(calls) == 2
         messages = calls[1]["messages"]
-        assert len(messages) == 3
+        assert len(messages) == 4
         assert messages[1]["role"] == "assistant"
         assert messages[1]["tool_calls"][0]["function"]["name"] == "my_tool"
         assert messages[2]["role"] == "tool"
         assert messages[2]["content"] == "tool_result"
+        assert messages[3] == {"role": "assistant", "content": "最终回复"}
+        assert agent.api_call_count == 2
+        assert agent.query_count == 1

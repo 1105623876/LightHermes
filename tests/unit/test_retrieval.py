@@ -55,6 +55,65 @@ def test_hybrid_retriever_passes_embedding_base_url(monkeypatch):
 
 
 @pytest.mark.unit
+def test_embedding_retriever_batches_uncached_texts_once():
+    calls = []
+
+    class FakeEmbeddings:
+        def create(self, model, input):
+            calls.append({"model": model, "input": input})
+            vectors = {
+                "new one": [1.0, 0.0],
+                "new two": [0.0, 1.0],
+            }
+            data = [
+                type("Embedding", (), {"index": index, "embedding": vectors[text]})()
+                for index, text in enumerate(input)
+            ]
+            return type("Response", (), {"data": data})()
+
+    retriever = EmbeddingRetriever.__new__(EmbeddingRetriever)
+    retriever.provider = "openai"
+    retriever.model = "embedding-model"
+    retriever.client = type("Client", (), {"embeddings": FakeEmbeddings()})()
+    retriever.embeddings_cache = {"cached": [0.5, 0.5]}
+    save_calls = []
+    retriever._save_cache = lambda: save_calls.append(True)
+
+    vectors = retriever.embed_many([
+        "cached",
+        "new one",
+        "new two",
+        "new one",
+    ])
+
+    assert calls == [{
+        "model": "embedding-model",
+        "input": ["new one", "new two"],
+    }]
+    assert vectors == [
+        [0.5, 0.5],
+        [1.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+    ]
+    assert save_calls == [True]
+
+
+@pytest.mark.unit
+def test_embedding_cache_write_failure_does_not_break_retrieval(tmp_path, monkeypatch):
+    retriever = EmbeddingRetriever.__new__(EmbeddingRetriever)
+    retriever.embeddings_cache = {"text": [1.0, 0.0]}
+    retriever.cache_file = tmp_path / "cache.json"
+
+    def fail_open(*args, **kwargs):
+        raise OSError("cache unavailable")
+
+    monkeypatch.setattr("builtins.open", fail_open)
+
+    assert retriever._save_cache() is False
+
+
+@pytest.mark.unit
 def test_hybrid_retriever_falls_back_to_all_documents(monkeypatch):
     """测试 TF-IDF 候选为空时回退到全量 embedding rerank"""
     captured = {}
@@ -139,14 +198,14 @@ def test_embedding_rerank_filters_by_score_margin():
             self.embeddings_cache = {}
             self.cache_file = None
 
-        def embed(self, text):
+        def embed_many(self, texts):
             vectors = {
                 "query": [1.0, 0.0],
                 "strong": [1.0, 0.0],
                 "near": [0.97, 0.03],
                 "noise": [0.1, 0.9],
             }
-            return vectors[text]
+            return [vectors[text] for text in texts]
 
         def _save_cache(self):
             pass
