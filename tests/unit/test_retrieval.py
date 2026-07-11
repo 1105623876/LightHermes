@@ -6,7 +6,7 @@ from lighthermes.retrieval import EmbeddingRetriever, HybridRetriever
 
 
 @pytest.mark.unit
-def test_openai_embedding_retriever_uses_base_url(monkeypatch):
+def test_openai_embedding_retriever_uses_endpoint_and_cache_path(tmp_path, monkeypatch):
     """测试 OpenAI-compatible embedding endpoint 配置"""
     captured_kwargs = {}
 
@@ -21,11 +21,13 @@ def test_openai_embedding_retriever_uses_base_url(monkeypatch):
         provider="openai",
         model="embedding-model",
         api_key="embedding-key",
-        base_url="https://embedding.example.test/v1"
+        base_url="https://embedding.example.test/v1",
+        cache_file=str(tmp_path / "benchmark-cache.json")
     )
 
     assert retriever.model == "embedding-model"
     assert retriever.base_url == "https://embedding.example.test/v1"
+    assert retriever.cache_file == tmp_path / "benchmark-cache.json"
     assert captured_kwargs["api_key"] == "embedding-key"
     assert captured_kwargs["base_url"] == "https://embedding.example.test/v1"
 
@@ -45,13 +47,37 @@ def test_hybrid_retriever_passes_embedding_base_url(monkeypatch):
         embedding_provider="openai",
         embedding_model="embedding-model",
         api_key="embedding-key",
-        embedding_base_url="https://embedding.example.test/v1"
+        embedding_base_url="https://embedding.example.test/v1",
+        embedding_cache_file="benchmark-cache.json"
     )
 
     assert captured_kwargs["provider"] == "openai"
     assert captured_kwargs["model"] == "embedding-model"
     assert captured_kwargs["api_key"] == "embedding-key"
     assert captured_kwargs["base_url"] == "https://embedding.example.test/v1"
+    assert captured_kwargs["cache_file"] == "benchmark-cache.json"
+
+
+@pytest.mark.unit
+def test_memory_manager_passes_embedding_cache_path(tmp_path, monkeypatch):
+    from lighthermes.memory import MemoryManager
+
+    captured_kwargs = {}
+
+    class FakeHybridRetriever:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr("lighthermes.retrieval.HybridRetriever", FakeHybridRetriever)
+
+    cache_file = tmp_path / "cache" / "embeddings.json"
+    MemoryManager(
+        memory_dir=str(tmp_path / "memory"),
+        use_hybrid_retrieval=True,
+        embedding_cache_file=str(cache_file),
+    )
+
+    assert captured_kwargs["embedding_cache_file"] == str(cache_file)
 
 
 @pytest.mark.unit

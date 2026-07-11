@@ -31,7 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from lighthermes.adapters import get_adapter
 from lighthermes.core import LightHermes
-from lighthermes.memory import MemoryManager
+from lighthermes.memory import HybridRetrievalError, MemoryManager
 
 
 DATASET_URL = (
@@ -270,7 +270,11 @@ def resolved(value: Any) -> Any:
     return LightHermes._resolve_config_value(value)
 
 
-def create_memory(memory_dir: Path, config: dict[str, Any]) -> MemoryManager:
+def create_memory(
+    memory_dir: Path,
+    config: dict[str, Any],
+    embedding_cache_file: Path | None = None,
+) -> MemoryManager:
     memory_config = config.get("memory", {})
     hybrid = memory_config.get("hybrid_retrieval", {})
     embedding = config.get("embedding", {})
@@ -283,6 +287,10 @@ def create_memory(memory_dir: Path, config: dict[str, Any]) -> MemoryManager:
         embedding_model=embedding.get("model_name", "text-embedding-3-small"),
         api_key=resolved(embedding.get("api_key")),
         embedding_base_url=resolved(embedding.get("base_url")),
+        embedding_cache_file=(
+            str(embedding_cache_file) if embedding_cache_file else None
+        ),
+        strict_hybrid_retrieval=True,
         hybrid_min_candidates=int(hybrid.get("min_candidates", 5)),
         hybrid_fallback_to_all=True,
         hybrid_semantic_threshold=hybrid.get("semantic_threshold"),
@@ -384,6 +392,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     config_path = Path(args.config).resolve()
     data_path = Path(args.data_path).resolve()
     output_path = Path(args.output).resolve()
+    embedding_cache_file = Path(args.embedding_cache).resolve()
     config = load_config(config_path)
     dataset = load_dataset(data_path)
     cases = stratified_sample(dataset, args.per_category, args.seed)
@@ -402,7 +411,11 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         os.chdir(temp_dir)
         try:
             for conversation_index, conversation_cases in sorted(cases_by_conversation.items()):
-                memory = create_memory(Path(temp_dir) / f"conversation-{conversation_index}", config)
+                memory = create_memory(
+                    Path(temp_dir) / f"conversation-{conversation_index}",
+                    config,
+                    embedding_cache_file,
+                )
                 for document in build_session_documents(dataset[conversation_index]):
                     memory.save_semantic(
                         document["name"],
@@ -462,6 +475,28 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                             f"[{len(results)}/{len(cases)}] {result['category_name']} "
                             f"hit={metrics['hit']} judge={result.get('judge_correct')}"
                         )
+                    except HybridRetrievalError as exc:
+                        results.append({
+                            **case,
+                            "category_name": CATEGORY_NAMES[case["category"]],
+                            "retrieval": {"evidence_count": 0, "hit": None, "recall": None, "rr": None},
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "latency_ms": (time.perf_counter() - case_started) * 1000,
+                        })
+                        write_report(output_path, {
+                            "status": "failed",
+                            "settings": vars(args),
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "summary": summarize_results(results),
+                            "usage": asdict(usage),
+                            "estimated_cost_usd": usage.estimated_cost(
+                                args.input_price,
+                                args.output_price,
+                            ),
+                            "elapsed_seconds": time.time() - started_at,
+                            "results": results,
+                        })
+                        raise
                     except Exception as exc:
                         consecutive_errors += 1
                         results.append({
@@ -475,6 +510,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                             raise RuntimeError("Stopped after 3 consecutive benchmark errors") from exc
 
                     report = {
+                        "status": "completed",
                         "settings": vars(args),
                         "summary": summarize_results(results),
                         "usage": asdict(usage),
@@ -494,10 +530,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     default_data = Path(tempfile.gettempdir()) / "lighthermes-locomo" / "locomo10.json"
+    default_cache = Path(tempfile.gettempdir()) / "lighthermes-locomo" / "embeddings.json"
     default_output = PROJECT_ROOT / "logs" / "locomo_light_report.json"
     parser = argparse.ArgumentParser(description="Low-cost stratified LoCoMo evaluation")
     parser.add_argument("--config", default=str(PROJECT_ROOT / "config.yaml"))
     parser.add_argument("--data-path", default=str(default_data))
+    parser.add_argument("--embedding-cache", default=str(default_cache))
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--mode", choices=["retrieval", "qa"], default="retrieval")
     parser.add_argument("--per-category", type=int, default=10)

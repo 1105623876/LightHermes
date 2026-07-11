@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from lighthermes.memory import (
+    HybridRetrievalError,
     MemoryManager,
     MemoryIndex,
     MemoryStats,
@@ -160,6 +161,26 @@ class TestSemanticMemory:
         assert semantic.hybrid_retriever.kwargs["min_candidates"] == 5
         assert semantic.hybrid_retriever.kwargs["fallback_to_all"] is True
         assert semantic.hybrid_retriever.kwargs["score_margin"] == 0.12
+
+    def test_strict_hybrid_search_raises_instead_of_keyword_fallback(self, temp_memory_dir):
+        semantic = SemanticMemory(
+            storage_dir=f"{temp_memory_dir}/semantic",
+            use_hybrid_retrieval=False,
+            strict_hybrid_retrieval=True,
+        )
+        semantic.save("target", "alpha target")
+
+        class BrokenHybridRetriever:
+            def index_documents(self, documents):
+                pass
+
+            def search(self, query, top_k=5):
+                raise ConnectionError("embedding endpoint unavailable")
+
+        semantic.hybrid_retriever = BrokenHybridRetriever()
+
+        with pytest.raises(HybridRetrievalError, match="混合检索执行失败"):
+            semantic.search("alpha", limit=5)
 
     def test_near_duplicate_semantic_memory_merges(self, temp_memory_dir):
         """测试近重复语义记忆合并"""

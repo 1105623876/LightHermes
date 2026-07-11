@@ -94,14 +94,15 @@ class EmbeddingRetriever:
         provider: str = "openai",
         model: str = "text-embedding-3-small",
         api_key: str = None,
-        base_url: str = None
+        base_url: str = None,
+        cache_file: str = None
     ):
         self.provider = provider
         self.model = model
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.base_url = base_url
         self.embeddings_cache: Dict[str, List[float]] = {}
-        self.cache_file = Path("memory/.embeddings/cache.json")
+        self.cache_file = Path(cache_file) if cache_file else Path("memory/.embeddings/cache.json")
 
         if self.provider == "openai":
             from openai import OpenAI
@@ -229,6 +230,7 @@ class HybridRetriever:
         embedding_model: str = "text-embedding-3-small",
         api_key: str = None,
         embedding_base_url: str = None,
+        embedding_cache_file: str = None,
         min_candidates: int = 5,
         fallback_to_all: bool = True,
         semantic_threshold: float = None,
@@ -247,7 +249,8 @@ class HybridRetriever:
             provider=embedding_provider,
             model=embedding_model,
             api_key=api_key,
-            base_url=embedding_base_url
+            base_url=embedding_base_url,
+            cache_file=embedding_cache_file
         )
 
     def index_documents(self, documents: List[Dict[str, Any]]):

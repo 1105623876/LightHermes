@@ -1,6 +1,7 @@
 from benchmarks.locomo_light import (
     UsageTotals,
     build_session_documents,
+    create_memory,
     parse_judge_label,
     retrieval_metrics,
     stratified_sample,
@@ -76,3 +77,23 @@ def test_answer_metrics_and_usage_cost():
 
     usage = UsageTotals(prompt_tokens=1_000_000, completion_tokens=1_000_000)
     assert usage.estimated_cost(0.75, 4.50) == 5.25
+
+
+def test_create_memory_uses_independent_embedding_cache(tmp_path, monkeypatch):
+    captured_kwargs = {}
+
+    class FakeMemoryManager:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr("benchmarks.locomo_light.MemoryManager", FakeMemoryManager)
+    cache_file = tmp_path / "benchmark-cache" / "embeddings.json"
+
+    create_memory(
+        tmp_path / "memory",
+        {"embedding": {"provider": "openai", "model_name": "test-model"}},
+        cache_file,
+    )
+
+    assert captured_kwargs["embedding_cache_file"] == str(cache_file)
+    assert captured_kwargs["strict_hybrid_retrieval"] is True

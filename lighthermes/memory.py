@@ -15,6 +15,10 @@ import re
 from lighthermes.logger import setup_logger
 
 
+class HybridRetrievalError(RuntimeError):
+    """Raised when strict hybrid retrieval cannot complete."""
+
+
 _MEMORY_CONTEXT_RE = re.compile(r'<\s*memory-context\s*>[\s\S]*?</\s*memory-context\s*>', re.IGNORECASE)
 _MEMORY_FENCE_TAG_RE = re.compile(r'</?\s*memory-context\s*>', re.IGNORECASE)
 _MEMORY_NOTE_RE = re.compile(
@@ -485,6 +489,8 @@ class SemanticMemory:
         embedding_model: str = "text-embedding-3-small",
         api_key: str = None,
         embedding_base_url: str = None,
+        embedding_cache_file: str = None,
+        strict_hybrid_retrieval: bool = False,
         hybrid_min_candidates: int = 5,
         hybrid_fallback_to_all: bool = True,
         hybrid_semantic_threshold: float = None,
@@ -496,6 +502,7 @@ class SemanticMemory:
         self.max_entries = max_entries
         self.max_chars = max_chars
         self.similarity_threshold = similarity_threshold
+        self.strict_hybrid_retrieval = strict_hybrid_retrieval
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # 初始化索引
@@ -516,6 +523,7 @@ class SemanticMemory:
                     embedding_model=embedding_model,
                     api_key=api_key,
                     embedding_base_url=embedding_base_url,
+                    embedding_cache_file=embedding_cache_file,
                     min_candidates=hybrid_min_candidates,
                     fallback_to_all=hybrid_fallback_to_all,
                     semantic_threshold=hybrid_semantic_threshold,
@@ -524,8 +532,12 @@ class SemanticMemory:
                     tfidf_candidate_limit=hybrid_tfidf_candidate_limit
                 )
             except ImportError:
+                if self.strict_hybrid_retrieval:
+                    raise
                 print("混合检索不可用,使用简单关键词匹配")
             except Exception as e:
+                if self.strict_hybrid_retrieval:
+                    raise HybridRetrievalError("混合检索初始化失败") from e
                 print(f"混合检索初始化失败,使用简单关键词匹配: {e}")
 
     def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
@@ -729,6 +741,8 @@ class SemanticMemory:
                     self.hybrid_retriever.index_documents(documents)
                     return self.hybrid_retriever.search(query, top_k=limit)
                 except Exception as e:
+                    if self.strict_hybrid_retrieval:
+                        raise HybridRetrievalError("混合检索执行失败") from e
                     print(f"混合检索失败,回退到关键词匹配: {e}")
 
         # 默认使用简单关键词匹配 - 使用索引加速
@@ -827,6 +841,8 @@ class MemoryManager:
         embedding_model: str = "text-embedding-3-small",
         api_key: str = None,
         embedding_base_url: str = None,
+        embedding_cache_file: str = None,
+        strict_hybrid_retrieval: bool = False,
         hybrid_min_candidates: int = 5,
         hybrid_fallback_to_all: bool = True,
         hybrid_semantic_threshold: float = None,
@@ -842,6 +858,7 @@ class MemoryManager:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_hybrid_retrieval = use_hybrid_retrieval
+        self.strict_hybrid_retrieval = strict_hybrid_retrieval
         self.hybrid_full_rerank_max_docs = hybrid_full_rerank_max_docs
         self.working_to_episodic_limit = working_to_episodic_limit
         self.episodic_to_semantic_access_threshold = episodic_to_semantic_access_threshold
@@ -872,6 +889,8 @@ class MemoryManager:
             embedding_model=embedding_model,
             api_key=api_key,
             embedding_base_url=embedding_base_url,
+            embedding_cache_file=embedding_cache_file,
+            strict_hybrid_retrieval=strict_hybrid_retrieval,
             hybrid_min_candidates=hybrid_min_candidates,
             hybrid_fallback_to_all=hybrid_fallback_to_all,
             hybrid_semantic_threshold=hybrid_semantic_threshold,
@@ -1051,6 +1070,8 @@ class MemoryManager:
             retriever.index_documents(memories)
             return retriever.search(query, top_k=limit)
         except Exception as e:
+            if self.strict_hybrid_retrieval:
+                raise HybridRetrievalError("跨层混合记忆重排失败") from e
             self.logger.warning(f"跨层记忆重排失败，回退到层级排序: {e}")
             return None
 

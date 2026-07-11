@@ -2,7 +2,7 @@
 
 轻量级记忆增强智能体框架。在不引入 LangChain、LlamaIndex 或 LangGraph 的前提下，提供分级记忆、工具调用、上下文压缩和轻量自进化能力。
 
-当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、批量 embedding、跨层统一重排和流式生命周期收口。
+当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、LoCoMo 轻量评测、批量 embedding、跨层统一重排和流式生命周期收口。v0.4.0 的主线是预算受控、跨场景泛化的 Active Memory，而不是针对单一 benchmark 调参。
 
 ## 核心能力
 
@@ -14,6 +14,7 @@
 | 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
 | 工具系统 | 默认提供 `search_memory`，文件工具按配置显式开启 |
 | 自进化 | 记录轨迹，从高质量成功经验生成 Markdown 技能，并沉淀失败报告 |
+| 记忆评测 | 合成回归、LoCoMo 长对话抽样、阶段指标、token 与成本记录 |
 | 多模型端点 | OpenAI、OpenAI 兼容端点、Anthropic 和 MiniMax Anthropic 兼容端点 |
 | CLI | 交互对话、记忆统计、压缩、导出和会话重置 |
 
@@ -163,6 +164,7 @@ CLI / Python API
         +-- compressor.py   上下文压缩
         +-- evolution.py    轨迹分析和技能生成
         +-- evaluation.py   Memory Eval v2.1
+        +-- benchmarks/     长对话与跨场景记忆评测入口
 ```
 
 核心边界：
@@ -210,7 +212,41 @@ CLI / Python API
 | 噪声率 | 89.0% | **3.7%** |
 | 平均延迟 | 105ms | 314ms |
 
-评测覆盖偏好、项目决策、故障经验、跨语言、冲突事实、硬负例、跨层召回和多领域干扰。数据全部为合成内容；这些结果证明当前配置在该基准上的表现，不等同于真实生产数据的最终结论。
+评测覆盖偏好、项目决策、故障经验、跨语言、冲突事实、硬负例、跨层召回和多领域干扰。数据全部为合成内容；这些结果适合做快速回归，不能证明真实长对话或生产场景中的最终质量。
+
+### 长对话真实基线
+
+为了验证合成评测之外的实际表现，项目使用官方 [LoCoMo](https://github.com/snap-research/locomo) 数据做了 40 题分层抽样，覆盖四类可回答问题并暂不计入 adversarial 类别。该实验将每个 session 作为一条记忆，使用 session summary 检索、原始对话回答；静态路径只执行一次 Top-5 BGE-M3 召回，不允许模型继续搜索。
+
+| 指标 | 结果 |
+|------|-----:|
+| Evidence Hit@5 | 59.0% |
+| Evidence Recall@5 | 49.2% |
+| MRR | 47.0% |
+| GPT-5.4-mini + LLM judge QA | 50.0% |
+| Evidence 命中后的 QA | 70% |
+| Evidence 未命中后的 QA | 19% |
+| 模型调用 | 80 次 |
+| token | 478,914 输入 / 1,912 输出 |
+| 官方单价估算 | $0.368 |
+
+这组结果揭示了合成集没有暴露的问题：固定 Top-K 在长对话中的召回覆盖不足，模型在证据命中后仍会遇到信息聚合、计数和时间推理失败。因此，合成集上的 100% 不能外推为真实记忆能力。
+
+同时需要避免反向过拟合：这 40 题只是已见开发样本，LoCoMo 也只是评测轨道之一。运行时策略不得读取 benchmark 标签、evidence、样本 ID，不能根据失败个例硬编码题型或关键词。v0.4.0 将使用合成回归、长对话、更新/冲突和隐私安全工作流回放组成多轨验证。
+
+运行静态召回评测：
+
+```powershell
+.\venv\Scripts\python.exe benchmarks\locomo_light.py --download --mode retrieval
+```
+
+运行带回答与单次裁判的轻量评测：
+
+```powershell
+.\venv\Scripts\python.exe benchmarks\locomo_light.py --mode qa
+```
+
+benchmark 使用独立持久 embedding 缓存和严格 hybrid 模式。embedding 失败会明确终止并写入 `status=failed`，不会把关键词降级结果计入正式指标。
 
 ### Memory Eval v2.1
 
@@ -276,9 +312,9 @@ tools:
 ## 开发状态
 
 - 发布版本：`v0.3.4`
-- 当前开发基线：`144/144` 测试通过
-- 测试层次：单元、集成、性能和离线记忆质量评估
-- 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成记忆评测
+- 当前开发基线：`151/151` 测试通过
+- 测试层次：单元、集成、性能、合成记忆质量和长对话抽样评测
+- 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成与 LoCoMo 抽样评测
 
 运行测试：
 
@@ -289,16 +325,18 @@ tools:
 当前限制：
 
 - 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- Memory Eval v2.1 目前使用合成数据，仍需补充蒸馏污染和真实长期使用回放。
+- 自动记忆注入仍以一次性 Top-K 为主；虽然模型可以调用 `search_memory`，目前尚无通用 evidence state、充分性判断和预算停止策略。
+- Memory Eval v2.1 是合成回归；LoCoMo 目前只有 40 题已见开发样本，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
+- 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
 - 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
 - 插件加载、网络 Channel、多模态和 Web UI 尚未进入稳定主线。
 
 近期方向：
 
-1. 多用户记忆隔离与隐私边界。
-2. 蒸馏污染、反模式误召回和长期回放评测。
-3. 更可靠的任务成功信号和用户反馈闭环。
-4. 评审并移植轻量本地工具插件能力。
+1. 建立候选、分数、查询改写、来源和阶段错误的可观测轨迹。
+2. 定义通用 evidence state，以覆盖、不确定性、冲突、可验证性和检索增益驱动主动搜索。
+3. 实现预算受控的查询改写、候选融合、来源展开和停止条件。
+4. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
 
 详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
 
