@@ -2,7 +2,7 @@
 
 轻量级记忆增强智能体框架。在不引入 LangChain、LlamaIndex 或 LangGraph 的前提下，提供分级记忆、工具调用、上下文压缩和轻量自进化能力。
 
-当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、LoCoMo 轻量评测、批量 embedding、跨层统一重排和流式生命周期收口。v0.4.0 的主线是预算受控、跨场景泛化的 Active Memory，而不是针对单一 benchmark 调参。
+当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、LoCoMo 轻量评测、批量 embedding、跨层统一重排，以及默认关闭的 Active Memory Runtime MVP。v0.4.0 的主线仍是预算受控、跨场景泛化的主动记忆，而不是针对单一 benchmark 调参。
 
 ## 核心能力
 
@@ -10,6 +10,7 @@
 |------|------|
 | 四级记忆 | 短期、工作、情景、语义记忆分层存储和迁移 |
 | 混合检索 | 关键词初筛、embedding 重排、跨层候选融合和噪声过滤 |
+| Active Memory | 可选的证据账本、候选分数轨迹、两轮搜索预算和停止原因 |
 | 生命周期 | 回合开始/结束、压缩前、会话结束和记忆写入钩子 |
 | 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
 | 工具系统 | 默认提供 `search_memory`，文件工具按配置显式开启 |
@@ -148,6 +149,23 @@ memory:
 
 示例中的 `0.50` / `0.08` 是 BGE-M3 合成评测后的建议起点。不同 embedding 模型的分数分布不同，切换模型后应重新评估。
 
+### Active Memory Runtime
+
+Active Memory 当前是默认关闭的实验路径：
+
+```yaml
+memory:
+  active_recall:
+    enabled: false
+    max_rounds: 2
+    persist_traces: true
+    trace_dir: memory/recall_traces
+```
+
+开启后，首次自动召回仍作为 seed context；模型最多执行两次额外的内置 `search_memory`，系统记录候选 ID、分数、来源增益、延迟、错误和停止原因。达到两轮、连续无新来源、正常回答、流式取消或异常时，trace 会以 JSON 保存。用户自定义的同名工具不受内置预算控制。
+
+这只是运行时基座，尚未证明真实记忆质量提升。query rewrite、完整来源展开、claim 支持/冲突更新和 static/agentic benchmark A/B 仍属于下一阶段。
+
 ## 架构
 
 ```text
@@ -160,6 +178,7 @@ CLI / Python API
         +-- builtin_tools.py 记忆与受控文件工具
         +-- skills.py       Markdown 技能和失败报告召回
         +-- memory.py       四级记忆、迁移、蒸馏和跨层召回
+        +-- active_memory.py 证据账本、召回轨迹和两轮预算
         +-- retrieval.py    TF-IDF、批量 embedding 和混合重排
         +-- compressor.py   上下文压缩
         +-- evolution.py    轨迹分析和技能生成
@@ -172,6 +191,7 @@ CLI / Python API
 - `LightHermes` 负责对话循环、记忆注入、工具迭代和统一回合收尾。
 - `BaseAdapter` 隔离 OpenAI、Anthropic 和兼容端点差异。
 - `MemoryManager` 统一管理保存、结构化召回、迁移、蒸馏和统计。
+- `ActiveRecallSession` 只管理单回合 evidence ledger、来源增益、轮次预算和 trace，不替代检索器或 Agent 主循环。
 - `ToolDispatcher` 负责 schema、注册、同名覆盖和调用。
 - `SkillLoader` 负责 Markdown 技能匹配以及 `failure_report` 风险提示。
 - `ContextCompressor` 处理长上下文；`EvolutionEngine` 记录轨迹并生成可读技能。
@@ -190,6 +210,7 @@ CLI / Python API
 - 召回内容通过 `<memory-context>` 包装，明确标记为背景信息而非新指令。
 - `SOUL.md` 和 `USER.md` 用于稳定设定与固定用户偏好。
 - hybrid 模式扩大各层候选池，再使用同一个 embedding 统一重排。
+- Active Memory 开启时，seed 与结构化 item 来自同一次召回，不会为 trace 重复调用 embedding。
 - 普通自动上下文默认排除 `historical`、`rejected` 和 `failure_report`；明确询问历史或失败经验时仍可召回。
 - hybrid 工作记忆只保留最相关项，减少最近但无关的摘要占位。
 - embedding 支持批量请求；缓存使用原子替换，缓存写失败不会让本次检索降级。
@@ -312,7 +333,7 @@ tools:
 ## 开发状态
 
 - 发布版本：`v0.3.4`
-- 当前开发基线：`151/151` 测试通过
+- 当前开发基线：`166/166` 测试通过
 - 测试层次：单元、集成、性能、合成记忆质量和长对话抽样评测
 - 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成与 LoCoMo 抽样评测
 
@@ -325,7 +346,7 @@ tools:
 当前限制：
 
 - 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- 自动记忆注入仍以一次性 Top-K 为主；虽然模型可以调用 `search_memory`，目前尚无通用 evidence state、充分性判断和预算停止策略。
+- Active Memory 已有 evidence ledger、候选分数轨迹和两轮停止策略，但默认关闭；尚无 query rewrite、来源全文/邻接展开和模型级 claim 支持/冲突更新。
 - Memory Eval v2.1 是合成回归；LoCoMo 目前只有 40 题已见开发样本，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
 - 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
 - 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
@@ -333,9 +354,9 @@ tools:
 
 近期方向：
 
-1. 建立候选、分数、查询改写、来源和阶段错误的可观测轨迹。
-2. 定义通用 evidence state，以覆盖、不确定性、冲突、可验证性和检索增益驱动主动搜索。
-3. 实现预算受控的查询改写、候选融合、来源展开和停止条件。
+1. 将未解决 claim 与 cue anchors 接入通用 query rewrite。
+2. 增加按 source 读取完整记忆和可选邻接 session 展开。
+3. 建立 static / agentic A/B 与 Indexing、Retrieval、Reading、Answering 阶段诊断。
 4. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
 
 详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
@@ -346,7 +367,9 @@ Apache 2.0
 
 ## 参考
 
-- [设计文档](docs/superpowers/specs/2026-04-25-lighthermes-design.md)
+- [总体设计](docs/superpowers/specs/2026-04-25-lighthermes-design.md)
+- [Active Memory Runtime 设计](docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md)
+- [Active Memory 实施计划](docs/superpowers/plans/2026-08-09-active-memory-runtime.md)
 - LightAgent：轻量工具与 Agent 主循环参考
 - Hermes：记忆生命周期与自进化参考
 - nanobot：工具、技能、Hook 和 Channel 边界参考

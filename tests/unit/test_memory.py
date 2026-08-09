@@ -407,6 +407,26 @@ class TestMemoryManager:
 
         assert "[semantic:python score=" in context
 
+    def test_on_turn_start_can_return_context_and_items_from_one_recall(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        calls = []
+        original = mm.recall_items
+
+        def counted(*args, **kwargs):
+            calls.append((args, kwargs))
+            return original(*args, **kwargs)
+
+        mm.recall_items = counted
+        context, items = mm.on_turn_start(
+            "Python", user_id="default", session_id="session_1", include_items=True
+        )
+
+        assert calls == [(
+            ("Python",),
+            {"user_id": "default", "limit": 8, "max_chars": 2000}
+        )]
+        assert context == ""
+        assert items == []
     def test_promote_working_memory_to_episodic(self, temp_memory_dir):
         """测试工作记忆提升为情景记忆"""
         mm = MemoryManager(

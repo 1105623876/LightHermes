@@ -22,6 +22,11 @@ embedding:
 memory:
   enabled: true
   storage_dir: memory
+  active_recall:
+    enabled: false
+    max_rounds: 2
+    persist_traces: true
+    trace_dir: memory/recall_traces
 
   # 自适应记忆配置
   adaptive:

@@ -915,9 +915,13 @@ class MemoryManager:
             self.logger.warning(f"记忆生命周期钩子 {hook_name} 执行失败: {e}")
             return None
 
-    def on_turn_start(self, query: str, user_id: str = "default", session_id: str = "") -> str:
-        """回合开始：召回记忆并返回安全包装后的上下文"""
-        return build_memory_context_block(self.recall(query, user_id))
+    def on_turn_start(self, query: str, user_id: str = "default", session_id: str = "", include_items: bool = False):
+        """回合开始：一次召回同时提供兼容文本和可选结构化条目。"""
+        items = self.recall_items(query, user_id=user_id, limit=8, max_chars=2000)
+        context = build_memory_context_block(self._format_recall_items(items))
+        if include_items:
+            return context, items
+        return context
 
     def on_turn_end(
         self,
@@ -1281,6 +1285,9 @@ class MemoryManager:
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆 - 保留字符串兼容接口"""
         items = self.recall_items(query, user_id=user_id, limit=8, max_chars=2000)
+        return self._format_recall_items(items)
+
+    def _format_recall_items(self, items: List[Dict[str, Any]]) -> str:
         parts = []
         for item in items:
             name = item.get("name", "unknown")

@@ -1,118 +1,90 @@
 # 测试框架说明
 
+当前测试基线为 **166/166 通过**（2026-08-09）。
+
 ## 安装测试依赖
 
-```bash
-pip install pytest pytest-asyncio pytest-cov pytest-mock
+优先使用项目虚拟环境：
+
+```powershell
+.\venv\Scripts\python.exe -m pip install pytest pytest-asyncio pytest-cov pytest-mock
 ```
 
-如果遇到安装问题，可以尝试：
-```bash
-pip install --upgrade pip
-pip install pytest pytest-asyncio pytest-cov pytest-mock --no-cache-dir
+如果需要刷新测试依赖：
+
+```powershell
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+.\venv\Scripts\python.exe -m pip install pytest pytest-asyncio pytest-cov pytest-mock --no-cache-dir
 ```
 
 ## 运行测试
 
-```bash
-# 运行所有测试
-pytest tests/ -v
+```powershell
+# 全量回归
+.\venv\Scripts\python.exe -m pytest tests -v
 
-# 运行特定类型的测试
-pytest tests/unit/ -v                    # 单元测试
-pytest tests/integration/ -v             # 集成测试
-pytest tests/performance/ -v             # 性能测试
+# 按层运行
+.\venv\Scripts\python.exe -m pytest tests/unit -v
+.\venv\Scripts\python.exe -m pytest tests/integration -v
+.\venv\Scripts\python.exe -m pytest tests/performance -v
 
-# 运行特定测试文件
-pytest tests/unit/test_memory.py -v
-pytest tests/unit/test_adapters.py -v
-pytest tests/unit/test_compressor.py -v
-pytest tests/integration/test_cli.py -v
+# 记忆与评测聚焦测试
+.\venv\Scripts\python.exe -m pytest tests/unit/test_memory.py -v
+.\venv\Scripts\python.exe -m pytest tests/unit/test_retrieval.py -v
+.\venv\Scripts\python.exe -m pytest tests/unit/test_evaluation.py -v
+.\venv\Scripts\python.exe -m pytest tests/unit/test_locomo_benchmark.py -v
 
-# 运行带覆盖率报告
-pytest tests/ --cov=lighthermes --cov-report=html
-
-# 跳过慢速测试
-pytest tests/ -v -m "not slow"
+# 覆盖率与慢测试过滤
+.\venv\Scripts\python.exe -m pytest tests --cov=lighthermes --cov-report=html
+.\venv\Scripts\python.exe -m pytest tests -v -m "not slow"
 ```
 
 ## 测试结构
 
-```
+```text
 tests/
-├── conftest.py                          # 共享 fixtures
-├── unit/                                # 单元测试
-│   ├── test_memory.py                   # 记忆系统测试
-│   ├── test_core_memory.py              # 核心记忆集成测试
-│   ├── test_evolution.py                # 自进化系统测试
-│   ├── test_compressor.py               # 上下文压缩测试
-│   ├── test_builtin_tools.py            # 内置工具测试
-│   ├── test_tools.py                    # 工具注册与覆盖测试
-│   └── test_adapters.py                 # Adapter 测试
-├── integration/                         # 集成测试
-│   └── test_cli.py                      # CLI 集成测试
-└── performance/                         # 性能测试
-    └── test_memory_performance.py       # 记忆系统性能测试
+├── conftest.py
+├── unit/
+│   ├── test_active_memory.py
+│   ├── test_adapters.py
+│   ├── test_builtin_tools.py
+│   ├── test_compressor.py
+│   ├── test_core_active_memory.py
+│   ├── test_core_memory.py
+│   ├── test_evaluation.py
+│   ├── test_evolution.py
+│   ├── test_locomo_benchmark.py
+│   ├── test_memory.py
+│   ├── test_retrieval.py
+│   └── test_tools.py
+├── integration/
+│   └── test_cli.py
+└── performance/
+    └── test_memory_performance.py
 ```
+
+## 覆盖范围
+
+- **Memory**：索引、四级记忆、结构化召回、生命周期、迁移、蒸馏、合并和容量治理
+- **Active Memory**：MemoryRecord、evidence ledger、候选分数 trace、两轮预算、无新增停止、工具覆盖、流式取消与错误
+- **Retrieval**：独立 embedding 端点、批量请求、缓存、hybrid 候选扩展、阈值与分数间隔
+- **Memory Eval v2.1**：来源级 Recall@K、MRR、Precision@K、噪声率、分类汇总和质量门槛
+- **LoCoMo 工具**：分层抽样、session 文档、evidence 排名、QA 指标、成本与独立缓存
+- **Core**：配置解析、环境变量引用、记忆注入、工具循环、流式生命周期和 Evolution 适配
+- **Builtin tools**：记忆搜索、受控文件读/搜索/写入和安全边界
+- **Evolution**：轨迹质量、技能生成和失败报告
+- **Adapters / Compressor / CLI**：供应商适配、流式兼容、上下文压缩和交互命令
+- **Performance**：索引、搜索、召回和大规模记忆集合
 
 ## 测试标记
 
-- `@pytest.mark.unit` - 单元测试
-- `@pytest.mark.integration` - 集成测试
-- `@pytest.mark.performance` - 性能测试
-- `@pytest.mark.slow` - 慢速测试（> 1秒）
+- `@pytest.mark.unit`
+- `@pytest.mark.integration`
+- `@pytest.mark.performance`
+- `@pytest.mark.slow`：预计运行超过 1 秒
 
-## 当前测试覆盖
+## 待补测试
 
-当前基线：113/113 通过（`pytest tests/ -v`）。
-
-### 已完成
-- ✅ pytest 框架配置（pytest.ini）
-- ✅ 共享 fixtures（conftest.py）
-- ✅ 记忆系统单元测试（test_memory.py）
-  - 记忆索引（分词、搜索）
-  - 结构化召回与显式记忆搜索
-  - 记忆生命周期钩子
-  - 记忆蒸馏、合并和容量治理
-  - 短期记忆
-  - 记忆管理器
-  - 文件解析
-- ✅ Adapter 单元测试（test_adapters.py）
-  - Adapter 工厂
-  - OpenAI Adapter
-  - Anthropic Adapter
-  - 流式响应处理
-- ✅ Evolution 单元测试（test_evolution.py）
-  - 成功质量评估
-  - 高质量轨迹过滤
-  - Adapter 兼容技能生成
-- ✅ 核心记忆集成测试（test_core_memory.py）
-  - 压缩摘要入库
-  - 混合检索配置透传
-  - Evolution 复用主模型 Adapter
-  - 内置 `search_memory` 注册与用户工具覆盖
-  - 文件工具默认关闭、按配置开启和写入能力单独控制
-- ✅ Builtin tools 单元测试（test_builtin_tools.py）
-  - 内置记忆搜索工具
-  - 只读文件工具
-  - 文件搜索工具
-  - 默认关闭的写文件工具与安全边界
-- ✅ ToolDispatcher 单元测试（test_tools.py）
-  - 同名工具 schema 覆盖
-  - 批量注册
-- ✅ Compressor 单元测试（test_compressor.py）
-  - 压缩触发阈值
-  - 工具输出剪枝
-  - 摘要生成与失败回退
-- ✅ CLI 集成测试（integration/test_cli.py）
-  - 命令分发
-  - 手动压缩与重置
-  - 交互循环
-- ✅ 性能基准测试（test_memory_performance.py）
-  - 索引性能
-  - 搜索性能
-  - 召回性能
-  - 可扩展性测试
-
-### 待添加
-- [ ] 真实 API 集成测试（需要 API key）
+- [ ] 真实 API 集成测试（需要外部凭据，不进入默认离线回归）
+- [ ] Active Memory static / agentic A/B
+- [ ] 冻结验证集、最终 holdout 和跨场景工作流回放

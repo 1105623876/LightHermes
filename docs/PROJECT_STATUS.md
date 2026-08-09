@@ -1,126 +1,104 @@
 # LightHermes 项目状态
 
-**最后更新**: 2026-07-07
-**版本**: v0.3.4（流式工具调用修复、记忆性能回归修复与版本文档同步完成）
-**状态**: 稳定可用，测试基线通过
+**最后更新**: 2026-08-09
+**发布版本**: v0.3.4
+**开发主线**: v0.4.0 Active Memory
+**状态**: Active Memory Runtime P0 + 最小 P1 已实现，默认关闭并等待真实 A/B
 
-## 核心指标
+## 当前基线
 
-- **测试通过率**: 113/113（`pytest tests/`）
-- **核心依赖**: `openai` + `anthropic` + `pyyaml`
-- **可选增强依赖**: `sentence-transformers`、`colorama`
-- **分支状态**: `master` 已推送到 `origin`；本地配置文件和临时工具目录不属于发布范围
-- **当前定位**: 轻量智能体框架，围绕四级记忆、生命周期钩子、自进化和受控工具形成闭环
-- **发版检查**: MiniMax 非流式/流式 smoke test 通过；`search_memory` 默认注册不影响普通对话；配置与文档已同步
+- **测试**: 166/166 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **核心依赖**: `openai`、`anthropic`、`pyyaml`
+- **可选增强**: `sentence-transformers`、`colorama`
+- **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
+- **记忆评测**: Memory Eval v2.1 合成回归 + LoCoMo 40 题分层开发基线
+- **当前定位**: 面向单用户、本地或嵌入式场景的轻量记忆增强智能体运行时
 
-## 最近进展（已在代码中）
+## 已具备能力
 
-### 1) 记忆生命周期
-- `on_turn_start()` 召回记忆并用 `<memory-context>` 安全包装
-- `on_turn_end()` 同步助手回复到短期记忆
-- `on_pre_compress()` 在压缩前提取即将丢失的轻量线索
-- `on_session_end()` 在 CLI 退出、重置、KeyboardInterrupt/EOF 时保存摘要并触发迁移
-- `on_memory_write()` 作为固定记忆与用户偏好写入后的统一入口
+### 记忆与召回
 
-### 2) 记忆蒸馏与容量治理
-- 新增 `distill_memories()`，从工作/情景记忆提炼高价值语义记忆
-- 语义记忆支持条目数与字符预算，避免长期无限追加
-- 重复/近重复蒸馏记忆自动合并，避免同类语义记忆膨胀
-- 蒸馏元数据包含 `distilled_from`、`source_layer`、`confidence`、`last_verified`、`source_count`
-- 语义记忆清理时同步移除索引，并优先保留用户偏好
+- 短期、工作、情景、语义四级记忆及生命周期钩子
+- `MemoryManager.recall_items()` 结构化召回和兼容的字符串接口
+- TF-IDF 初筛、独立 embedding 端点、跨层统一重排和显式降级边界
+- 默认内置 `search_memory` 工具，支持层级与元数据过滤
+- 记忆蒸馏、近重复合并、容量治理、状态过滤和来源元数据
 
-### 3) 结构化记忆召回与记忆搜索工具
-- `MemoryManager.recall_items()` 返回层级、来源、分数、优先级和元数据
-- `MemoryManager.search_memory()` 支持按 `working`、`episodic`、`semantic` 或 `all` 搜索
-- `recall()` 保留旧字符串接口，内部复用结构化召回
-- 默认注册内置 `search_memory` 工具，显式记忆查询可以走工具调用
-- 用户自定义同名工具会覆盖内置工具，避免重复 schema
+### Agent 运行时
 
-### 4) 受控文件工具
-- 新增 `lighthermes/builtin_tools.py`，集中管理内置工具
-- `read_file`、`search_files`、`write_file` 均由 `tools.builtin` 配置显式开启
-- 文件工具默认关闭；`write_file` 必须单独开启，不会被读/搜索能力隐式启用
-- 文件访问受 `roots` 白名单、排除目录、敏感文件名、二进制文件和大小限制保护
-- `write_file` 支持 `create`、`overwrite`、`append`，不会自动创建父目录
+- OpenAI、Anthropic 与兼容端点适配
+- 非流式/流式工具循环和统一回合收尾
+- 上下文压缩、Markdown 技能、失败报告和轨迹记录
+- 受控文件工具；读、搜索、写入均按配置显式开启
 
-### 5) 自进化与反模式提示
-- 增加成功质量评估：`quality_score` / `quality_level` / `learning_worthy`
-- 成功模式分析仅使用高质量成功轨迹
-- 失败轨迹生成 `failure_report`，避免错误经验被当成正向技能
-- `failure_report` 会按任务类型和关键词召回，并在执行前注入简短非阻断风险提示
-- 生成后的 `failure_report` 会优先沉淀到情景记忆，后续可由蒸馏机制进入语义记忆
+### 评测与稳定性
 
-### 6) 轻量架构边界收敛
-- `tool` 装饰器与 `ToolDispatcher` 已拆到 `lighthermes/tools.py`
-- `SkillLoader` 已拆到 `lighthermes/skills.py`，继续支持 Markdown 技能和 `failure_report` 召回
-- 生命周期钩子的安全调用已收敛到 `lighthermes/hooks.py`
-- `lighthermes/channels.py` 预留 `ChannelMessage` / `DirectChannel`，暂不引入复杂 channel bus
-- `core.py` 保持 `LightHermes` 主循环和兼容门面，避免破坏既有导入与测试 monkeypatch
+- 166 项单元、集成与性能测试
+- Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
+- LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
+- 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%
 
-### 7) 测试体系
-- 已形成单元/集成/性能测试分层
-- 覆盖模块包括 memory / builtin_tools / tools / adapters / evolution / compressor / CLI / performance
-- 全量基线稳定（113 项）
+## 当前判断
 
-### 8) v0.3.4 收口修复
-- 修复 `_run_stream` 流式工具调用二次请求路径，统一走 `_call_api_with_fallback`
-- 清理 Evolution 技能生成中的死代码 fallback
-- 为语义记忆增加轻量缓存、容量计数和访问计数去抖写入，修复性能测试回归
-- 统一源码版本、CLI 展示、打包元数据和文档状态到 `0.3.4`
+静态召回已经达到“可使用、可回归、可诊断”的阶段；Active Memory 的运行时基座也已落地：
 
-## 已完成计划判断
+1. `MemoryRecord`、`EvidenceLedger`、`RecallTrace` 和 `ActiveRecallSession` 已实现。
+2. seed context 与结构化 item 来自同一次召回，不重复消耗 embedding。
+3. 内置 `search_memory` 最多执行两轮，并按回答、无新增证据、预算耗尽、取消或错误停止。
+4. trace 记录候选 ID/分数、来源增益、延迟、错误和公开 session 元数据，不记录隐藏推理。
+5. 新路径默认关闭；用户自定义同名工具和原有静态路径保持兼容。
 
-**记忆工具计划已完成。** 当前已完成结构化记忆召回、内置 `search_memory`、受控只读文件工具、默认关闭的 `write_file`、配置入口、安全边界和测试覆盖。
+这仍不是完整的主动记忆质量闭环。当前 evidence ledger 主要聚合 candidate source，尚未让模型显式更新 claim 支持/冲突；query rewrite、来源全文/邻接展开和真实 static/agentic A/B 也尚未完成。
 
-## 已知风险与限制
+详细设计见 `docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md`。
 
-1. **混合检索默认关闭**
-   - 启用 OpenAI embedding 需要 API key
-   - 启用 local embedding 需要本地模型依赖
+## 已知限制
 
-2. **记忆蒸馏仍是轻量启发式**
-   - 当前不调用 LLM、不引入新依赖
-   - 后续可继续优化稳定事实筛选和误判控制
+1. **主动召回仍是 MVP**
+   - 已有单回合状态、两轮预算和 trace，但默认关闭。
+   - 尚无通用 query rewrite、来源全文/邻接展开和模型级 claim 判定。
+   - 尚未通过真实 static / agentic A/B 证明质量收益与成本边界。
 
-3. **反模式提示是轻量召回**
-   - 当前只按任务类型和关键词匹配
-   - 后续可继续优化反模式稳定性筛选和去重策略
+2. **长期记忆表征仍偏检索条目**
+   - 已有来源与状态元数据，但缺少统一的 abstract、cue anchors 和版本链契约。
+   - 回答阶段尚未把“检索摘要”和“可验证原始来源”明确分层。
 
-4. **文件工具需要谨慎开启**
-   - 默认关闭是正确安全边界
-   - 开启时应尽量缩小 `roots`，写入能力只在可信环境中启用
+3. **真实评测规模有限**
+   - LoCoMo 40 题属于已见开发样本，不代表生产质量。
+   - 仍需冻结验证集、最终 holdout、更新/冲突和隐私安全工作流回放。
 
-5. **真实 API 集成测试仍需外部凭据**
-   - 当前 CI/本地主要依赖 mock 与离线测试路径
-   - MiniMax Anthropic 兼容端点已完成一次真实非流式与流式 smoke test
+4. **产品边界仍是本地单用户**
+   - 尚无多用户命名空间、外部数据库后端、网络 Channel 或成熟插件系统。
+   - 这些能力在 Active Memory 泛化验证前不进入主线。
 
-## 下一步建议（按优先级）
+## 下一步
 
-1. **发布 v0.3.4**
-   - 当前版本号已统一为 `0.3.4`
-   - 下一步可创建并推送 `v0.3.4` tag
+### 已完成：P0 + 最小 P1
 
-2. **插件系统完善（Phase 3.1）**
-   - Python 插件加载机制
-   - 插件目录扫描和启停配置
-   - 保持插件依赖管理轻量，不默认安装重依赖
+- 兼容现有结构化记忆的 `MemoryRecord`
+- claim/candidate/support/conflict/coverage evidence ledger
+- 候选分数、来源增益、延迟、错误和停止原因 trace
+- 首轮 seed + 最多两轮内置记忆搜索
+- 默认关闭，保留原有接口与自定义工具覆盖语义
 
-3. **工具生态扩展（Phase 3.2）**
-   - Docker 镜像、GitHub Actions、VS Code 插件或 Web UI 按需推进
-   - 优先选对当前开发/测试最有帮助的集成
+### 下一步：P1 完整闭环
 
-4. **记忆系统优化（Phase 4.1）**
-   - 记忆检索缓存（LRU）
-   - 批量操作优化
-   - 评估 SQLite FTS5，但不作为默认复杂依赖
+- 从未解决 claim 与 cue anchors 生成通用 query rewrite
+- 按 source 读取完整记忆并展开可选邻接来源
+- 让模型显式更新 support/conflict/unknown，而不是只聚合候选
+- 区分“记忆中没有”和“当前尚未检索到”的稳定输出协议
 
-5. **多模态支持（低优先级）**
-   - 图片输入、代码截图理解、架构图生成
-   - 原则是不引入重依赖，优先复用模型原生能力
+### P2：泛化验证与经验记忆
+
+- 建立 static / agentic A/B 和阶段错误诊断
+- 冻结策略后运行验证集、holdout 与结构不同的工作流回放
+- 将工具成功、失败、成本与延迟接入可追溯的经验记录，再决定是否固化为技能
 
 ## 参考文档
 
-- 总览说明：`README.md`
+- 总览：`README.md`
 - 路线图：`docs/ROADMAP.md`
-- 变更日志：`CHANGELOG.md`
+- 设计规范：`docs/superpowers/specs/`
+- 实施计划：`docs/superpowers/plans/`
 - 测试说明：`tests/README.md`
+- 变更记录：`CHANGELOG.md`

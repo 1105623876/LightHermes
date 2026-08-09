@@ -4,7 +4,9 @@ LightHermes 核心引擎
 实现对话循环、工具调度、技能加载
 """
 
+import inspect
 import json
+import time
 import os
 import yaml
 import uuid
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Callable, Generator, Union
 
 from lighthermes.memory import MemoryManager
+from lighthermes.active_memory import ActiveRecallSession
 from lighthermes.evolution import EvolutionEngine
 from lighthermes.adapters import get_adapter
 from lighthermes.compressor import ContextCompressor
@@ -67,6 +70,13 @@ class LightHermes:
                 print(f"警告: 读取配置文件失败: {e}")
 
         self._load_local_env_files(config_path, config)
+
+        active_recall_config = config.get("memory", {}).get("active_recall", {})
+        self.active_recall_enabled = bool(active_recall_config.get("enabled", False)) and memory_enabled
+        self.active_recall_max_rounds = self._normalize_active_recall_rounds(active_recall_config.get("max_rounds", 2))
+        self.active_recall_persist_traces = bool(active_recall_config.get("persist_traces", True))
+        self.active_recall_trace_dir = active_recall_config.get("trace_dir", "memory/recall_traces")
+        self._builtin_search_memory = None
 
         # 应用配置（参数优先级高于配置文件）
         if not fallback_models and config.get("model", {}).get("fallback_models"):
@@ -170,7 +180,12 @@ class LightHermes:
         builtin_config = config.get("tools", {}).get("builtin", {})
         builtin_enabled = builtin_config.get("enabled", True)
         if builtin_enabled and memory_enabled and builtin_config.get("memory_search", True) and self.tool_dispatcher:
-            self.tool_dispatcher.register_tools(create_memory_tools(self.memory))
+            memory_tools = create_memory_tools(self.memory)
+            self.tool_dispatcher.register_tools(memory_tools)
+            self._builtin_search_memory = next(
+                (candidate for candidate in memory_tools if getattr(candidate, "tool_info", {}).get("tool_name") == "search_memory"),
+                None
+            )
         if builtin_enabled and self.tool_dispatcher:
             self.tool_dispatcher.register_tools(create_file_tools(builtin_config))
         if tools and self.tool_dispatcher:
@@ -201,6 +216,114 @@ class LightHermes:
         else:
             self.compressor = None
             self.context_window = 128000  # 默认值
+
+    @staticmethod
+    def _normalize_active_recall_rounds(value: Any) -> int:
+        try:
+            return max(1, min(int(value), 2))
+        except (TypeError, ValueError):
+            return 2
+
+    @staticmethod
+    def _supports_include_items(method: Callable) -> bool:
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            return False
+        return "include_items" in signature.parameters or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+
+    def _active_memory_is_builtin_search(self, tool_name: str) -> bool:
+        if tool_name != "search_memory":
+            return False
+        dispatcher = getattr(self, "tool_dispatcher", None)
+        builtin = getattr(self, "_builtin_search_memory", None)
+        tools = getattr(dispatcher, "tools", {})
+        return builtin is not None and isinstance(tools, dict) and tools.get(tool_name) is builtin
+
+    def _finalize_active_recall(self, session=None, reason: str = "sufficient"):
+        if session is None:
+            return
+        if getattr(session, "trace", None) is None:
+            return
+        if session.trace.stop_reason is None:
+            if reason == "answered":
+                session.mark_answered()
+            elif reason == "budget_exhausted":
+                session.mark_budget_exhausted()
+            elif reason == "cancelled":
+                session.mark_cancelled()
+        if getattr(session, "_trace_persisted", False):
+            return
+        if not getattr(self, "active_recall_persist_traces", True):
+            session._trace_persisted = True
+            return
+        trace_dir = getattr(self, "active_recall_trace_dir", "memory/recall_traces")
+        if session.persist(trace_dir) is None:
+            logger = getattr(self, "logger", None)
+            if logger is not None and hasattr(logger, "warning"):
+                logger.warning("Active Memory trace 持久化失败")
+        session._trace_persisted = True
+
+    def _get_active_memory_seed(self, query: str, user_id: str, session_id: str):
+        if not getattr(self, "active_recall_enabled", False):
+            return None, None
+        memory = getattr(self, "memory", None)
+        if memory is None or not hasattr(memory, "on_turn_start"):
+            return None, None
+        method = memory.on_turn_start
+        if self._supports_include_items(method):
+            result = self._run_memory_hook(
+                "on_turn_start",
+                query,
+                user_id=user_id,
+                session_id=session_id,
+                include_items=True
+            )
+        else:
+            result = self._run_memory_hook(
+                "on_turn_start",
+                query,
+                user_id=user_id,
+                session_id=session_id
+            )
+        if isinstance(result, tuple) and len(result) == 2:
+            context, items = result
+        else:
+            context, items = result, []
+        return context, items if isinstance(items, list) else []
+
+    @staticmethod
+    def _active_memory_stop_payload(function_args: Dict[str, Any], reason: str) -> str:
+        try:
+            safe_limit = max(1, min(int(function_args.get("limit", 5) or 5), 10))
+        except (TypeError, ValueError):
+            safe_limit = 5
+        layer = function_args.get("layer", "all")
+        safe_layer = layer if layer in {"all", "working", "episodic", "semantic"} else "all"
+        return json.dumps({
+            "query": str(function_args.get("query", "") or ""),
+            "layer": safe_layer,
+            "limit": safe_limit,
+            "results": [],
+            "active_memory": {"search_allowed": False, "stop_reason": reason},
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _parse_active_memory_results(tool_response: Any):
+        if not isinstance(tool_response, str):
+            raise ValueError("tool response is not JSON text")
+        payload = json.loads(tool_response)
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            raise ValueError("tool response has no results list")
+        return payload
+
+    @staticmethod
+    def _resolve_active_trace_error(session, query: str, layer: str, limit: int, error: str, latency_ms: float):
+        if session is not None:
+            session.observe_search(query, layer, limit, [], latency_ms, error=error)
 
     @staticmethod
     def _resolve_config_value(value: Any) -> Any:
@@ -642,12 +765,25 @@ class LightHermes:
         if failure_warning:
             system_prompt += f"\n\n{failure_warning}"
 
-        recalled_context = self._run_memory_hook(
-            "on_turn_start",
-            query,
-            user_id=user_id,
-            session_id=session_id
-        )
+        active_session = None
+        if getattr(self, "active_recall_enabled", False):
+            recalled_context, seed_items = self._get_active_memory_seed(query, user_id, session_id)
+            active_session = ActiveRecallSession.from_seed(
+                query,
+                seed_items,
+                max_rounds=getattr(self, "active_recall_max_rounds", 2),
+                metadata={"session_id": session_id, "user_id": user_id},
+            )
+            system_prompt += "\n\nActive Memory 规则：初始记忆只是候选证据；不要把未检索到表述为确定不存在。"
+            if self._active_memory_is_builtin_search("search_memory"):
+                system_prompt += "证据不足时可使用 search_memory；主动搜索最多两轮。"
+        else:
+            recalled_context = self._run_memory_hook(
+                "on_turn_start",
+                query,
+                user_id=user_id,
+                session_id=session_id
+            )
         if recalled_context:
             system_prompt += f"\n\n## 相关记忆\n{recalled_context}"
 
@@ -706,14 +842,16 @@ class LightHermes:
                 max_iterations,
                 query,
                 user_id,
-                session_id
+                session_id,
+                active_session
             )
         return self._run_non_stream(
             params,
             max_iterations,
             query,
             user_id,
-            session_id
+            session_id,
+            active_session
         )
 
     @staticmethod
@@ -741,7 +879,8 @@ class LightHermes:
         self,
         messages: List[Dict[str, Any]],
         tool_calls: List[Dict[str, Any]],
-        assistant_content: str = ""
+        assistant_content: str = "",
+        active_session=None
     ) -> List[Dict[str, Any]]:
         valid_calls = [
             tool_call for tool_call in tool_calls
@@ -759,10 +898,11 @@ class LightHermes:
         recorded_calls = []
         for tool_call in valid_calls:
             function = tool_call["function"]
+            tool_name = function["name"]
             arguments = function.get("arguments", "{}")
             recorded_calls.append({
-                "tool": function["name"],
-                "name": function["name"],
+                "tool": tool_name,
+                "name": tool_name,
                 "arguments": arguments,
             })
 
@@ -771,11 +911,42 @@ class LightHermes:
             except (json.JSONDecodeError, TypeError):
                 self.logger.error(f"工具参数解析失败: {arguments}")
                 tool_response = "Tool call error: arguments must be valid JSON."
+                function_args = {}
+                if self._active_memory_is_builtin_search(tool_name) and active_session is not None:
+                    self._resolve_active_trace_error(
+                        active_session, "", "all", 5, "invalid tool arguments", 0.0
+                    )
             else:
-                tool_response = self.tool_dispatcher.call_tool(
-                    function["name"],
-                    function_args
-                )
+                observed = self._active_memory_is_builtin_search(tool_name)
+                if observed and active_session is not None and not active_session.can_search():
+                    tool_response = self._active_memory_stop_payload(
+                        function_args,
+                        active_session.trace.stop_reason or "budget_exhausted"
+                    )
+                else:
+                    started = time.perf_counter()
+                    tool_response = self.tool_dispatcher.call_tool(tool_name, function_args)
+                    if observed and active_session is not None:
+                        latency_ms = (time.perf_counter() - started) * 1000
+                        query = str(function_args.get("query", "") or "")
+                        layer = str(function_args.get("layer", "all") or "all")
+                        try:
+                            limit = int(function_args.get("limit", 5) or 5)
+                        except (TypeError, ValueError):
+                            limit = 5
+                        try:
+                            payload = self._parse_active_memory_results(tool_response)
+                            active_session.observe_search(
+                                query,
+                                layer,
+                                limit,
+                                payload["results"],
+                                latency_ms
+                            )
+                        except Exception as exc:
+                            self._resolve_active_trace_error(
+                                active_session, query, layer, limit, str(exc), latency_ms
+                            )
 
             messages.append({
                 "role": "tool",
@@ -792,8 +963,10 @@ class LightHermes:
         messages: List[Dict[str, Any]],
         tool_calls: List[Dict[str, Any]],
         user_id: str,
-        session_id: str
+        session_id: str,
+        active_session=None
     ):
+        self._finalize_active_recall(active_session, "answered")
         self._run_memory_hook(
             "on_turn_end",
             query,
@@ -835,7 +1008,8 @@ class LightHermes:
         max_iterations: int,
         query: str,
         user_id: str,
-        session_id: str
+        session_id: str,
+        active_session=None
     ) -> str:
         """非流式运行"""
         recorded_tool_calls = []
@@ -865,7 +1039,8 @@ class LightHermes:
                 recorded_tool_calls.extend(self._append_tool_exchange(
                     params["messages"],
                     normalized_calls,
-                    message.content or ""
+                    message.content or "",
+                    active_session
                 ))
             else:
                 reply = message.content or ""
@@ -876,10 +1051,12 @@ class LightHermes:
                     params["messages"],
                     recorded_tool_calls,
                     user_id,
-                    session_id
+                    session_id,
+                    active_session
                 )
                 return reply
 
+        self._finalize_active_recall(active_session, "budget_exhausted")
         return "达到最大迭代次数"
 
     def _run_stream(
@@ -888,7 +1065,40 @@ class LightHermes:
         max_iterations: int,
         query: str,
         user_id: str,
-        session_id: str
+        session_id: str,
+        active_session=None
+    ) -> Generator:
+        generator = self._run_stream_impl(
+            params,
+            max_iterations,
+            query,
+            user_id,
+            session_id,
+            active_session
+        )
+        try:
+            yield from generator
+        except GeneratorExit:
+            self._finalize_active_recall(active_session, "cancelled")
+            raise
+        except Exception:
+            if active_session is not None and active_session.trace.stop_reason is None:
+                active_session.mark_error()
+            self._finalize_active_recall(active_session, "error")
+            raise
+        finally:
+            if active_session is not None and active_session.trace.stop_reason is None:
+                active_session.mark_cancelled()
+            self._finalize_active_recall(active_session, "cancelled")
+
+    def _run_stream_impl(
+        self,
+        params: Dict[str, Any],
+        max_iterations: int,
+        query: str,
+        user_id: str,
+        session_id: str,
+        active_session=None
     ) -> Generator:
         """流式运行"""
         recorded_tool_calls = []
@@ -961,7 +1171,8 @@ class LightHermes:
                     recorded_tool_calls.extend(self._append_tool_exchange(
                         params["messages"],
                         normalized_calls,
-                        output
+                        output,
+                        active_session
                     ))
 
                     continue_next_iteration = True
@@ -984,7 +1195,8 @@ class LightHermes:
                     recorded_tool_calls.extend(self._append_tool_exchange(
                         params["messages"],
                         normalized_calls,
-                        output
+                        output,
+                        active_session
                     ))
                     continue
 
@@ -995,9 +1207,12 @@ class LightHermes:
                     params["messages"],
                     recorded_tool_calls,
                     user_id,
-                    session_id
+                    session_id,
+                    active_session
                 )
                 return
+
+        self._finalize_active_recall(active_session, "budget_exhausted")
 
     def load_config(self, config_path: str = "config.yaml"):
         """从配置文件加载配置"""
