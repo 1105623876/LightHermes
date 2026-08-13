@@ -13,7 +13,7 @@
 | Active Memory | 可选的证据账本、候选分数轨迹、两轮搜索预算和停止原因 |
 | 生命周期 | 回合开始/结束、压缩前、会话结束和记忆写入钩子 |
 | 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
-| 工具系统 | 默认提供 `search_memory`，文件工具按配置显式开启 |
+| 工具系统 | 默认提供 `search_memory` 和 `read_memory`，文件工具按配置显式开启 |
 | 自进化 | 记录轨迹，从高质量成功经验生成 Markdown 技能，并沉淀失败报告 |
 | 记忆评测 | 合成回归、LoCoMo 长对话抽样、阶段指标、token 与成本记录 |
 | 多模型端点 | OpenAI、OpenAI 兼容端点、Anthropic 和 MiniMax Anthropic 兼容端点 |
@@ -162,9 +162,9 @@ memory:
     trace_dir: memory/recall_traces
 ```
 
-开启后，首次自动召回仍作为 seed context；模型最多执行两次额外的内置 `search_memory`，系统记录候选 ID、分数、来源增益、延迟、错误和停止原因。达到两轮、连续无新来源、正常回答、流式取消或异常时，trace 会以 JSON 保存。用户自定义的同名工具不受内置预算控制。
+开启后，首次自动召回仍作为 seed context；模型最多执行两次额外的内置 `search_memory`，系统记录候选 ID、分数、来源增益、延迟、错误和停止原因。需要核对原文时，可对 `working:id`、`episodic:name` 或 `semantic:name` 调用 `read_memory`；工作记忆会展开原始对话，并可按 `adjacent_session`、`source_session`、`distilled_from` 展开邻居。读取不计入搜索轮次。达到两轮、连续无新来源、正常回答、流式取消或异常时，trace 会以 JSON 保存。用户自定义的同名工具不受内置预算控制。
 
-这只是运行时基座，尚未证明真实记忆质量提升。query rewrite、完整来源展开、claim 支持/冲突更新和 static/agentic benchmark A/B 仍属于下一阶段。
+这只是运行时基座，尚未证明真实记忆质量提升。query rewrite、模型级 claim 支持/冲突更新和 static/agentic benchmark A/B 仍属于下一阶段。
 
 ## 架构
 
@@ -293,13 +293,14 @@ Eval v2.1 提供来源级 Recall@K、MRR、Precision@K、噪声率、延迟、�
 
 ## 工具与安全边界
 
-默认只开启 `search_memory`。文件读、搜索和写入必须显式配置：
+默认开启 `search_memory` 和 `read_memory`。文件读、搜索和写入必须显式配置：
 
 ```yaml
 tools:
   builtin:
     enabled: true
     memory_search: true
+    memory_read: true
     file_read: false
     file_search: false
     file_write: false
@@ -333,7 +334,7 @@ tools:
 ## 开发状态
 
 - 发布版本：`v0.3.4`
-- 当前开发基线：`166/166` 测试通过
+- 当前开发基线：`177/177` 测试通过
 - 测试层次：单元、集成、性能、合成记忆质量和长对话抽样评测
 - 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成与 LoCoMo 抽样评测
 
@@ -346,7 +347,7 @@ tools:
 当前限制：
 
 - 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- Active Memory 已有 evidence ledger、候选分数轨迹和两轮停止策略，但默认关闭；尚无 query rewrite、来源全文/邻接展开和模型级 claim 支持/冲突更新。
+- Active Memory 已有 evidence ledger、候选分数轨迹、两轮停止策略和 `read_memory` 来源展开，但默认关闭；尚无 query rewrite 和模型级 claim 支持/冲突更新。
 - Memory Eval v2.1 是合成回归；LoCoMo 目前只有 40 题已见开发样本，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
 - 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
 - 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
@@ -354,8 +355,8 @@ tools:
 
 近期方向：
 
-1. 将未解决 claim 与 cue anchors 接入通用 query rewrite。
-2. 增加按 source 读取完整记忆和可选邻接 session 展开。
+1. 让模型显式更新 claim 的 support / conflict / unknown。
+2. 将未解决 claim 与 cue anchors 接入通用 query rewrite。
 3. 建立 static / agentic A/B 与 Indexing、Retrieval、Reading、Answering 阶段诊断。
 4. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
 

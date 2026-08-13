@@ -42,7 +42,7 @@
 - **LightHermes 主类**: ✅ 完全实现
 - **SkillLoader**: ✅ 完全实现 (Markdown 技能加载)
 - **ToolDispatcher**: ✅ 完全实现 (工具注册、批量注册、同名覆盖和调度)
-- **内置工具**: ✅ 完全实现 (`search_memory` 默认启用，文件工具默认关闭且受控开启)
+- **内置工具**: ✅ 完全实现 (`search_memory` 与 `read_memory` 默认启用，文件工具默认关闭且受控开启)
 - **对话循环**: ✅ 完全实现 (支持流式和非流式)
 
 #### 4. CLI 界面
@@ -174,6 +174,7 @@ memory:
 tools:
   builtin:
     memory_search: true
+    memory_read: true
     file_read: false
     file_search: false
     file_write: false

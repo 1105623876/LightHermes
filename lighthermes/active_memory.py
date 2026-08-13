@@ -177,6 +177,16 @@ class RecallRoundTrace:
 
 
 @dataclass
+class RecallReadTrace:
+    source: str
+    found: bool
+    reason: str
+    adjacent_ids: list[str]
+    latency_ms: float
+    error: str | None = None
+
+
+@dataclass
 class RecallTrace:
     trace_id: str
     initial_query: str
@@ -187,6 +197,7 @@ class RecallTrace:
     finished_at: str | None
     metadata: dict[str, Any]
     ledger: dict[str, Any] = field(default_factory=dict)
+    reads: list[RecallReadTrace] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -274,6 +285,30 @@ class ActiveRecallSession:
             self._stop("no_new_evidence")
         elif len(self.trace.rounds) >= self.trace.max_rounds:
             self._stop("budget_exhausted")
+        return True
+
+    def observe_read(
+        self,
+        source: str,
+        found: bool,
+        adjacent_ids: Iterable[str] | None = None,
+        latency_ms: float = 0.0,
+        reason: str = "",
+        error: str | None = None,
+    ) -> bool:
+        """记录来源读取。读取不消耗主动搜索预算，也不改变停止原因。"""
+        try:
+            safe_latency_ms = float(latency_ms)
+        except (TypeError, ValueError):
+            safe_latency_ms = 0.0
+        self.trace.reads.append(RecallReadTrace(
+            source=str(source or ""),
+            found=bool(found),
+            reason=str(reason or ""),
+            adjacent_ids=[str(item) for item in (adjacent_ids or []) if item],
+            latency_ms=safe_latency_ms,
+            error=error,
+        ))
         return True
 
     def mark_answered(self):

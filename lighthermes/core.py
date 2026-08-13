@@ -77,6 +77,7 @@ class LightHermes:
         self.active_recall_persist_traces = bool(active_recall_config.get("persist_traces", True))
         self.active_recall_trace_dir = active_recall_config.get("trace_dir", "memory/recall_traces")
         self._builtin_search_memory = None
+        self._builtin_read_memory = None
 
         # 应用配置（参数优先级高于配置文件）
         if not fallback_models and config.get("model", {}).get("fallback_models"):
@@ -179,11 +180,16 @@ class LightHermes:
         self.tool_dispatcher = ToolDispatcher()
         builtin_config = config.get("tools", {}).get("builtin", {})
         builtin_enabled = builtin_config.get("enabled", True)
-        if builtin_enabled and memory_enabled and builtin_config.get("memory_search", True) and self.tool_dispatcher:
-            memory_tools = create_memory_tools(self.memory)
-            self.tool_dispatcher.register_tools(memory_tools)
+        if builtin_enabled and memory_enabled and self.tool_dispatcher:
+            memory_tools = create_memory_tools(self.memory, builtin_config)
+            if memory_tools:
+                self.tool_dispatcher.register_tools(memory_tools)
             self._builtin_search_memory = next(
                 (candidate for candidate in memory_tools if getattr(candidate, "tool_info", {}).get("tool_name") == "search_memory"),
+                None
+            )
+            self._builtin_read_memory = next(
+                (candidate for candidate in memory_tools if getattr(candidate, "tool_info", {}).get("tool_name") == "read_memory"),
                 None
             )
         if builtin_enabled and self.tool_dispatcher:
@@ -243,6 +249,14 @@ class LightHermes:
         tools = getattr(dispatcher, "tools", {})
         return builtin is not None and isinstance(tools, dict) and tools.get(tool_name) is builtin
 
+    def _active_memory_is_builtin_read(self, tool_name: str) -> bool:
+        if tool_name != "read_memory":
+            return False
+        dispatcher = getattr(self, "tool_dispatcher", None)
+        builtin = getattr(self, "_builtin_read_memory", None)
+        tools = getattr(dispatcher, "tools", {})
+        return builtin is not None and isinstance(tools, dict) and tools.get(tool_name) is builtin
+
     def _finalize_active_recall(self, session=None, reason: str = "sufficient"):
         if session is None:
             return
@@ -294,6 +308,40 @@ class LightHermes:
         else:
             context, items = result, []
         return context, items if isinstance(items, list) else []
+
+    def _observe_active_memory_read(
+        self,
+        session,
+        function_args: Dict[str, Any],
+        tool_response: str,
+        latency_ms: float,
+    ):
+        source = str((function_args or {}).get("source", "") or "")
+        try:
+            payload = json.loads(tool_response) if isinstance(tool_response, str) else {}
+        except (json.JSONDecodeError, TypeError):
+            session.observe_read(
+                source,
+                found=False,
+                adjacent_ids=[],
+                latency_ms=latency_ms,
+                reason="invalid_payload",
+                error="invalid read_memory payload",
+            )
+            return
+        adjacent = payload.get("adjacent") or []
+        adjacent_ids = [
+            str(item.get("source", "") or "")
+            for item in adjacent
+            if isinstance(item, dict) and item.get("source")
+        ]
+        session.observe_read(
+            str(payload.get("source", source) or source),
+            found=bool(payload.get("found")),
+            adjacent_ids=adjacent_ids,
+            latency_ms=latency_ms,
+            reason=str(payload.get("reason", "") or ""),
+        )
 
     @staticmethod
     def _active_memory_stop_payload(function_args: Dict[str, Any], reason: str) -> str:
@@ -777,6 +825,8 @@ class LightHermes:
             system_prompt += "\n\nActive Memory 规则：初始记忆只是候选证据；不要把未检索到表述为确定不存在。"
             if self._active_memory_is_builtin_search("search_memory"):
                 system_prompt += "证据不足时可使用 search_memory；主动搜索最多两轮。"
+            if self._active_memory_is_builtin_read("read_memory"):
+                system_prompt += "需要核对原文或邻接来源时使用 read_memory；读取不计入搜索轮次。"
         else:
             recalled_context = self._run_memory_hook(
                 "on_turn_start",
@@ -926,8 +976,8 @@ class LightHermes:
                 else:
                     started = time.perf_counter()
                     tool_response = self.tool_dispatcher.call_tool(tool_name, function_args)
+                    latency_ms = (time.perf_counter() - started) * 1000
                     if observed and active_session is not None:
-                        latency_ms = (time.perf_counter() - started) * 1000
                         query = str(function_args.get("query", "") or "")
                         layer = str(function_args.get("layer", "all") or "all")
                         try:
@@ -947,6 +997,13 @@ class LightHermes:
                             self._resolve_active_trace_error(
                                 active_session, query, layer, limit, str(exc), latency_ms
                             )
+                    elif (
+                        self._active_memory_is_builtin_read(tool_name)
+                        and active_session is not None
+                    ):
+                        self._observe_active_memory_read(
+                            active_session, function_args, tool_response, latency_ms
+                        )
 
             messages.append({
                 "role": "tool",

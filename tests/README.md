@@ -1,6 +1,6 @@
 # 测试框架说明
 
-当前测试基线为 **166/166 通过**（2026-08-09）。
+当前测试基线为 **177/177 通过**（2026-08-13）。
 
 ## 安装测试依赖
 
@@ -67,11 +67,12 @@ tests/
 
 - **Memory**：索引、四级记忆、结构化召回、生命周期、迁移、蒸馏、合并和容量治理
 - **Active Memory**：MemoryRecord、evidence ledger、候选分数 trace、两轮预算、无新增停止、工具覆盖、流式取消与错误
+- **Memory source**：按 source 读取原文、工作记忆原始对话、邻接 session / distilled_from 展开、`read_memory` 工具
 - **Retrieval**：独立 embedding 端点、批量请求、缓存、hybrid 候选扩展、阈值与分数间隔
 - **Memory Eval v2.1**：来源级 Recall@K、MRR、Precision@K、噪声率、分类汇总和质量门槛
 - **LoCoMo 工具**：分层抽样、session 文档、evidence 排名、QA 指标、成本与独立缓存
 - **Core**：配置解析、环境变量引用、记忆注入、工具循环、流式生命周期和 Evolution 适配
-- **Builtin tools**：记忆搜索、受控文件读/搜索/写入和安全边界
+- **Builtin tools**：记忆搜索、按 source 读取、受控文件读/搜索/写入和安全边界
 - **Evolution**：轨迹质量、技能生成和失败报告
 - **Adapters / Compressor / CLI**：供应商适配、流式兼容、上下文压缩和交互命令
 - **Performance**：索引、搜索、召回和大规模记忆集合

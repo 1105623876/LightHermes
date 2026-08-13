@@ -1,13 +1,13 @@
 # LightHermes 项目状态
 
-**最后更新**: 2026-08-09
+**最后更新**: 2026-08-13
 **发布版本**: v0.3.4
 **开发主线**: v0.4.0 Active Memory
-**状态**: Active Memory Runtime P0 + 最小 P1 已实现，默认关闭并等待真实 A/B
+**状态**: Active Memory Runtime 已完成 P0、最小 P1，以及按 source 读取/邻接展开；默认关闭并等待 claim 协议与真实 A/B
 
 ## 当前基线
 
-- **测试**: 166/166 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 177/177 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -21,7 +21,7 @@
 - 短期、工作、情景、语义四级记忆及生命周期钩子
 - `MemoryManager.recall_items()` 结构化召回和兼容的字符串接口
 - TF-IDF 初筛、独立 embedding 端点、跨层统一重排和显式降级边界
-- 默认内置 `search_memory` 工具，支持层级与元数据过滤
+- 默认内置 `search_memory` 和 `read_memory` 工具，支持层级过滤、按 source 读取原文和邻接展开
 - 记忆蒸馏、近重复合并、容量治理、状态过滤和来源元数据
 
 ### Agent 运行时
@@ -33,7 +33,7 @@
 
 ### 评测与稳定性
 
-- 166 项单元、集成与性能测试
+- 177 项单元、集成与性能测试
 - Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
 - LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
 - 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%
@@ -48,7 +48,7 @@
 4. trace 记录候选 ID/分数、来源增益、延迟、错误和公开 session 元数据，不记录隐藏推理。
 5. 新路径默认关闭；用户自定义同名工具和原有静态路径保持兼容。
 
-这仍不是完整的主动记忆质量闭环。当前 evidence ledger 主要聚合 candidate source，尚未让模型显式更新 claim 支持/冲突；query rewrite、来源全文/邻接展开和真实 static/agentic A/B 也尚未完成。
+这仍不是完整的主动记忆质量闭环。当前 evidence ledger 主要聚合 candidate source，尚未让模型显式更新 claim 支持/冲突；query rewrite 和真实 static/agentic A/B 也尚未完成。按 source 读取原文与邻接展开已经可用。
 
 详细设计见 `docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md`。
 
@@ -56,7 +56,7 @@
 
 1. **主动召回仍是 MVP**
    - 已有单回合状态、两轮预算和 trace，但默认关闭。
-   - 尚无通用 query rewrite、来源全文/邻接展开和模型级 claim 判定。
+   - 尚无通用 query rewrite 和模型级 claim 判定。
    - 尚未通过真实 static / agentic A/B 证明质量收益与成本边界。
 
 2. **长期记忆表征仍偏检索条目**
@@ -81,12 +81,18 @@
 - 首轮 seed + 最多两轮内置记忆搜索
 - 默认关闭，保留原有接口与自定义工具覆盖语义
 
+### 已完成：来源读取与邻接展开
+
+- `MemoryManager.get_source()` 按 `layer:name` 读取完整记忆
+- 工作记忆返回摘要 + 原始对话；无效来源与未找到分别标记
+- 邻接关系：`adjacent_session`、`source_session`、`distilled_from`
+- 内置 `read_memory` 默认开启，不计入主动搜索轮次，trace 记录读取
+
 ### 下一步：P1 完整闭环
 
-- 从未解决 claim 与 cue anchors 生成通用 query rewrite
-- 按 source 读取完整记忆并展开可选邻接来源
 - 让模型显式更新 support/conflict/unknown，而不是只聚合候选
 - 区分“记忆中没有”和“当前尚未检索到”的稳定输出协议
+- 从未解决 claim 与 cue anchors 生成通用 query rewrite
 
 ### P2：泛化验证与经验记忆
 

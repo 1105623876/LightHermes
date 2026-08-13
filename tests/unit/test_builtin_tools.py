@@ -47,6 +47,28 @@ class TestBuiltinMemoryTools:
 
         assert captured["limit"] == 10
 
+    def test_read_memory_tool_returns_full_source(self, temp_memory_dir):
+        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        memory.save_semantic("pref", "用户偏好中文回复并且不要省略细节")
+        dispatcher = ToolDispatcher()
+        dispatcher.register_tools(create_memory_tools(memory))
+
+        result = json.loads(dispatcher.call_tool("read_memory", {
+            "source": "semantic:pref",
+        }))
+
+        assert result["found"] is True
+        assert result["source"] == "semantic:pref"
+        assert "不要省略细节" in result["content"]
+
+    def test_read_memory_can_be_disabled(self, temp_memory_dir):
+        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        dispatcher = ToolDispatcher()
+        dispatcher.register_tools(create_memory_tools(memory, {"memory_search": True, "memory_read": False}))
+        names = [schema["function"]["name"] for schema in dispatcher.get_tool_schemas()]
+        assert "search_memory" in names
+        assert "read_memory" not in names
+
 
 @pytest.mark.unit
 class TestBuiltinFileTools:

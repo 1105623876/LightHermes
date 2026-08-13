@@ -84,6 +84,7 @@ tools:
   builtin:
     enabled: true
     memory_search: true
+    memory_read: true
     file_read: false
     file_search: false
     file_write: false

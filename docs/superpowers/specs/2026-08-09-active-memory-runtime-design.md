@@ -2,10 +2,10 @@
 
 **日期**: 2026-08-09
 **目标版本**: v0.4.0
-**状态**: P0 + 最小 P1 已实现（默认关闭）
+**状态**: P0 + 最小 P1 + 来源读取/邻接展开已实现（Active Memory 默认关闭）
 **原则**: 通用证据状态、预算受控、可观察、默认兼容、不针对 benchmark 特判
 
-**实现结果**: 新增 `lighthermes/active_memory.py`，接入单次 seed 召回、内置 `search_memory` 两轮预算、JSON trace 与流式取消/错误收尾；全量离线基线 166/166 通过。query rewrite、来源展开、模型级 claim 更新和真实 A/B 尚未实现。
+**实现结果**: 新增 `lighthermes/active_memory.py`，接入单次 seed 召回、内置 `search_memory` 两轮预算、JSON trace 与流式取消/错误收尾；`MemoryManager.get_source()` 与内置 `read_memory` 可按 source 读取原文并展开邻接来源。query rewrite、模型级 claim 更新和真实 A/B 尚未实现。
 
 ## 1. 问题定义
 
@@ -276,6 +276,8 @@ memory:
 
 不修改用户自定义同名工具的语义。只有内置 `search_memory` 被 Active Memory 观察和限额；用户覆盖工具继续按现有覆盖规则运行。
 
+内置 `read_memory` 按 `layer:name` 读取完整记忆，可选展开邻接来源。它不计入主动搜索轮次；Active Memory 仅记录 `reads` 轨迹。
+
 ## 6. 失败与降级
 
 - 记忆检索自身抛错：沿用现有错误边界，并在 trace 标记 `error`。
@@ -337,7 +339,7 @@ memory:
 首个实现切片完成需同时满足：
 
 1. 新状态模块无第三方依赖。
-2. 配置默认关闭时原测试全部通过；实现后全量基线为 166/166。
+2. 配置默认关闭时原测试全部通过；来源读取切片后全量基线为 177/177。
 3. 开启时 seed 召回不计入主动轮次，额外搜索最多两轮。
 4. 无新来源和预算耗尽均有稳定、可序列化的停止原因。
 5. trace 可回放每轮查询、候选来源和增益，不包含隐藏推理。
@@ -354,6 +356,7 @@ memory:
 - 内置记忆工具 callable identity 检测
 - 最多两轮搜索，以及 sufficient / no_new_evidence / budget_exhausted / cancelled / error
 - 非流式、流式、自定义同名工具和旧 hook 兼容测试
+- 按 source 读取原文、邻接展开和内置 `read_memory`；读取不消耗搜索预算
 
 仍保留为下一阶段：
 
@@ -364,13 +367,14 @@ memory:
 
 ## 11. 后续演进
 
+已完成：来源读取与邻接 session 展开。
+
 首个切片稳定后，按以下顺序推进：
 
-1. 来源读取与邻接 session 展开。
-2. 模型可见的结构化 claim/evidence 更新协议。
-3. query rewrite 与 cue anchors。
-4. static / agentic 多轨 A/B 和阶段错误归因。
-5. recall trace、tool trace 与 `EvolutionEngine` 的 `ExperienceRecord` 关联。
-6. 背景 consolidation/dream 只处理已保留原始来源的记录。
+1. 模型可见的结构化 claim/evidence 更新协议。
+2. query rewrite 与 cue anchors。
+3. static / agentic 多轨 A/B 和阶段错误归因。
+4. recall trace、tool trace 与 `EvolutionEngine` 的 `ExperienceRecord` 关联。
+5. 背景 consolidation/dream 只处理已保留原始来源的记录。
 
 Pi 的会话事件与回放边界、ReMe 的 source-first 和记忆精炼、ExpG 的工具成功/失败/成本记录可作为设计参考，但 LightHermes 保持单进程、黑盒模型兼容和最小依赖。

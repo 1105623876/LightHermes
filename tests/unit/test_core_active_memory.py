@@ -248,6 +248,63 @@ def test_custom_search_memory_is_not_observed_or_blocked():
     assert session.trace.stop_reason == "budget_exhausted"
 
 
+def read_call(call_id, source="working:s1", expand_adjacent=True):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": "read_memory",
+            "arguments": json.dumps(
+                {"source": source, "expand_adjacent": expand_adjacent},
+                ensure_ascii=False,
+            ),
+        },
+    }
+
+
+@pytest.mark.unit
+def test_builtin_read_is_observed_without_consuming_search_budget():
+    builtin_search = object()
+    builtin_read = object()
+    response = json.dumps({
+        "source": "working:s1",
+        "found": True,
+        "reason": "",
+        "adjacent": [{"source": "working:s0"}],
+    })
+    agent = LightHermes.__new__(LightHermes)
+    agent.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
+    agent._builtin_search_memory = builtin_search
+    agent._builtin_read_memory = builtin_read
+    agent.tool_dispatcher = FakeDispatcher(builtin_read, [response])
+    agent.tool_dispatcher.tools["read_memory"] = builtin_read
+    session = ActiveRecallSession.from_seed("question", [])
+    messages = []
+
+    agent._append_tool_exchange(
+        messages,
+        [read_call("call-read")],
+        active_session=session,
+    )
+
+    assert session.can_search()
+    assert session.trace.stop_reason is None
+    assert session.trace.rounds == []
+    assert session.trace.reads[0].source == "working:s1"
+    assert session.trace.reads[0].adjacent_ids == ["working:s0"]
+
+
+@pytest.mark.unit
+def test_active_prompt_mentions_read_memory_when_builtin_registered(
+    monkeypatch, tmp_path
+):
+    agent, adapter = make_agent(monkeypatch, tmp_path, active=True)
+    assert agent.run("ordinary question", session_id="session-1") == "done"
+    system_prompt = adapter.calls[0]["messages"][0]["content"]
+    assert "read_memory" in system_prompt
+    assert "不计入搜索轮次" in system_prompt
+
+
 @pytest.mark.unit
 def test_stream_close_persists_cancelled_trace(tmp_path):
     agent = LightHermes.__new__(LightHermes)

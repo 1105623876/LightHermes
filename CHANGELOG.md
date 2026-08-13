@@ -1,5 +1,24 @@
 # LightHermes 开发日志
 
+## 2026-08-13 - Unreleased
+
+### Active Memory
+- ✅ 新增按 source 读取完整记忆：`MemoryManager.get_source()` / `expand_adjacent_sources()`
+- ✅ 工作记忆读取返回会话摘要和原始对话
+- ✅ 邻接展开支持 `adjacent_session`、`source_session`、`distilled_from`
+- ✅ 默认注册内置 `read_memory`；读取不计入主动搜索轮次
+- ✅ Active Memory trace 增加 `reads`，记录来源读取与邻接 ID
+- ✅ 无效来源与未找到分别标记为 `invalid_source` / `not_found`
+
+### 配置与文档
+- ✅ `tools.builtin.memory_read` 默认开启
+- ✅ 同步 README、ROADMAP、PROJECT_STATUS 和测试说明
+
+### 验证
+- ✅ 全量 pytest：`tests/`（177/177）
+
+---
+
 ## 2026-07-07 - v0.3.4
 
 ### 修复

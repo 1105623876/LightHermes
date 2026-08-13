@@ -63,44 +63,79 @@ def _is_binary(path: Path) -> bool:
         return True
 
 
-def create_memory_tools(memory_manager) -> List[Callable]:
-    @tool(
-        "search_memory",
-        "搜索 LightHermes 持久记忆",
-        [
-            {"name": "query", "type": "string", "description": "搜索关键词，可为空以列出指定层级记忆", "required": True},
-            {"name": "layer", "type": "string", "description": "记忆层级：all、working、episodic、semantic", "required": False},
-            {"name": "limit", "type": "integer", "description": "返回数量上限，最大 10", "required": False},
-        ]
-    )
-    def search_memory(query: str, layer: str = "all", limit: int = 5) -> str:
-        safe_limit = max(1, min(int(limit or 5), 10))
-        safe_layer = layer if layer in {"all", "working", "episodic", "semantic"} else "all"
-        results = memory_manager.search_memory(
-            query or "",
-            layer=safe_layer,
-            limit=safe_limit,
-            include_metadata=True
-        )
-        payload = {
-            "query": query or "",
-            "layer": safe_layer,
-            "limit": safe_limit,
-            "results": [
-                {
-                    "layer": item.get("layer", ""),
-                    "name": item.get("name", ""),
-                    "content": item.get("content", "")[:500],
-                    "score": item.get("score", 0),
-                    "source": item.get("source", ""),
-                    "metadata": item.get("metadata", {}),
-                }
-                for item in results
-            ]
-        }
-        return json.dumps(payload, ensure_ascii=False)
+def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
+    config = config or {}
+    tools: List[Callable] = []
 
-    return [search_memory]
+    if config.get("memory_search", True):
+        @tool(
+            "search_memory",
+            "搜索 LightHermes 持久记忆",
+            [
+                {"name": "query", "type": "string", "description": "搜索关键词，可为空以列出指定层级记忆", "required": True},
+                {"name": "layer", "type": "string", "description": "记忆层级：all、working、episodic、semantic", "required": False},
+                {"name": "limit", "type": "integer", "description": "返回数量上限，最大 10", "required": False},
+            ]
+        )
+        def search_memory(query: str, layer: str = "all", limit: int = 5) -> str:
+            safe_limit = max(1, min(int(limit or 5), 10))
+            safe_layer = layer if layer in {"all", "working", "episodic", "semantic"} else "all"
+            results = memory_manager.search_memory(
+                query or "",
+                layer=safe_layer,
+                limit=safe_limit,
+                include_metadata=True
+            )
+            payload = {
+                "query": query or "",
+                "layer": safe_layer,
+                "limit": safe_limit,
+                "results": [
+                    {
+                        "layer": item.get("layer", ""),
+                        "name": item.get("name", ""),
+                        "content": item.get("content", "")[:500],
+                        "score": item.get("score", 0),
+                        "source": item.get("source", ""),
+                        "metadata": item.get("metadata", {}),
+                    }
+                    for item in results
+                ]
+            }
+            return json.dumps(payload, ensure_ascii=False)
+
+        tools.append(search_memory)
+
+    if config.get("memory_read", True):
+        @tool(
+            "read_memory",
+            "按 source 读取完整记忆，并可展开邻接来源",
+            [
+                {"name": "source", "type": "string", "description": "来源标识，格式为 working:id、episodic:name 或 semantic:name", "required": True},
+                {"name": "expand_adjacent", "type": "boolean", "description": "是否展开邻接或来源关联记忆", "required": False},
+                {"name": "adjacent_limit", "type": "integer", "description": "邻接来源数量上限，最大 6", "required": False},
+            ]
+        )
+        def read_memory(
+            source: str,
+            expand_adjacent: bool = False,
+            adjacent_limit: int = 2
+        ) -> str:
+            try:
+                safe_limit = max(1, min(int(adjacent_limit or 2), 6))
+            except (TypeError, ValueError):
+                safe_limit = 2
+            payload = memory_manager.get_source(
+                source or "",
+                include_raw=True,
+                expand_adjacent=bool(expand_adjacent),
+                adjacent_limit=safe_limit,
+            )
+            return json.dumps(payload, ensure_ascii=False)
+
+        tools.append(read_memory)
+
+    return tools
 
 
 def create_file_tools(config: dict = None) -> List[Callable]:

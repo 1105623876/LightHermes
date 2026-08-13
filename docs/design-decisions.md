@@ -100,10 +100,10 @@ memory:
 
 **问题**: 文件读取、搜索和写入能力会扩大智能体权限边界，尤其是写文件能力可能误改配置、密钥或用户工作区内容。
 
-**决策**: 内置文件工具通过 `tools.builtin` 显式开启，默认只启用 `search_memory`；`file_read`、`file_search`、`file_write` 默认关闭，且 `file_write` 必须单独开启。
+**决策**: 内置文件工具通过 `tools.builtin` 显式开启，默认启用 `search_memory` 和 `read_memory`；`file_read`、`file_search`、`file_write` 默认关闭，且 `file_write` 必须单独开启。
 
 **理由**:
-- 记忆搜索是框架核心能力，默认开启符合预期
+- 记忆搜索和按 source 读取原文是框架核心能力，默认开启符合预期
 - 文件读写属于高权限能力，应该按需开启
 - 写入能力风险高于读取/搜索，不能被其他文件能力隐式启用
 - `roots` 白名单、敏感文件拒绝和大小限制可以降低误用风险，但不能替代默认关闭
@@ -114,6 +114,7 @@ tools:
   builtin:
     enabled: true
     memory_search: true
+    memory_read: true
     file_read: false
     file_search: false
     file_write: false

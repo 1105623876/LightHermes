@@ -1,4 +1,5 @@
 """记忆系统单元测试"""
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -574,6 +575,85 @@ class TestMemoryManager:
         assert memory["metadata"]["type"] == "distilled_semantic"
         assert memory["metadata"]["distilled_from"] == "failure_report_bad_config"
         assert memory["metadata"]["source_layer"] == "episodic"
+
+
+@pytest.mark.unit
+class TestMemorySourceRead:
+    def test_parse_source_and_invalid_source(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+
+        assert mm.parse_memory_source("working:abc") == ("working", "abc")
+        assert mm.parse_memory_source("not-a-source") is None
+        payload = mm.get_source("not-a-source")
+        assert payload["found"] is False
+        assert payload["reason"] == "invalid_source"
+
+    def test_get_source_reads_working_raw_conversation(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        now = datetime.now().isoformat()
+        mm.working.add_session("s1", "default", "讨论了检索摘要", now)
+        mm.working.save_conversation("s1", "default", [
+            {"role": "user", "content": "原始对话里提到了蓝色笔记本"},
+            {"role": "assistant", "content": "已记下"},
+        ])
+
+        payload = mm.get_source("working:s1")
+
+        assert payload["found"] is True
+        assert payload["abstract"] == "讨论了检索摘要"
+        assert "蓝色笔记本" in payload["content"]
+        assert payload["metadata"]["has_raw_conversation"] is True
+
+    def test_get_source_not_found(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        payload = mm.get_source("semantic:missing")
+        assert payload["found"] is False
+        assert payload["reason"] == "not_found"
+        assert payload["layer"] == "semantic"
+
+    def test_expand_adjacent_working_sessions(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        now = datetime.now()
+        mm.working.add_session("s0", "default", "前一个会话", (now - timedelta(hours=2)).isoformat())
+        mm.working.add_session("s1", "default", "当前会话", (now - timedelta(hours=1)).isoformat())
+        mm.working.add_session("s2", "default", "后一个会话", now.isoformat())
+        mm.working.add_session("other", "another", "其他用户", (now - timedelta(minutes=30)).isoformat())
+
+        payload = mm.get_source("working:s1", expand_adjacent=True, adjacent_limit=2)
+        adjacent_ids = [item["source"] for item in payload["adjacent"]]
+
+        assert adjacent_ids == ["working:s0", "working:s2"]
+        assert all(item["relation"] == "adjacent_session" for item in payload["adjacent"])
+        assert "working:other" not in adjacent_ids
+
+    def test_expand_episodic_to_source_session(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.working.add_session("session_1", "default", "完成了记忆系统设计讨论")
+        mm.working.save_conversation("session_1", "default", [
+            {"role": "user", "content": "请记住这次设计结论"},
+        ])
+        mm.promote_memories()
+
+        payload = mm.get_source("episodic:working_session_1", expand_adjacent=True, adjacent_limit=2)
+
+        assert payload["found"] is True
+        assert payload["adjacent"][0]["source"] == "working:session_1"
+        assert payload["adjacent"][0]["relation"] == "source_session"
+        assert "设计结论" in payload["adjacent"][0]["content"]
+
+    def test_expand_semantic_distilled_from(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.save_episodic("failure_report_bad_config", "必须先验证配置", {"type": "failure_report"})
+        mm.save_semantic(
+            "distilled_failure",
+            "配置失败必须先验证",
+            {"distilled_from": "failure_report_bad_config", "source_layer": "episodic"},
+        )
+
+        neighbors = mm.expand_adjacent_sources("semantic:distilled_failure", limit=1)
+
+        assert neighbors[0]["source"] == "episodic:failure_report_bad_config"
+        assert neighbors[0]["relation"] == "distilled_from"
 
 
 @pytest.mark.unit

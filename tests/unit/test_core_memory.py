@@ -351,6 +351,7 @@ context_compression:
 
         names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
         assert "search_memory" in names
+        assert "read_memory" in names
 
     def test_search_memory_builtin_does_not_affect_plain_response(self, temp_memory_dir, monkeypatch):
         captured = {}
@@ -509,6 +510,7 @@ context_compression:
 
         names = [schema["function"]["name"] for schema in agent.tool_dispatcher.get_tool_schemas()]
         assert "search_memory" not in names
+        assert "read_memory" not in names
 
     def test_user_tool_overrides_builtin_search_memory(self, temp_memory_dir, monkeypatch):
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())

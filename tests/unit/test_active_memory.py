@@ -93,4 +93,14 @@ class TestActiveRecallSession:
         payload = json.loads(target.read_text(encoding="utf-8"))
         assert payload["trace_id"] == session.trace.trace_id
         assert payload["metadata"]["session_id"] == "s1"
+        assert payload["reads"] == []
         assert not list(tmp_path.glob("*.tmp"))
+
+    def test_observe_read_does_not_consume_search_budget(self):
+        session = ActiveRecallSession.from_seed("问题", [])
+        assert session.observe_read("working:s1", found=True, adjacent_ids=["working:s0"], latency_ms=3)
+        assert session.can_search()
+        assert session.trace.stop_reason is None
+        assert session.trace.reads[0].source == "working:s1"
+        assert session.trace.reads[0].adjacent_ids == ["working:s0"]
+        assert len(session.trace.rounds) == 0

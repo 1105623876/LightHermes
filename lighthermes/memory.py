@@ -288,7 +288,7 @@ class WorkingMemory:
             logger.error(f"初始化工作记忆数据库失败: {e}")
             raise
 
-    def add_session(self, session_id: str, user_id: str, summary: str):
+    def add_session(self, session_id: str, user_id: str, summary: str, timestamp: str = None):
         """添加会话摘要"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -296,7 +296,7 @@ class WorkingMemory:
             cursor.execute("""
                 INSERT OR REPLACE INTO sessions (session_id, user_id, summary, timestamp)
                 VALUES (?, ?, ?, ?)
-            """, (session_id, user_id, summary, datetime.now().isoformat()))
+            """, (session_id, user_id, summary, timestamp or datetime.now().isoformat()))
             conn.commit()
             conn.close()
             self._cleanup_old_sessions()
@@ -322,6 +322,85 @@ class WorkingMemory:
             {"session_id": r[0], "summary": r[1], "timestamp": r[2]}
             for r in results
         ]
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """按 session_id 读取工作记忆摘要。"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, user_id, summary, timestamp
+            FROM sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "session_id": row[0],
+            "user_id": row[1],
+            "summary": row[2],
+            "timestamp": row[3],
+        }
+
+    def get_adjacent_sessions(self, session_id: str, limit: int = 2) -> List[Dict[str, Any]]:
+        """返回同一用户按时间相邻的会话，不含自身。"""
+        session = self.get_session(session_id)
+        if not session or not session.get("timestamp"):
+            return []
+        try:
+            limit = max(1, min(int(limit or 2), 6))
+        except (TypeError, ValueError):
+            limit = 2
+        before_limit = (limit + 1) // 2
+        after_limit = max(0, limit - before_limit)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, user_id, summary, timestamp
+            FROM sessions
+            WHERE user_id = ? AND session_id != ? AND timestamp < ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (session["user_id"], session_id, session["timestamp"], before_limit),
+        )
+        earlier = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT session_id, user_id, summary, timestamp
+            FROM sessions
+            WHERE user_id = ? AND session_id != ? AND timestamp > ?
+            ORDER BY timestamp ASC
+            LIMIT ?
+            """,
+            (session["user_id"], session_id, session["timestamp"], after_limit),
+        )
+        later = cursor.fetchall()
+        conn.close()
+
+        neighbors = []
+        for row in reversed(earlier):
+            neighbors.append({
+                "session_id": row[0],
+                "user_id": row[1],
+                "summary": row[2],
+                "timestamp": row[3],
+                "relation": "adjacent_session",
+            })
+        for row in later:
+            neighbors.append({
+                "session_id": row[0],
+                "user_id": row[1],
+                "summary": row[2],
+                "timestamp": row[3],
+                "relation": "adjacent_session",
+            })
+        return neighbors[:limit]
 
     def _cleanup_old_sessions(self):
         """清理过期的会话"""
@@ -1281,6 +1360,223 @@ class MemoryManager:
                 result["metadata"] = item.get("metadata", {})
             results.append(result)
         return results
+
+    def parse_memory_source(self, source: str) -> Optional[tuple]:
+        """解析 `layer:name` 来源标识。"""
+        text = str(source or "").strip()
+        if not text or ":" not in text:
+            return None
+        layer, name = text.split(":", 1)
+        layer = layer.strip().lower()
+        name = name.strip()
+        if layer in {"working", "episodic", "semantic"} and name:
+            return layer, name
+        return None
+
+    def _clip_text(self, text: str, max_chars: int) -> tuple:
+        text = str(text or "")
+        try:
+            limit = int(max_chars)
+        except (TypeError, ValueError):
+            limit = 20000
+        if limit <= 0 or len(text) <= limit:
+            return text, False
+        return text[:limit] + "...", True
+
+    def _format_conversation_messages(self, messages: List[Dict[str, Any]]) -> str:
+        lines = []
+        for message in messages or []:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role", "unknown") or "unknown")
+            content = str(message.get("content", "") or "")
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
+    def _load_source_record(
+        self,
+        layer: str,
+        name: str,
+        include_raw: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        if layer == "working":
+            session = self.working.get_session(name)
+            messages = self.working.load_conversation(name) if include_raw else []
+            if session is None and not messages:
+                return None
+            summary = (session or {}).get("summary", "")
+            content = self._format_conversation_messages(messages) if messages else summary
+            return {
+                "abstract": summary or content[:200],
+                "content": content,
+                "metadata": {
+                    "timestamp": (session or {}).get("timestamp", ""),
+                    "user_id": (session or {}).get("user_id", ""),
+                    "has_raw_conversation": bool(messages),
+                },
+            }
+        if layer == "episodic":
+            memory = self.episodic.load(name)
+            if not memory:
+                return None
+            content = memory.get("content", "")
+            return {
+                "abstract": content,
+                "content": content,
+                "metadata": memory.get("metadata", {}) or {},
+            }
+        if layer == "semantic":
+            memory = self.semantic.load(name)
+            if not memory:
+                return None
+            content = memory.get("content", "")
+            return {
+                "abstract": content,
+                "content": content,
+                "metadata": memory.get("metadata", {}) or {},
+            }
+        return None
+
+    def get_source(
+        self,
+        source: str,
+        include_raw: bool = True,
+        expand_adjacent: bool = False,
+        adjacent_limit: int = 2,
+        max_chars: int = 20000,
+        adjacent_max_chars: int = 4000,
+    ) -> Dict[str, Any]:
+        """按 source 读取完整记忆，可选展开邻接来源。"""
+        parsed = self.parse_memory_source(source)
+        if parsed is None:
+            return {
+                "source": str(source or ""),
+                "found": False,
+                "reason": "invalid_source",
+                "layer": "",
+                "name": "",
+                "abstract": "",
+                "content": "",
+                "truncated": False,
+                "metadata": {},
+                "adjacent": [],
+            }
+
+        layer, name = parsed
+        record = self._load_source_record(layer, name, include_raw=include_raw)
+        if record is None:
+            return {
+                "source": f"{layer}:{name}",
+                "found": False,
+                "reason": "not_found",
+                "layer": layer,
+                "name": name,
+                "abstract": "",
+                "content": "",
+                "truncated": False,
+                "metadata": {},
+                "adjacent": [],
+            }
+
+        content, truncated = self._clip_text(record["content"], max_chars)
+        payload = {
+            "source": f"{layer}:{name}",
+            "found": True,
+            "reason": "",
+            "layer": layer,
+            "name": name,
+            "abstract": record["abstract"],
+            "content": content,
+            "truncated": truncated,
+            "metadata": record["metadata"],
+            "adjacent": [],
+        }
+        if expand_adjacent:
+            payload["adjacent"] = self.expand_adjacent_sources(
+                payload["source"],
+                limit=adjacent_limit,
+                max_chars=adjacent_max_chars,
+            )
+        return payload
+
+    def expand_adjacent_sources(
+        self,
+        source: str,
+        limit: int = 2,
+        max_chars: int = 4000,
+    ) -> List[Dict[str, Any]]:
+        """按通用来源关系展开邻居，不针对具体评测集。"""
+        parsed = self.parse_memory_source(source)
+        if parsed is None:
+            return []
+        layer, name = parsed
+        try:
+            limit = max(1, min(int(limit or 2), 6))
+        except (TypeError, ValueError):
+            limit = 2
+
+        neighbors: List[Dict[str, Any]] = []
+        seen = {f"{layer}:{name}"}
+
+        def append_neighbor(neighbor_source: str, relation: str):
+            if neighbor_source in seen or len(neighbors) >= limit:
+                return
+            record = self.get_source(
+                neighbor_source,
+                include_raw=True,
+                expand_adjacent=False,
+                max_chars=max_chars,
+            )
+            if not record.get("found"):
+                return
+            seen.add(neighbor_source)
+            neighbors.append({
+                "source": record["source"],
+                "relation": relation,
+                "layer": record["layer"],
+                "name": record["name"],
+                "abstract": record["abstract"],
+                "content": record["content"],
+                "truncated": record.get("truncated", False),
+                "metadata": record.get("metadata", {}),
+            })
+
+        if layer == "working":
+            for item in self.working.get_adjacent_sessions(name, limit=limit):
+                append_neighbor(f"working:{item['session_id']}", "adjacent_session")
+        elif layer == "episodic":
+            memory = self.episodic.load(name) or {}
+            metadata = memory.get("metadata") or {}
+            session_id = str(metadata.get("source_session_id") or "").strip()
+            if not session_id and name.startswith("working_"):
+                session_id = name[len("working_"):]
+            if session_id:
+                append_neighbor(f"working:{session_id}", "source_session")
+                remaining = max(0, limit - len(neighbors))
+                if remaining:
+                    for item in self.working.get_adjacent_sessions(session_id, limit=remaining):
+                        append_neighbor(f"working:{item['session_id']}", "adjacent_session")
+        elif layer == "semantic":
+            memory = self.semantic.load(name) or {}
+            metadata = memory.get("metadata") or {}
+            source_layer = str(metadata.get("source_layer") or "").strip()
+            distilled = [
+                item.strip()
+                for item in str(metadata.get("distilled_from") or "").split(",")
+                if item.strip()
+            ]
+            for source_id in distilled:
+                if ":" in source_id:
+                    append_neighbor(source_id, "distilled_from")
+                elif source_layer in {"working", "episodic", "semantic"}:
+                    append_neighbor(f"{source_layer}:{source_id}", "distilled_from")
+                else:
+                    append_neighbor(f"episodic:{source_id}", "distilled_from")
+                    if len(neighbors) < limit:
+                        append_neighbor(f"working:{source_id}", "distilled_from")
+
+        return neighbors[:limit]
 
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆 - 保留字符串兼容接口"""
