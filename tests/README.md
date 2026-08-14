@@ -1,6 +1,6 @@
 # 测试框架说明
 
-当前测试基线为 **177/177 通过**（2026-08-13）。
+当前测试基线为 **192/192 通过**（Active Memory P1 运行时协议修正后）。
 
 ## 安装测试依赖
 
@@ -66,7 +66,7 @@ tests/
 ## 覆盖范围
 
 - **Memory**：索引、四级记忆、结构化召回、生命周期、迁移、蒸馏、合并和容量治理
-- **Active Memory**：MemoryRecord、evidence ledger、候选分数 trace、两轮预算、无新增停止、工具覆盖、流式取消与错误
+- **Active Memory**：MemoryRecord、evidence ledger、候选分数 trace、两轮预算、无新增停止、工具覆盖、流式取消与错误、模型 `judge_claim` 判定、query rewrite、searched 区分
 - **Memory source**：按 source 读取原文、工作记忆原始对话、邻接 session / distilled_from 展开、`read_memory` 工具
 - **Retrieval**：独立 embedding 端点、批量请求、缓存、hybrid 候选扩展、阈值与分数间隔
 - **Memory Eval v2.1**：来源级 Recall@K、MRR、Precision@K、噪声率、分类汇总和质量门槛

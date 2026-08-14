@@ -6,7 +6,11 @@ import pytest
 
 from pathlib import Path
 
-from lighthermes.builtin_tools import create_file_tools, create_memory_tools
+from lighthermes.builtin_tools import (
+    create_claim_tool,
+    create_file_tools,
+    create_memory_tools,
+)
 from lighthermes.memory import MemoryManager
 from lighthermes.tools import ToolDispatcher
 
@@ -207,3 +211,34 @@ class TestBuiltinFileTools:
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": ".env", "content": "x", "mode": "create"})
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": "big.txt", "content": "toolong", "mode": "create"})
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": "nested/new.txt", "content": "x", "mode": "create"})
+
+
+@pytest.mark.unit
+class TestClaimTool:
+    def test_claim_tool_registers_schema_and_returns_ack(self):
+        dispatcher = ToolDispatcher()
+        judge_tool = create_claim_tool()
+        assert dispatcher.register_tool(judge_tool) is True
+        names = [s["function"]["name"] for s in dispatcher.get_tool_schemas()]
+        assert names == ["judge_claim"]
+        schema = dispatcher.get_tool_schemas()[0]["function"]
+        assert set(schema["parameters"]["properties"]) == {
+            "claim", "verdict", "source_ids", "confidence",
+        }
+        assert schema["parameters"]["required"] == ["claim", "verdict"]
+
+    def test_claim_tool_validates_verdict_and_clamps_confidence(self):
+        dispatcher = ToolDispatcher()
+        dispatcher.register_tool(create_claim_tool())
+
+        valid = json.loads(dispatcher.call_tool(
+            "judge_claim",
+            {"claim": "服务", "verdict": "support", "source_ids": ["s1"], "confidence": 1.7},
+        ))
+        assert valid["verdict"] == "support"
+        assert valid["confidence"] == 1.0
+        assert valid["accepted"] is False
+        assert valid["reason"] == "ledger_update_handled_by_core"
+
+        invalid = json.loads(dispatcher.call_tool("judge_claim", {"claim": "x", "verdict": "bogus"}))
+        assert invalid["verdict"] == "bogus"

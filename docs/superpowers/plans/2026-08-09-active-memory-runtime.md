@@ -8,7 +8,7 @@
 
 **Design:** `docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md`
 
-**Status:** 2026-08-09 已完成 P0 + 最小 P1；新增 15 项测试，当时全量 166/166 通过。2026-08-13 续做来源读取与邻接展开，全量 177/177 通过。
+**Status:** 2026-08-09 已完成 P0 + 最小 P1；2026-08-13 完成来源读取与邻接展开。随后落地 P1 运行时协议（`judge_claim`、`absence`、`suggested_query`），并修正单 claim 回写、未检索 `no_evidence` 拒绝和 conflict 未决语义。全量 192/192。质量 A/B 不在本切片。
 
 ---
 

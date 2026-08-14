@@ -3,11 +3,11 @@
 **最后更新**: 2026-08-13
 **发布版本**: v0.3.4
 **开发主线**: v0.4.0 Active Memory
-**状态**: Active Memory Runtime 已完成 P0、最小 P1，以及按 source 读取/邻接展开；默认关闭并等待 claim 协议与真实 A/B
+**状态**: Active Memory P0 + P1 运行时协议已落地（claim 写回、缺席状态、建议改写、来源展开）；默认关闭，质量待 A/B
 
 ## 当前基线
 
-- **测试**: 177/177 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 192/192 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -48,26 +48,30 @@
 4. trace 记录候选 ID/分数、来源增益、延迟、错误和公开 session 元数据，不记录隐藏推理。
 5. 新路径默认关闭；用户自定义同名工具和原有静态路径保持兼容。
 
-这仍不是完整的主动记忆质量闭环。当前 evidence ledger 主要聚合 candidate source，尚未让模型显式更新 claim 支持/冲突；query rewrite 和真实 static/agentic A/B 也尚未完成。按 source 读取原文与邻接展开已经可用。
+这已具备主动记忆的质量闭环雏形，但仍是运行时：模型显式 claim/evidence 判定、query rewrite 与「无证据」输出协议已落地，但真实 static/agentic A/B 尚未完成、证据充分性的模型级 trigger 仍是提示驱动。当前 evidence ledger 会聚合 candidate source，并可由 `judge_claim` 工具写入 support/conflict/unknown/no_evidence；query rewrite 自动从未解决 claim 与 cue anchors 构造并记录；回答阶段可通过 `searched` 状态区分「记忆中没有」与「尚未检索到」。按 source 读取原文与邻接展开已经可用。
 
 详细设计见 `docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md`。
 
 ## 已知限制
 
-1. **主动召回仍是 MVP**
-   - 已有单回合状态、两轮预算和 trace，但默认关闭。
-   - 尚无通用 query rewrite 和模型级 claim 判定。
+1. **主动召回仍是运行时，未做真实 A/B**
+   - 已有单回合状态、两轮预算、模型 claim 判定、query rewrite 和 trace，但默认关闭。
    - 尚未通过真实 static / agentic A/B 证明质量收益与成本边界。
+   - query rewrite 目前是可观测的确定性改写，尚未接入模型自主选择改写后查询的闭环。
 
-2. **长期记忆表征仍偏检索条目**
+2. **证据充分性的模型级 trigger 仍偏提示驱动**
+   - 模型是否在证据不足时主动调用 `judge_claim` 依赖系统提示，尚无独立、可计量的充分性判断。
+   - 已有 `judge_claim` 与 `searched` 区分，但「无证据」和「未知」的长期记忆回写策略仍属后续。
+
+3. **长期记忆表征仍偏检索条目**
    - 已有来源与状态元数据，但缺少统一的 abstract、cue anchors 和版本链契约。
-   - 回答阶段尚未把“检索摘要”和“可验证原始来源”明确分层。
+   - 回答阶段尚未把「检索摘要」和「可验证原始来源」明确分层。
 
-3. **真实评测规模有限**
+4. **真实评测规模有限**
    - LoCoMo 40 题属于已见开发样本，不代表生产质量。
    - 仍需冻结验证集、最终 holdout、更新/冲突和隐私安全工作流回放。
 
-4. **产品边界仍是本地单用户**
+5. **产品边界仍是本地单用户**
    - 尚无多用户命名空间、外部数据库后端、网络 Channel 或成熟插件系统。
    - 这些能力在 Active Memory 泛化验证前不进入主线。
 
@@ -88,13 +92,15 @@
 - 邻接关系：`adjacent_session`、`source_session`、`distilled_from`
 - 内置 `read_memory` 默认开启，不计入主动搜索轮次，trace 记录读取
 
-### 下一步：P1 完整闭环
+### 已完成：P1 运行时协议（claim 写回 + 缺席状态 + 建议改写）
 
-- 让模型显式更新 support/conflict/unknown，而不是只聚合候选
-- 区分“记忆中没有”和“当前尚未检索到”的稳定输出协议
-- 从未解决 claim 与 cue anchors 生成通用 query rewrite
+- 内置 `judge_claim` 写回 support / conflict / unknown / no_evidence
+- 单 claim 改写回写 seed；未检索不得 `no_evidence`；冲突保持未决
+- `absence` 区分尚未检索与已检索无证据；收尾写入 trace.metadata
+- 搜索回包提供 `suggested_query`；cue 来自 name / entities / cue_anchors
+- 默认关闭；不做 NLI，不强制改写模型最终答句，未做真实 A/B
 
-### P2：泛化验证与经验记忆
+### 下一步：P2 泛化验证
 
 - 建立 static / agentic A/B 和阶段错误诊断
 - 冻结策略后运行验证集、holdout 与结构不同的工作流回放

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, List
 
 from lighthermes.tools import tool
+from lighthermes.active_memory import JUDGMENT_VERDICTS
 
 
 EXCLUDED_DIRS = {".git", ".hg", ".svn", ".claude", "venv", ".venv", "node_modules", "__pycache__", "memory"}
@@ -136,6 +137,45 @@ def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
         tools.append(read_memory)
 
     return tools
+
+
+def create_claim_tool() -> Callable:
+    """注册 judge_claim 工具，供 Active Memory 开启时模型显式写回 claim 判定。
+
+    该工具的实际 ledger 写入由 LightHermes._append_tool_exchange 拦截完成，工具体
+    只返回一个可回显的确认 JSON。Active Memory 关闭时（无会话）返回 no-op，保持兼容。
+    """
+    @tool(
+        "judge_claim",
+        "对当前问题的某个 claim 给出显式证据判定，并记录到本回合证据账本。"
+        "verdict 只允许 support / conflict / unknown / no_evidence。"
+        "support=候选来源支持该 claim；conflict=候选来源与其冲突；"
+        "unknown=已有证据不足、无法判定；no_evidence=已检索但没有找到相关证据"
+        "（区别于尚未检索）。source_ids 填写你依据的来源标识。",
+        [
+            {"name": "claim", "type": "string", "description": "要判定的 claim 文本", "required": True},
+            {"name": "verdict", "type": "string", "description": "support、conflict、unknown 或 no_evidence", "required": True},
+            {"name": "source_ids", "type": "array", "description": "判定依据的来源标识列表", "required": False},
+            {"name": "confidence", "type": "number", "description": "判定置信度 0-1", "required": False},
+        ]
+    )
+    def judge_claim(claim: str, verdict: str, source_ids=None, confidence=None) -> str:
+        try:
+            safe_confidence = float(confidence) if confidence is not None else None
+            if safe_confidence is not None:
+                safe_confidence = max(0.0, min(1.0, safe_confidence))
+        except (TypeError, ValueError):
+            safe_confidence = None
+        return json.dumps({
+            "claim": str(claim or ""),
+            "verdict": str(verdict or ""),
+            "source_ids": [str(s) for s in (source_ids or []) if str(s)],
+            "confidence": safe_confidence,
+            "accepted": False,
+            "reason": "ledger_update_handled_by_core",
+        }, ensure_ascii=False)
+
+    return judge_claim
 
 
 def create_file_tools(config: dict = None) -> List[Callable]:

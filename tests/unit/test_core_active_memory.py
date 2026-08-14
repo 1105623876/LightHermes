@@ -7,6 +7,19 @@ from lighthermes.active_memory import ActiveRecallSession
 from lighthermes.core import LightHermes
 
 
+def judge_call(call_id, claim="问题", verdict="support", source_ids=None, confidence=None):
+    args = {"claim": claim, "verdict": verdict}
+    if source_ids is not None:
+        args["source_ids"] = source_ids
+    if confidence is not None:
+        args["confidence"] = confidence
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": "judge_claim", "arguments": json.dumps(args, ensure_ascii=False)},
+    }
+
+
 class FakeAdapter:
     provider = "openai"
 
@@ -187,10 +200,10 @@ def test_builtin_search_stops_after_two_rounds_without_third_dispatch():
     assert blocked["results"] == []
     assert blocked["layer"] == "all"
     assert blocked["limit"] == 5
-    assert blocked["active_memory"] == {
-        "search_allowed": False,
-        "stop_reason": "budget_exhausted",
-    }
+    assert blocked["active_memory"]["search_allowed"] is False
+    assert blocked["active_memory"]["stop_reason"] == "budget_exhausted"
+    assert "suggested_query" in blocked["active_memory"]
+    assert "absence" in blocked["active_memory"]
 
 
 @pytest.mark.unit
@@ -351,3 +364,110 @@ def test_stream_error_persists_error_trace(tmp_path):
     traces = list(tmp_path.glob("*.json"))
     assert len(traces) == 1
     assert json.loads(traces[0].read_text(encoding="utf-8"))["stop_reason"] == "error"
+
+
+def make_judge_dispatcher(judge_tool):
+    dispatcher = SimpleNamespace(tools={"judge_claim": judge_tool})
+    return dispatcher
+
+
+@pytest.mark.unit
+def test_judge_claim_intercepted_writes_ledger_and_trace():
+    judge_tool = object()
+    agent = LightHermes.__new__(LightHermes)
+    agent.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
+    agent._builtin_judge_claim = judge_tool
+    agent.tool_dispatcher = make_judge_dispatcher(judge_tool)
+    session = ActiveRecallSession.from_seed("部署服务器", [])
+    messages = []
+
+    # 先检索一次，让 searched=True，验证读取后 judgment 区分“已检索”
+    session.observe_search("部署", "all", 5, [{"source": "s1", "content": "证据"}], 1.0)
+
+    agent._append_tool_exchange(
+        messages,
+        [judge_call("call-judge", claim="部署服务器", verdict="no_evidence", source_ids=["s1"], confidence=0.4)],
+        active_session=session,
+    )
+
+    assert len(messages) == 2  # assistant tool_call 帧 + tool 结果
+    payload = json.loads(messages[-1]["content"])
+    assert payload["accepted"] is True
+    assert payload["verdict"] == "no_evidence"
+    assert payload["active_memory"]["judged"] is True
+    assert payload["active_memory"]["searched"] is True
+    assert len(session.trace.judgments) == 1
+    assert session.trace.judgments[0].verdict == "no_evidence"
+    assert session.trace.judgments[0].searched is True
+    claim = next(iter(session.ledger.claims.values()))
+    assert claim.judgment == "no_evidence"
+
+
+@pytest.mark.unit
+def test_judge_claim_no_evidence_before_search_is_rejected():
+    judge_tool = object()
+    agent = LightHermes.__new__(LightHermes)
+    agent.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
+    agent._builtin_judge_claim = judge_tool
+    agent.tool_dispatcher = make_judge_dispatcher(judge_tool)
+    session = ActiveRecallSession.from_seed("部署服务器", [])
+    messages = []
+
+    agent._append_tool_exchange(
+        messages,
+        [judge_call("call-judge", claim="部署服务器", verdict="no_evidence")],
+        active_session=session,
+    )
+
+    payload = json.loads(messages[-1]["content"])
+    assert payload["accepted"] is False
+    assert payload["reason"] == "not_searched"
+    assert payload["active_memory"]["absence"] == "not_searched"
+    assert session.trace.judgments == []
+
+
+def test_judge_claim_invalid_verdict_is_rejected():
+    judge_tool = object()
+    agent = LightHermes.__new__(LightHermes)
+    agent.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
+    agent._builtin_judge_claim = judge_tool
+    agent.tool_dispatcher = make_judge_dispatcher(judge_tool)
+    session = ActiveRecallSession.from_seed("部署服务器", [])
+    messages = []
+
+    agent._append_tool_exchange(
+        messages,
+        [judge_call("call-judge", claim="部署服务器", verdict="bogus")],
+        active_session=session,
+    )
+
+    payload = json.loads(messages[-1]["content"])
+    assert payload["accepted"] is False
+    assert payload["verdict"] == "bogus"
+    assert payload["reason"] == "invalid_verdict"
+    assert session.trace.judgments == []
+    assert next(iter(session.ledger.claims.values())).judgment is None
+
+
+@pytest.mark.unit
+def test_judge_claim_not_registered_when_active_memory_off(monkeypatch, tmp_path):
+    agent, adapter = make_agent(monkeypatch, tmp_path, active=False)
+    assert agent.run("question", session_id="s") == "done"
+    schemas = agent.tool_dispatcher.get_tool_schemas()
+    names = [s["function"]["name"] for s in schemas]
+    assert "judge_claim" not in names
+    assert getattr(agent, "_builtin_judge_claim", None) is None
+    system_prompt = adapter.calls[0]["messages"][0]["content"]
+    assert "judge_claim" not in system_prompt
+
+
+@pytest.mark.unit
+def test_judge_claim_registered_and_prompted_when_active_memory_on(monkeypatch, tmp_path):
+    agent, adapter = make_agent(monkeypatch, tmp_path, active=True)
+    assert agent.run("question", session_id="s") == "done"
+    schemas = agent.tool_dispatcher.get_tool_schemas()
+    names = [s["function"]["name"] for s in schemas]
+    assert "judge_claim" in names
+    system_prompt = adapter.calls[0]["messages"][0]["content"]
+    assert "judge_claim" in system_prompt
+    assert "尚未检索到" in system_prompt

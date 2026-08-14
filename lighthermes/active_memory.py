@@ -17,6 +17,11 @@ STOP_REASONS = {
     "sufficient", "no_new_evidence", "budget_exhausted", "disabled", "error", "cancelled"
 }
 
+# 模型显式给出的 claim/evidence 判定。`support` / `conflict` 表示模型基于已见
+# 来源作出支持/冲突结论；`unknown` 表示证据不足、无法判定；`no_evidence` 表示
+# 已检索但未找到相关证据（区别于“尚未检索”）。
+JUDGMENT_VERDICTS = {"support", "conflict", "unknown", "no_evidence"}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -110,12 +115,19 @@ class ClaimEvidence:
     conflicting_sources: list[str] = field(default_factory=list)
     confidence: float = 0.0
     resolved: bool = False
+    # 最近一次模型显式判定，取值见 JUDGMENT_VERDICTS。
+    judgment: str | None = None
+    # 判定时已检索、未检索来源是否覆盖，用于区分“记忆中没有”与“尚未找到”。
+    searched: bool = False
+    cue_anchors: list[str] = field(default_factory=list)
 
 
 @dataclass
 class EvidenceLedger:
     claims: dict[str, ClaimEvidence] = field(default_factory=dict)
     seen_sources: set[str] = field(default_factory=set)
+    # 是否已至少执行过一次主动检索（seed 自动召回不算主动搜索）。
+    searched: bool = False
 
     @classmethod
     def for_query(cls, query: str) -> "EvidenceLedger":
@@ -133,19 +145,151 @@ class EvidenceLedger:
         source_ids = [source for record in records for source in record.source_ids]
         for claim in self.claims.values():
             claim.candidate_sources = list(dict.fromkeys(claim.candidate_sources + source_ids))
+            for record in records:
+                for anchor in self._record_anchors(record):
+                    if anchor not in claim.cue_anchors:
+                        claim.cue_anchors.append(anchor)
         return new_sources
+
+    @staticmethod
+    def _record_anchors(record: MemoryRecord) -> list[str]:
+        anchors: list[str] = []
+        for value in list(record.cue_anchors or []) + list(record.entities or []) + [record.name]:
+            text = str(value or "").strip()
+            if text and text not in anchors:
+                anchors.append(text)
+        return anchors
 
     def mark_supporting(self, claim_id: str, source_ids: Iterable[str], confidence: float = 1.0):
         claim = self.claims[claim_id]
         claim.supporting_sources = list(dict.fromkeys(claim.supporting_sources + list(source_ids)))
         claim.confidence = float(confidence)
         claim.resolved = True
+        claim.judgment = "support"
 
     def mark_conflicting(self, claim_id: str, source_ids: Iterable[str], confidence: float = 0.0):
         claim = self.claims[claim_id]
         claim.conflicting_sources = list(dict.fromkeys(claim.conflicting_sources + list(source_ids)))
         claim.confidence = float(confidence)
         claim.resolved = False
+        claim.judgment = "conflict"
+
+    def mark_searched(self):
+        """标记已做过主动核对。seed 自动召回不算。"""
+        self.searched = True
+
+    @staticmethod
+    def _claim_id_from_text(text: str) -> str:
+        return "claim:" + hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
+
+    def resolve_claim_id(self, claim: str, create: bool = False) -> str:
+        """解析已有 claim。顺序：精确 ID、精确文本、文本 hash。
+
+        只有一条 claim 时，把改写文本当作对该 claim 的判定，不新建。
+        多 claim 未命中时不静默 create。
+        """
+        text = str(claim or "")
+        if text in self.claims:
+            return text
+        for cid, existing in self.claims.items():
+            if existing.claim == text:
+                return cid
+        if text:
+            probe = self._claim_id_from_text(text)
+            if probe in self.claims:
+                return probe
+        if create and text:
+            cid = self._claim_id_from_text(text)
+            if cid not in self.claims:
+                self.claims[cid] = ClaimEvidence(claim_id=cid, claim=text)
+            return cid
+        if len(self.claims) == 1:
+            return next(iter(self.claims))
+        return ""
+
+    def record_judgment(
+        self,
+        claim_id_or_text: str,
+        verdict: str,
+        source_ids: Iterable[str] | None = None,
+        confidence: float | None = None,
+    ) -> bool:
+        """记录模型显式判定。非法 verdict、未命中 claim、未检索的 no_evidence 返回 False。"""
+        verdict = str(verdict or "").strip().lower()
+        if verdict not in JUDGMENT_VERDICTS:
+            return False
+        if verdict == "no_evidence" and not self.searched:
+            return False
+        claim_text = str(claim_id_or_text or "")
+        claim = self.claims.get(claim_text)
+        if claim is None:
+            claim_id = self.resolve_claim_id(claim_text, create=False)
+            if not claim_id or claim_id not in self.claims:
+                return False
+            claim = self.claims[claim_id]
+
+        source_ids_list = [str(s) for s in (source_ids or []) if str(s)]
+        claim.judgment = verdict
+        claim.searched = self.searched
+
+        if verdict == "support":
+            for source in source_ids_list:
+                if source not in claim.supporting_sources:
+                    claim.supporting_sources.append(source)
+                claim.conflicting_sources = [
+                    s for s in claim.conflicting_sources if s != source
+                ]
+            claim.resolved = True
+        elif verdict == "conflict":
+            for source in source_ids_list:
+                if source not in claim.conflicting_sources:
+                    claim.conflicting_sources.append(source)
+            claim.resolved = False
+        elif verdict == "unknown":
+            claim.resolved = False
+        else:
+            claim.resolved = True
+
+        if confidence is not None:
+            try:
+                claim.confidence = float(confidence)
+            except (TypeError, ValueError):
+                claim.confidence = 1.0 if verdict == "support" else 0.0
+        else:
+            claim.confidence = 1.0 if verdict == "support" else 0.0
+        return True
+
+    def absence_state(self) -> str:
+        judgments = [claim.judgment for claim in self.claims.values()]
+        if any(judgment == "conflict" for judgment in judgments):
+            return "evidence_conflict"
+        if any(
+            claim.resolved and claim.judgment == "support"
+            for claim in self.claims.values()
+        ):
+            return "evidence_support"
+        if not self.searched:
+            return "not_searched"
+        if any(judgment == "no_evidence" for judgment in judgments) or not self.seen_sources:
+            return "searched_no_evidence"
+        return "unresolved"
+
+    def unresolved_claims(self) -> list[str]:
+        """返回尚未解决、需要更多证据或候选线索的 claim，用于驱动 query rewrite。"""
+        unresolved = []
+        for claim in self.claims.values():
+            if not claim.resolved or claim.judgment in (None, "unknown"):
+                unresolved.append(claim.claim)
+        return unresolved
+
+    def all_cue_anchors(self) -> list[str]:
+        """收集所有 claim 的线索锚点，用于 query rewrite。"""
+        anchors: list[str] = []
+        for claim in self.claims.values():
+            for anchor in claim.cue_anchors or []:
+                if anchor and anchor not in anchors:
+                    anchors.append(anchor)
+        return anchors
 
     @property
     def coverage(self) -> float:
@@ -157,7 +301,10 @@ class EvidenceLedger:
         return {
             "claims": {claim_id: asdict(claim) for claim_id, claim in self.claims.items()},
             "seen_sources": sorted(self.seen_sources),
+            "searched": self.searched,
+            "absence": self.absence_state(),
             "coverage": self.coverage,
+            "unresolved_claims": self.unresolved_claims(),
         }
 
 
@@ -187,6 +334,15 @@ class RecallReadTrace:
 
 
 @dataclass
+class RecallJudgmentTrace:
+    claim_id: str
+    claim: str
+    verdict: str
+    source_ids: list[str]
+    searched: bool
+
+
+@dataclass
 class RecallTrace:
     trace_id: str
     initial_query: str
@@ -198,6 +354,9 @@ class RecallTrace:
     metadata: dict[str, Any]
     ledger: dict[str, Any] = field(default_factory=dict)
     reads: list[RecallReadTrace] = field(default_factory=list)
+    judgments: list[RecallJudgmentTrace] = field(default_factory=list)
+    # query rewrite 若被触发，记录改写后的查询与来源 claim。
+    rewrites: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -256,6 +415,7 @@ class ActiveRecallSession:
         records = [MemoryRecord.from_memory_item(item) for item in (items or [])]
         candidate_ids = [record.record_id for record in records]
         candidate_scores = {record.record_id: record.score for record in records}
+        self.ledger.mark_searched()
         accepted_source_ids = self.ledger.add_candidates(records)
         try:
             safe_limit = int(limit)
@@ -279,6 +439,14 @@ class ActiveRecallSession:
             error=error,
         ))
         self.trace.ledger = self.ledger.to_dict()
+        unresolved = self.ledger.unresolved_claims()
+        if unresolved and not error:
+            rewritten = self.build_rewrite_query()
+            if rewritten and not any(
+                item.get("rewritten_query") == rewritten
+                for item in self.trace.rewrites
+            ):
+                self.record_rewrite(rewritten, unresolved, round_index=len(self.trace.rounds))
         if error:
             self._stop("error")
         elif not accepted_source_ids:
@@ -296,11 +464,13 @@ class ActiveRecallSession:
         reason: str = "",
         error: str | None = None,
     ) -> bool:
-        """记录来源读取。读取不消耗主动搜索预算，也不改变停止原因。"""
+        """记录来源读取。读取不消耗搜索预算；有效核对会标记 searched。"""
         try:
             safe_latency_ms = float(latency_ms)
         except (TypeError, ValueError):
             safe_latency_ms = 0.0
+        if error is None and reason != "invalid_payload":
+            self.ledger.mark_searched()
         self.trace.reads.append(RecallReadTrace(
             source=str(source or ""),
             found=bool(found),
@@ -310,6 +480,62 @@ class ActiveRecallSession:
             error=error,
         ))
         return True
+
+    def observe_judgment(
+        self,
+        claim: str,
+        verdict: str,
+        source_ids: Iterable[str] | None = None,
+        confidence: float | None = None,
+    ) -> bool:
+        """记录模型显式给出的 claim 判定，并写入 trace。judge_claim 工具路径。"""
+        accepted = self.ledger.record_judgment(claim, verdict, source_ids, confidence)
+        if not accepted:
+            return False
+        claim_id = self.ledger.resolve_claim_id(claim, create=False)
+        stored = self.ledger.claims.get(claim_id)
+        self.trace.judgments.append(RecallJudgmentTrace(
+            claim_id=claim_id,
+            claim=str(stored.claim if stored else claim or ""),
+            verdict=str(verdict or "").strip().lower(),
+            source_ids=[str(s) for s in (source_ids or []) if str(s)],
+            searched=bool(self.ledger.searched),
+        ))
+        self.trace.ledger = self.ledger.to_dict()
+        return True
+
+    def record_rewrite(
+        self,
+        rewritten_query: str,
+        source_claims: Iterable[str],
+        round_index: int | None = None,
+    ):
+        entry = {
+            "rewritten_query": str(rewritten_query or ""),
+            "source_claims": [str(c) for c in source_claims if str(c)],
+        }
+        if round_index is not None:
+            entry["round"] = round_index
+        self.trace.rewrites.append(entry)
+        self.trace.ledger = self.ledger.to_dict()
+
+    def build_rewrite_query(self, max_len: int = 160) -> str:
+        """从未解决 claim 与 cue anchors 生成确定性改写，供下一轮 search 参考。"""
+        unresolved = self.ledger.unresolved_claims()
+        anchors = self.ledger.all_cue_anchors()
+        parts: list[str] = []
+        for claim in unresolved:
+            if claim not in parts:
+                parts.append(claim)
+        for anchor in anchors:
+            if anchor not in parts:
+                parts.append(anchor)
+        if not parts:
+            return ""
+        rewritten = " ".join(parts)
+        if len(rewritten) <= max_len:
+            return rewritten
+        return rewritten[:max_len].strip()
 
     def mark_answered(self):
         if self.trace.stop_reason is None:

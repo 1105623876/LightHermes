@@ -21,7 +21,12 @@ from lighthermes.adapters import get_adapter
 from lighthermes.compressor import ContextCompressor
 from lighthermes.hooks import call_hook_safely
 from lighthermes.skills import SkillLoader
-from lighthermes.builtin_tools import create_file_tools, create_memory_tools
+from lighthermes.builtin_tools import (
+    create_claim_tool,
+    create_file_tools,
+    create_memory_tools,
+)
+from lighthermes.active_memory import JUDGMENT_VERDICTS
 from lighthermes.tools import ToolDispatcher, tool
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
@@ -78,6 +83,7 @@ class LightHermes:
         self.active_recall_trace_dir = active_recall_config.get("trace_dir", "memory/recall_traces")
         self._builtin_search_memory = None
         self._builtin_read_memory = None
+        self._builtin_judge_claim = None
 
         # 应用配置（参数优先级高于配置文件）
         if not fallback_models and config.get("model", {}).get("fallback_models"):
@@ -192,6 +198,14 @@ class LightHermes:
                 (candidate for candidate in memory_tools if getattr(candidate, "tool_info", {}).get("tool_name") == "read_memory"),
                 None
             )
+        if (
+            builtin_enabled
+            and getattr(self, "active_recall_enabled", False)
+            and self.tool_dispatcher
+        ):
+            judge_tool = create_claim_tool()
+            self.tool_dispatcher.register_tool(judge_tool)
+            self._builtin_judge_claim = judge_tool
         if builtin_enabled and self.tool_dispatcher:
             self.tool_dispatcher.register_tools(create_file_tools(builtin_config))
         if tools and self.tool_dispatcher:
@@ -257,6 +271,14 @@ class LightHermes:
         tools = getattr(dispatcher, "tools", {})
         return builtin is not None and isinstance(tools, dict) and tools.get(tool_name) is builtin
 
+    def _active_memory_is_builtin_judge(self, tool_name: str) -> bool:
+        if tool_name != "judge_claim":
+            return False
+        dispatcher = getattr(self, "tool_dispatcher", None)
+        builtin = getattr(self, "_builtin_judge_claim", None)
+        tools = getattr(dispatcher, "tools", {})
+        return builtin is not None and isinstance(tools, dict) and tools.get(tool_name) is builtin
+
     def _finalize_active_recall(self, session=None, reason: str = "sufficient"):
         if session is None:
             return
@@ -271,6 +293,10 @@ class LightHermes:
                 session.mark_cancelled()
         if getattr(session, "_trace_persisted", False):
             return
+        if session.trace.metadata is None:
+            session.trace.metadata = {}
+        session.trace.metadata["absence"] = session.ledger.absence_state()
+        session.trace.ledger = session.ledger.to_dict()
         if not getattr(self, "active_recall_persist_traces", True):
             session._trace_persisted = True
             return
@@ -342,6 +368,70 @@ class LightHermes:
             latency_ms=latency_ms,
             reason=str(payload.get("reason", "") or ""),
         )
+
+    def _record_claim_judgment(self, session, function_args: Dict[str, Any]) -> str:
+        claim = str((function_args or {}).get("claim", "") or "")
+        verdict = str((function_args or {}).get("verdict", "") or "").strip().lower()
+        source_ids = (function_args or {}).get("source_ids") or []
+        if isinstance(source_ids, str):
+            source_ids = [source_ids]
+        confidence = (function_args or {}).get("confidence")
+        try:
+            safe_confidence = (
+                max(0.0, min(1.0, float(confidence))) if confidence is not None else None
+            )
+        except (TypeError, ValueError):
+            safe_confidence = None
+
+        reason = ""
+        accepted = False
+        if verdict not in JUDGMENT_VERDICTS:
+            reason = "invalid_verdict"
+        elif verdict == "no_evidence" and not getattr(session.ledger, "searched", False):
+            reason = "not_searched"
+        else:
+            accepted = session.observe_judgment(
+                claim,
+                verdict,
+                [str(s) for s in source_ids if str(s)],
+                safe_confidence,
+            )
+            if not accepted:
+                reason = "claim_not_found"
+        return json.dumps({
+            "claim": claim,
+            "verdict": verdict,
+            "source_ids": [str(s) for s in source_ids if str(s)],
+            "confidence": safe_confidence,
+            "accepted": bool(accepted),
+            "reason": reason,
+            "allowed_verdicts": sorted(JUDGMENT_VERDICTS),
+            "active_memory": {
+                "judged": bool(accepted),
+                "searched": bool(getattr(session.ledger, "searched", False)),
+                "absence": session.ledger.absence_state(),
+                "coverage": getattr(session.ledger, "coverage", 0.0),
+            },
+        }, ensure_ascii=False)
+
+    def _attach_active_memory_search_hints(self, tool_response: str, session) -> str:
+        try:
+            payload = json.loads(tool_response) if isinstance(tool_response, str) else {}
+        except (json.JSONDecodeError, TypeError):
+            return tool_response
+        if not isinstance(payload, dict):
+            return tool_response
+        current = payload.get("active_memory")
+        if not isinstance(current, dict):
+            current = {}
+        current.update({
+            "suggested_query": session.build_rewrite_query(),
+            "absence": session.ledger.absence_state(),
+            "search_allowed": session.can_search(),
+            "stop_reason": session.trace.stop_reason,
+        })
+        payload["active_memory"] = current
+        return json.dumps(payload, ensure_ascii=False)
 
     @staticmethod
     def _active_memory_stop_payload(function_args: Dict[str, Any], reason: str) -> str:
@@ -827,6 +917,15 @@ class LightHermes:
                 system_prompt += "证据不足时可使用 search_memory；主动搜索最多两轮。"
             if self._active_memory_is_builtin_read("read_memory"):
                 system_prompt += "需要核对原文或邻接来源时使用 read_memory；读取不计入搜索轮次。"
+            if self._active_memory_is_builtin_judge("judge_claim"):
+                system_prompt += (
+                    "当你基于已见来源对某个 claim 得出结论时，用 judge_claim 显式给出"
+                    " verdict（support / conflict / unknown / no_evidence）并记录依据来源。"
+                    "search_memory 回包里的 suggested_query 可作为下一轮检索。"
+                    "回答须区分『尚未检索到』(absence=not_searched) 与"
+                    "『已检索但记忆中没有』(absence=searched_no_evidence)；"
+                    "未检索前禁止 judge_claim(no_evidence)，也不得断言内容不存在。"
+                )
         else:
             recalled_context = self._run_memory_hook(
                 "on_turn_start",
@@ -968,10 +1067,24 @@ class LightHermes:
                     )
             else:
                 observed = self._active_memory_is_builtin_search(tool_name)
-                if observed and active_session is not None and not active_session.can_search():
-                    tool_response = self._active_memory_stop_payload(
-                        function_args,
-                        active_session.trace.stop_reason or "budget_exhausted"
+                judge_observed = self._active_memory_is_builtin_judge(tool_name)
+                if (
+                    judge_observed
+                    and active_session is not None
+                ):
+                    # judge_claim 是 Active Memory 的 evidence 写回通道：直接把模型
+                    # 显式给出的判定写入本回合 ledger，并构造确认 JSON。无会话时
+                    # 才落到通用调度（工具体返回 no-op 确认）。
+                    tool_response = self._record_claim_judgment(
+                        active_session, function_args
+                    )
+                elif observed and active_session is not None and not active_session.can_search():
+                    tool_response = self._attach_active_memory_search_hints(
+                        self._active_memory_stop_payload(
+                            function_args,
+                            active_session.trace.stop_reason or "budget_exhausted"
+                        ),
+                        active_session,
                     )
                 else:
                     started = time.perf_counter()
@@ -992,6 +1105,9 @@ class LightHermes:
                                 limit,
                                 payload["results"],
                                 latency_ms
+                            )
+                            tool_response = self._attach_active_memory_search_hints(
+                                tool_response, active_session
                             )
                         except Exception as exc:
                             self._resolve_active_trace_error(

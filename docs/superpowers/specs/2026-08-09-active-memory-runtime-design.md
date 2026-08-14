@@ -5,7 +5,7 @@
 **状态**: P0 + 最小 P1 + 来源读取/邻接展开已实现（Active Memory 默认关闭）
 **原则**: 通用证据状态、预算受控、可观察、默认兼容、不针对 benchmark 特判
 
-**实现结果**: 新增 `lighthermes/active_memory.py`，接入单次 seed 召回、内置 `search_memory` 两轮预算、JSON trace 与流式取消/错误收尾；`MemoryManager.get_source()` 与内置 `read_memory` 可按 source 读取原文并展开邻接来源。query rewrite、模型级 claim 更新和真实 A/B 尚未实现。
+**实现结果**: 新增 `lighthermes/active_memory.py`，接入单次 seed 召回、内置 `search_memory` 两轮预算、JSON trace 与流式取消/错误收尾；`MemoryManager.get_source()` 与内置 `read_memory` 可按 source 读取原文并展开邻接来源。P1 闭环已落地：内置 `judge_claim` 让模型显式写回 support/conflict/unknown/no_evidence，`searched` 区分「尚未检索」与「已检索无证据」，query rewrite 从未解决 claim 与 cue anchors 确定性生成并记录于 trace。真实 static/agentic A/B 尚未实现。
 
 ## 1. 问题定义
 
@@ -357,22 +357,26 @@ memory:
 - 最多两轮搜索，以及 sufficient / no_new_evidence / budget_exhausted / cancelled / error
 - 非流式、流式、自定义同名工具和旧 hook 兼容测试
 - 按 source 读取原文、邻接展开和内置 `read_memory`；读取不消耗搜索预算
+- 模型显式 claim/evidence 判定：内置 `judge_claim`，支持 support/conflict/unknown/no_evidence，按 claim 文本解析并写回 ledger
+- `searched` 状态区分「尚未检索」与「已检索但无证据」
+- 通用 query rewrite：从未解决 claim 与 cue anchors 确定性生成，记录于 `trace.rewrites`
+- 「记忆中没有」与「尚未检索到」的稳定输出协议（系统提示规则 + searched 状态）
 
 仍保留为下一阶段：
 
 - `degraded` 字段已有契约，但现有检索返回尚未提供统一降级信号
-- ledger 支持显式 support/conflict API，但模型尚未写回 claim 判定
+- 查询改写的模型级闭环：当前 rewrite 是可观测的确定性改写，尚未让模型自主选择改写后查询再检索
 - 关闭状态不创建 trace，因此 `disabled` 仅保留为状态契约
 - 尚未运行真实模型 static / agentic A/B，不能据此宣称召回或 QA 提升
 
 ## 11. 后续演进
 
-已完成：来源读取与邻接 session 展开。
+已完成：来源读取与邻接 session 展开；模型可见的结构化 claim/evidence 更新协议与通用 query rewrite 构建。
 
 首个切片稳定后，按以下顺序推进：
 
-1. 模型可见的结构化 claim/evidence 更新协议。
-2. query rewrite 与 cue anchors。
+1. （已完成）模型可见的结构化 claim/evidence 更新协议。
+2. （已完成）query rewrite 的确定性构建与 trace 记录；剩余为模型级选择改写后查询的闭环。
 3. static / agentic 多轨 A/B 和阶段错误归因。
 4. recall trace、tool trace 与 `EvolutionEngine` 的 `ExperienceRecord` 关联。
 5. 背景 consolidation/dream 只处理已保留原始来源的记录。

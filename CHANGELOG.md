@@ -1,5 +1,24 @@
 # LightHermes 开发日志
 
+## Unreleased - Active Memory P1 运行时协议
+
+### 模型显式 claim/evidence 判定
+- ✅ 新增内置 `judge_claim`：写回 `support` / `conflict` / `unknown` / `no_evidence`
+- ✅ 仅 Active Memory 开启时注册；非法 verdict 拒绝，不记入账本
+- ✅ 单 claim 时改写文本写回 seed claim；多 claim 未命中不静默新建
+- ✅ `conflict` 保持未决（`resolved=False`），与 `mark_conflicting` 一致
+- ✅ 未检索时拒绝 `no_evidence`；有效 `search_memory` / `read_memory` 才标记 `searched`
+
+### 缺席与 query rewrite
+- ✅ `absence`：`not_searched` / `searched_no_evidence` / `evidence_conflict` / `evidence_support` / `unresolved`
+- ✅ `search_memory` 回包附带 `suggested_query` 与 `absence`；trace 记录 `rewrites` / `judgments`
+- ✅ cue 来自记录的 `cue_anchors`、`entities` 和 `name`，不做 NLI、不强制改写最终自然语言回答
+
+### 验证
+- ✅ 全量 pytest：`tests/`（192/192）
+
+---
+
 ## 2026-08-13 - Unreleased
 
 ### Active Memory

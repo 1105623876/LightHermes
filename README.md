@@ -10,7 +10,7 @@
 |------|------|
 | 四级记忆 | 短期、工作、情景、语义记忆分层存储和迁移 |
 | 混合检索 | 关键词初筛、embedding 重排、跨层候选融合和噪声过滤 |
-| Active Memory | 可选的证据账本、候选分数轨迹、两轮搜索预算和停止原因 |
+| Active Memory | 证据账本、候选分数轨迹、两轮搜索预算、模型 claim 判定、query rewrite 和停止原因 |
 | 生命周期 | 回合开始/结束、压缩前、会话结束和记忆写入钩子 |
 | 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
 | 工具系统 | 默认提供 `search_memory` 和 `read_memory`，文件工具按配置显式开启 |
@@ -164,7 +164,9 @@ memory:
 
 开启后，首次自动召回仍作为 seed context；模型最多执行两次额外的内置 `search_memory`，系统记录候选 ID、分数、来源增益、延迟、错误和停止原因。需要核对原文时，可对 `working:id`、`episodic:name` 或 `semantic:name` 调用 `read_memory`；工作记忆会展开原始对话，并可按 `adjacent_session`、`source_session`、`distilled_from` 展开邻居。读取不计入搜索轮次。达到两轮、连续无新来源、正常回答、流式取消或异常时，trace 会以 JSON 保存。用户自定义的同名工具不受内置预算控制。
 
-这只是运行时基座，尚未证明真实记忆质量提升。query rewrite、模型级 claim 支持/冲突更新和 static/agentic benchmark A/B 仍属于下一阶段。
+P1 运行时还提供 `judge_claim`：模型可把 `support` / `conflict` / `unknown` / `no_evidence` 写回本回合账本。单 claim 时改写文本会落到 seed claim；未检索时 `no_evidence` 会被拒绝。`search_memory` 回包带 `absence` 与 `suggested_query`。系统不把改写强加为最终答句，也不做自然语言蕴含判定。
+
+这仍是运行时基座，尚未通过真实 static/agentic A/B 证明记忆质量提升；模型级 claim 判定目前是提示驱动的工具回写，独立完善仍未完成。
 
 ## 架构
 
@@ -347,7 +349,7 @@ tools:
 当前限制：
 
 - 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- Active Memory 已有 evidence ledger、候选分数轨迹、两轮停止策略和 `read_memory` 来源展开，但默认关闭；尚无 query rewrite 和模型级 claim 支持/冲突更新。
+- Active Memory 已有 evidence ledger、模型 `judge_claim` 判定、query rewrite、两轮停止策略和 `read_memory` 来源展开，但默认关闭；尚未通过真实 static/agentic A/B 证明质量与成本边界。
 - Memory Eval v2.1 是合成回归；LoCoMo 目前只有 40 题已见开发样本，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
 - 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
 - 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
@@ -355,10 +357,9 @@ tools:
 
 近期方向：
 
-1. 让模型显式更新 claim 的 support / conflict / unknown。
-2. 将未解决 claim 与 cue anchors 接入通用 query rewrite。
-3. 建立 static / agentic A/B 与 Indexing、Retrieval、Reading、Answering 阶段诊断。
-4. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
+1. 建立 static / agentic A/B 与 Indexing、Retrieval、Reading、Answering 阶段诊断。
+2. 在真实任务里验证模型是否会使用 `suggested_query` 与 `judge_claim`。
+3. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
 
 详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
 
