@@ -237,8 +237,11 @@ class TestClaimTool:
         ))
         assert valid["verdict"] == "support"
         assert valid["confidence"] == 1.0
+        # 工具体只负责降级提示，不负责写入 ledger（由 core 拦截完成）
         assert valid["accepted"] is False
-        assert valid["reason"] == "ledger_update_handled_by_core"
+        assert valid["reason"] == "active_memory_session_required"
 
         invalid = json.loads(dispatcher.call_tool("judge_claim", {"claim": "x", "verdict": "bogus"}))
-        assert invalid["verdict"] == "bogus"
+        # invalid verdict 被 normalize 为空串
+        assert invalid["verdict"] == ""
+        assert invalid["reason"] == "active_memory_session_required"

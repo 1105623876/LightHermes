@@ -39,6 +39,7 @@ memory:
   # 启用混合检索需要: pip install sentence-transformers (本地) 或使用 OpenAI API
   hybrid_retrieval:
     enabled: true                # 是否启用混合检索 (默认 false)
+    strict_hybrid_retrieval: false  # true 时 embedding/hybrid 失败即抛错而非回退关键词
     min_candidates: 5            # TF-IDF 候选少于该值时触发 embedding fallback
     fallback_to_all: true        # 候选不足时回退到全量语义记忆 embedding rerank
     semantic_threshold: 0.50     # BGE-M3 评测起点；其他模型需按相似度分布调参

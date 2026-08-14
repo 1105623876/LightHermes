@@ -1,5 +1,6 @@
 """核心记忆集成测试"""
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -1193,3 +1194,137 @@ context_compression:
         assert messages[3] == {"role": "assistant", "content": "最终回复"}
         assert agent.api_call_count == 2
         assert agent.query_count == 1
+
+
+@pytest.mark.unit
+class TestCallApiWithFallbackRestoresModel:
+    """_call_api_with_fallback 在成功与失败路径都须恢复 adapter 原始模型。"""
+
+    class TrackingAdapter:
+        """create 会切换 model 到调用时的 model，并可对指定 model 抛异常。"""
+
+        def __init__(self, fail_models):
+            self.initial_model = "primary"
+            self.model = "primary"
+            self.fail_models = set(fail_models)
+            self.invoked_models = []
+
+        def create(self, **kwargs):
+            self.invoked_models.append(self.model)
+            if self.model in self.fail_models:
+                raise RuntimeError(f"model {self.model} failed")
+            response = SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=None))]
+            )
+            return response
+
+    def _make_agent(self, adapter, fallback_models):
+        agent = LightHermes.__new__(LightHermes)
+        agent.adapter = adapter
+        agent.model = adapter.initial_model
+        agent.fallback_models = fallback_models
+        agent.logger = SimpleNamespace(
+            warning=lambda *a, **k: None, error=lambda *a, **k: None, info=lambda *a, **k: None
+        )
+        return agent
+
+    def test_primary_fails_fallback_succeeds_then_model_restored(self):
+        adapter = self.TrackingAdapter(fail_models={"primary"})
+        agent = self._make_agent(adapter, ["fallback-a", "fallback-b"])
+
+        result = agent._call_api_with_fallback(messages=[{"role": "user", "content": "q"}])
+
+        assert getattr(result, "choices", None)
+        # 依次尝试 primary(失败)、fallback-a 成功
+        assert adapter.invoked_models == ["primary", "fallback-a"]
+        # 无论成功失败，最终都要恢复原始模型
+        assert adapter.model == "primary"
+
+    def test_all_models_fail_raises_and_still_restores_model(self):
+        adapter = self.TrackingAdapter(fail_models={"primary", "fallback-a"})
+        agent = self._make_agent(adapter, ["fallback-a"])
+
+        with pytest.raises(RuntimeError, match="model fallback-a failed"):
+            agent._call_api_with_fallback(messages=[{"role": "user", "content": "q"}])
+
+        assert adapter.invoked_models == ["primary", "fallback-a"]
+        # 全失败 raise 时也必须恢复原始模型，避免污染后续调用
+        assert adapter.model == "primary"
+
+
+@pytest.mark.unit
+class TestDeadConfigNowActive:
+    """验证此前“改 config 无效”的死配置真正生效。"""
+
+    def _build_agent(self, tmp_path, monkeypatch, memory_dir):
+        config_path = tmp_path / "lighthermes.yaml"
+        config_path.write_text(f"""
+model:
+  provider: openai
+  model_name: config-model
+  api_key: ${{LIGHTHERMES_TEST_KEY}}
+memory:
+  enabled: true
+  storage_dir: "{memory_dir.replace(chr(92), '/')}"
+  adaptive:
+    adapt_interval: 7
+    archive_days: 3
+  hybrid_retrieval:
+    enabled: true
+    strict_hybrid_retrieval: true
+    semantic_threshold: 0.5
+evolution:
+  enabled: true
+  triggers:
+    min_success_count: 11
+    min_failure_count: 6
+  sandbox:
+    timeout: 9
+    max_memory_mb: 222
+skills:
+  dirs: []
+tools:
+  builtin:
+    enabled: false
+context_compression:
+  enabled: false
+""", encoding="utf-8")
+
+        monkeypatch.setenv("LIGHTHERMES_TEST_KEY", "env-api-key")
+        monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
+
+        # 用假 HybridRetriever 规避真实 embedding 客户端初始化，仅捕获构造参数
+        captured = {}
+
+        class FakeHybridRetriever:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.embedding_provider = kwargs.get("embedding_provider")
+                self.embedding_model = kwargs.get("embedding_model")
+                self.api_key = kwargs.get("api_key")
+                self.embedding_base_url = kwargs.get("embedding_base_url")
+
+        monkeypatch.setattr("lighthermes.retrieval.HybridRetriever", FakeHybridRetriever)
+        agent = LightHermes.from_config(str(config_path))
+        return agent, captured
+
+    def test_adaptive_interval_and_archive_days_are_used(self, temp_memory_dir, tmp_path, monkeypatch):
+        agent, _ = self._build_agent(tmp_path, monkeypatch, temp_memory_dir)
+        assert agent.adapt_interval == 7
+        assert agent.memory.archive_inactive_days == 3
+
+    def test_evolution_triggers_and_sandbox_are_used(self, temp_memory_dir, tmp_path, monkeypatch):
+        agent, _ = self._build_agent(tmp_path, monkeypatch, temp_memory_dir)
+        assert agent.evolution is not None
+        assert agent.evolution.min_success_count == 11
+        assert agent.evolution.min_failure_count == 6
+        assert agent.evolution.validator.timeout == 9
+        assert agent.evolution.validator.max_memory_mb == 222
+
+    def test_strict_hybrid_retrieval_and_score_margin_are_wired(self, temp_memory_dir, tmp_path, monkeypatch):
+        agent, captured = self._build_agent(tmp_path, monkeypatch, temp_memory_dir)
+        assert agent.memory.semantic.strict_hybrid_retrieval is True
+        # strict_hybrid_retrieval 确认已透传（SemanticMemory 持有该开关）
+        assert agent.memory.semantic.strict_hybrid_retrieval is True
+        # score_margin 未显式传 config，应取 0.08 统一默认
+        assert captured["score_margin"] == 0.08

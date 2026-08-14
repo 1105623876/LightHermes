@@ -43,6 +43,8 @@ class ContextCompressor:
         # 统计信息
         self.compression_count = 0
         self.tokens_saved = 0
+        # 最近一次压缩是否因摘要失败而降级（degraded 占位，不计入成功统计）
+        self._recent_degraded = False
 
     def should_compress(
         self,
@@ -97,10 +99,14 @@ class ContextCompressor:
         if middle:
             original_tokens = sum(estimate_tokens(str(msg)) for msg in middle)
             summary = self._summarize(middle)
-            summary_tokens = estimate_tokens(str(summary))
-
-            self.compression_count += 1
-            self.tokens_saved += (original_tokens - summary_tokens)
+            # 摘要生成失败（degraded 占位）不视为成功压缩：不计入计数与节省的
+            # token，避免把失败降级伪装成"成功压缩、节省了 token"。
+            if summary.get("degraded"):
+                self._recent_degraded = True
+            else:
+                self.compression_count += 1
+                summary_tokens = estimate_tokens(str(summary))
+                self.tokens_saved += (original_tokens - summary_tokens)
 
             return head + [summary] + tail
 
@@ -222,10 +228,12 @@ class ContextCompressor:
             }
 
         except Exception as e:
-            # 如果摘要失败，返回简单的占位符
+            # 摘要失败：返回带 degraded 标记的占位符，由 compress() 据此不计入
+            # 成功压缩统计，使其可被调用方识别为降级而非"成功压缩、节省了 token"。
             return {
                 "role": "assistant",
-                "content": f"[CONTEXT COMPACTION — REFERENCE ONLY]\n\n压缩了 {len(messages)} 条消息（摘要生成失败: {e}）"
+                "content": f"[CONTEXT COMPACTION — REFERENCE ONLY]\n\n压缩了 {len(messages)} 条消息（摘要生成失败: {e}）",
+                "degraded": True,
             }
 
     def get_stats(self) -> Dict[str, Any]:
@@ -242,5 +250,6 @@ class ContextCompressor:
                 self.tokens_saved // self.compression_count
                 if self.compression_count > 0
                 else 0
-            )
+            ),
+            "last_degraded": self._recent_degraded,
         }

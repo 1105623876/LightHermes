@@ -13,6 +13,8 @@ from typing import List, Dict, Any, Optional
 import re
 
 from lighthermes.logger import setup_logger
+from lighthermes.hooks import call_hook_safely
+from lighthermes.retrieval import tokenize_text
 
 
 class HybridRetrievalError(RuntimeError):
@@ -171,31 +173,8 @@ class MemoryIndex:
         self._save_index()
 
     def _tokenize(self, text: str) -> List[str]:
-        """轻量分词：支持中英文混合"""
-        text = text.lower()
-        tokens = []
-        current_token = ""
-
-        for char in text:
-            # 中文字符（CJK统一汉字）
-            if '一' <= char <= '鿿':
-                if current_token:
-                    tokens.append(current_token)
-                    current_token = ""
-                tokens.append(char)  # 中文按字索引
-            # 英文字母和数字
-            elif char.isalnum():
-                current_token += char
-            # 分隔符（空格、标点等）
-            else:
-                if current_token:
-                    tokens.append(current_token)
-                    current_token = ""
-
-        if current_token:
-            tokens.append(current_token)
-
-        return tokens
+        # 与 TFIDFRetriever 共用同一分词实现，避免两处维护。
+        return tokenize_text(text)
 
     def remove(self, name: str):
         """从索引中移除文档"""
@@ -573,7 +552,7 @@ class SemanticMemory:
         hybrid_min_candidates: int = 5,
         hybrid_fallback_to_all: bool = True,
         hybrid_semantic_threshold: float = None,
-        hybrid_score_margin: float = 0.12,
+        hybrid_score_margin: float = 0.08,
         hybrid_full_rerank_max_docs: int = 200,
         hybrid_tfidf_candidate_limit: int = 20
     ):
@@ -583,6 +562,7 @@ class SemanticMemory:
         self.similarity_threshold = similarity_threshold
         self.strict_hybrid_retrieval = strict_hybrid_retrieval
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = setup_logger("lighthermes.memory")
 
         # 初始化索引
         index_file = str(Path(storage_dir).parent / "semantic_index.json")
@@ -592,6 +572,10 @@ class SemanticMemory:
         self._file_mtimes: Dict[str, float] = {}
         self._entry_count = 0
         self._total_chars = 0
+        # hybrid 文档集的惰性缓存：避免每次 search 都重读磁盘并重建索引。
+        self._hybrid_documents: List[Dict[str, Any]] = []
+        self._hybrid_stamp: Optional[str] = None
+        self._hybrid_indexed = False
         self._refresh_storage_stats()
 
         if use_hybrid_retrieval:
@@ -613,11 +597,11 @@ class SemanticMemory:
             except ImportError:
                 if self.strict_hybrid_retrieval:
                     raise
-                print("混合检索不可用,使用简单关键词匹配")
+                self.logger.warning("混合检索不可用,使用简单关键词匹配")
             except Exception as e:
                 if self.strict_hybrid_retrieval:
                     raise HybridRetrievalError("混合检索初始化失败") from e
-                print(f"混合检索初始化失败,使用简单关键词匹配: {e}")
+                self.logger.warning(f"混合检索初始化失败,使用简单关键词匹配: {e}")
 
     def _parse_memory(self, content: str) -> Optional[Dict[str, Any]]:
         """解析记忆文件内容"""
@@ -634,6 +618,42 @@ class SemanticMemory:
                 continue
             self._total_chars += file_stat.st_size
             self._file_mtimes[file_path.stem] = file_stat.st_mtime
+
+    def _hybrid_document_stamp(self) -> str:
+        """基于当前磁盘 *.md 文件名+大小的签名，用于判断 hybrid 文档集是否失效。"""
+        entries = []
+        for file_path in sorted(self.storage_dir.glob("*.md")):
+            try:
+                stat = file_path.stat()
+            except OSError:
+                continue
+            entries.append(f"{file_path.stem}:{stat.st_size}:{stat.st_mtime}")
+        return ";".join(entries)
+
+    def _load_hybrid_documents(self) -> "tuple[List[Dict[str, Any]], bool]":
+        """惰性加载并缓存语义记忆文档集；返回 (documents, changed)。
+
+        changed 为 True 表示这个调用真正重建了缓存（磁盘文件变化或首次）。调用方
+        可据此只在变化时重建 TF-IDF 索引，避免每次查询都重算 IDF。
+        """
+        stamp = self._hybrid_document_stamp()
+        if stamp == self._hybrid_stamp and self._hybrid_documents is not None:
+            return self._hybrid_documents, False
+
+        documents: List[Dict[str, Any]] = []
+        for file_path in self.storage_dir.glob("*.md"):
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            memory = self._parse_memory(content)
+            if memory:
+                memory["name"] = file_path.stem
+                documents.append(memory)
+
+        self._hybrid_documents = documents
+        self._hybrid_stamp = stamp
+        return documents, True
 
     def _copy_memory(self, memory: Dict[str, Any]) -> Dict[str, Any]:
         copied = dict(memory)
@@ -807,22 +827,18 @@ class SemanticMemory:
         """搜索语义记忆 - 自动选择最佳检索方式"""
         # 如果启用了混合检索,使用混合检索
         if hasattr(self, 'hybrid_retriever') and self.hybrid_retriever:
-            documents = []
-            for file_path in self.storage_dir.glob("*.md"):
-                content = file_path.read_text(encoding="utf-8")
-                memory = self._parse_memory(content)
-                if memory:
-                    memory["name"] = file_path.stem
-                    documents.append(memory)
+            documents, changed = self._load_hybrid_documents()
 
             if documents:
                 try:
-                    self.hybrid_retriever.index_documents(documents)
+                    if changed or not self._hybrid_indexed:
+                        self.hybrid_retriever.index_documents(documents)
+                        self._hybrid_indexed = True
                     return self.hybrid_retriever.search(query, top_k=limit)
                 except Exception as e:
                     if self.strict_hybrid_retrieval:
                         raise HybridRetrievalError("混合检索执行失败") from e
-                    print(f"混合检索失败,回退到关键词匹配: {e}")
+                    self.logger.warning(f"混合检索失败,回退到关键词匹配: {e}")
 
         # 默认使用简单关键词匹配 - 使用索引加速
         query_lower = query.lower()
@@ -925,7 +941,7 @@ class MemoryManager:
         hybrid_min_candidates: int = 5,
         hybrid_fallback_to_all: bool = True,
         hybrid_semantic_threshold: float = None,
-        hybrid_score_margin: float = 0.12,
+        hybrid_score_margin: float = 0.08,
         hybrid_full_rerank_max_docs: int = 200,
         hybrid_tfidf_candidate_limit: int = 20,
         working_to_episodic_limit: int = 20,
@@ -987,12 +1003,10 @@ class MemoryManager:
         return self.short_term.get_messages()
 
     def _run_lifecycle_hook(self, hook_name: str, *args, **kwargs):
-        try:
-            method = getattr(self, hook_name)
-            return method(*args, **kwargs)
-        except Exception as e:
-            self.logger.warning(f"记忆生命周期钩子 {hook_name} 执行失败: {e}")
-            return None
+        # 统一复用 hooks.call_hook_safely 的异常隔离实现，避免重复 try/except。
+        return call_hook_safely(
+            self, hook_name, self.logger, "记忆生命周期钩子", *args, **kwargs
+        )
 
     def on_turn_start(self, query: str, user_id: str = "default", session_id: str = "", include_items: bool = False):
         """回合开始：一次召回同时提供兼容文本和可选结构化条目。"""
@@ -1151,6 +1165,9 @@ class MemoryManager:
 
         try:
             retriever.index_documents(memories)
+            # 跨层候选覆盖了 retriever 内部文档集，置灰索引标志，让下次
+            # semantic.search 重建回语义存储文档，避免 IDF 用的是跨层候选。
+            self.semantic._hybrid_indexed = False
             return retriever.search(query, top_k=limit)
         except Exception as e:
             if self.strict_hybrid_retrieval:

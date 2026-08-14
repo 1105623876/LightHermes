@@ -23,6 +23,22 @@ STOP_REASONS = {
 JUDGMENT_VERDICTS = {"support", "conflict", "unknown", "no_evidence"}
 
 
+def normalize_verdict(verdict: str) -> str:
+    """规范判定值：小写、去空白；不在 JUDGMENT_VERDICTS 中时返回空串。"""
+    verdict = str(verdict or "").strip().lower()
+    return verdict if verdict in JUDGMENT_VERDICTS else ""
+
+
+def clamp_confidence(confidence) -> float | None:
+    """将置信度规范化到 [0.0, 1.0]；非法/缺省返回 None。"""
+    if confidence is None:
+        return None
+    try:
+        return max(0.0, min(1.0, float(confidence)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

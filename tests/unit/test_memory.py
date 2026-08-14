@@ -161,7 +161,7 @@ class TestSemanticMemory:
         assert semantic.hybrid_retriever.embedding_base_url == "https://embedding.example.test/v1"
         assert semantic.hybrid_retriever.kwargs["min_candidates"] == 5
         assert semantic.hybrid_retriever.kwargs["fallback_to_all"] is True
-        assert semantic.hybrid_retriever.kwargs["score_margin"] == 0.12
+        assert semantic.hybrid_retriever.kwargs["score_margin"] == 0.08
 
     def test_strict_hybrid_search_raises_instead_of_keyword_fallback(self, temp_memory_dir):
         semantic = SemanticMemory(
@@ -182,6 +182,37 @@ class TestSemanticMemory:
 
         with pytest.raises(HybridRetrievalError, match="混合检索执行失败"):
             semantic.search("alpha", limit=5)
+
+    def test_hybrid_reuses_index_when_files_unchanged(self, temp_memory_dir):
+        """文件未变化时多次 search 不应重复重建 TF-IDF 索引。"""
+        class CountingHybridRetriever:
+            def __init__(self):
+                self.index_feed = []
+                self.found = [{"name": "target", "content": "alpha target"}]
+
+            def index_documents(self, documents):
+                self.index_feed.append(documents)
+
+            def search(self, query, top_k=5):
+                return self.found[:top_k]
+
+        semantic = SemanticMemory(
+            storage_dir=f"{temp_memory_dir}/semantic",
+            use_hybrid_retrieval=True,
+        )
+        semantic.hybrid_retriever = CountingHybridRetriever()
+        semantic.save("target", "alpha target")
+
+        r1 = semantic.search("alpha", limit=5)
+        assert len(r1) == 1
+        # 同一文档集第二次 search 不重建索引
+        semantic.search("alpha", limit=5)
+        assert len(semantic.hybrid_retriever.index_feed) == 1
+
+        # 新增文件后应重建一次
+        semantic.save("other", "another doc")
+        semantic.search("another", limit=5)
+        assert len(semantic.hybrid_retriever.index_feed) == 2
 
     def test_near_duplicate_semantic_memory_merges(self, temp_memory_dir):
         """测试近重复语义记忆合并"""

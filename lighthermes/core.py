@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Callable, Generator, Union
 
 from lighthermes.memory import MemoryManager
-from lighthermes.active_memory import ActiveRecallSession
+from lighthermes.active_memory import (
+    ActiveRecallSession,
+    JUDGMENT_VERDICTS,
+    clamp_confidence,
+    normalize_verdict,
+)
 from lighthermes.evolution import EvolutionEngine
 from lighthermes.adapters import get_adapter
 from lighthermes.compressor import ContextCompressor
@@ -26,7 +31,6 @@ from lighthermes.builtin_tools import (
     create_file_tools,
     create_memory_tools,
 )
-from lighthermes.active_memory import JUDGMENT_VERDICTS
 from lighthermes.tools import ToolDispatcher, tool
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
@@ -137,6 +141,7 @@ class LightHermes:
             embedding_config = config.get("embedding", {})
             hybrid_config = memory_config.get("hybrid_retrieval", {})
             retention_config = memory_config.get("retention", {})
+            adaptive_config = memory_config.get("adaptive", {})
             configured_embedding_api_key = hybrid_config.get("api_key", embedding_api_key)
             if configured_embedding_api_key is None:
                 configured_embedding_api_key = embedding_config.get("api_key")
@@ -151,6 +156,7 @@ class LightHermes:
                 semantic_similarity_threshold=retention_config.get("semantic_similarity_threshold", 0.85),
                 distill_recent_limit=retention_config.get("distill_recent_limit", 20),
                 use_hybrid_retrieval=hybrid_config.get("enabled", False),
+                strict_hybrid_retrieval=hybrid_config.get("strict_hybrid_retrieval", False),
                 embedding_provider=hybrid_config.get(
                     "provider",
                     embedding_config.get("provider", embedding_provider)
@@ -170,12 +176,15 @@ class LightHermes:
                 hybrid_min_candidates=hybrid_config.get("min_candidates", 5),
                 hybrid_fallback_to_all=hybrid_config.get("fallback_to_all", True),
                 hybrid_semantic_threshold=hybrid_config.get("semantic_threshold"),
-                hybrid_score_margin=hybrid_config.get("score_margin", 0.12),
+                hybrid_score_margin=hybrid_config.get("score_margin", 0.08),
                 hybrid_full_rerank_max_docs=hybrid_config.get("full_rerank_max_docs", 200),
-                hybrid_tfidf_candidate_limit=hybrid_config.get("tfidf_candidate_limit", 20)
+                hybrid_tfidf_candidate_limit=hybrid_config.get("tfidf_candidate_limit", 20),
+                archive_inactive_days=adaptive_config.get("archive_days", 30),
             )
+            self.adapt_interval = adaptive_config.get("adapt_interval", 100)
         else:
             self.memory = None
+            self.adapt_interval = 100
 
         self.evolution_enabled = evolution_enabled
         self.auto_generate_skills = auto_generate_skills
@@ -213,11 +222,18 @@ class LightHermes:
                 self.tool_dispatcher.register_tool(tool)
 
         if evolution_enabled:
+            evolution_config = config.get("evolution", {})
+            triggers = evolution_config.get("triggers", {})
+            sandbox = evolution_config.get("sandbox", {})
             self.evolution = EvolutionEngine(
                 client=self.adapter,
                 model=model,
                 skill_validation=skill_validation,
-                memory_manager=self.memory
+                memory_manager=self.memory,
+                min_success_count=triggers.get("min_success_count", 3),
+                min_failure_count=triggers.get("min_failure_count", 2),
+                validator_timeout=sandbox.get("timeout", 30),
+                validator_max_memory_mb=sandbox.get("max_memory_mb", 512),
             )
         else:
             self.evolution = None
@@ -285,7 +301,9 @@ class LightHermes:
         if getattr(session, "trace", None) is None:
             return
         if session.trace.stop_reason is None:
-            if reason == "answered":
+            # reason 使用 STOP_REASONS 命名（active_memory 的 canonical 集合），
+            # 不再使用非集合的 "answered" 别名。
+            if reason == "sufficient":
                 session.mark_answered()
             elif reason == "budget_exhausted":
                 session.mark_budget_exhausted()
@@ -375,24 +393,19 @@ class LightHermes:
         source_ids = (function_args or {}).get("source_ids") or []
         if isinstance(source_ids, str):
             source_ids = [source_ids]
-        confidence = (function_args or {}).get("confidence")
-        try:
-            safe_confidence = (
-                max(0.0, min(1.0, float(confidence))) if confidence is not None else None
-            )
-        except (TypeError, ValueError):
-            safe_confidence = None
+        safe_confidence = clamp_confidence((function_args or {}).get("confidence"))
 
+        norm = normalize_verdict(verdict)
         reason = ""
         accepted = False
-        if verdict not in JUDGMENT_VERDICTS:
+        if not norm:
             reason = "invalid_verdict"
-        elif verdict == "no_evidence" and not getattr(session.ledger, "searched", False):
+        elif norm == "no_evidence" and not getattr(session.ledger, "searched", False):
             reason = "not_searched"
         else:
             accepted = session.observe_judgment(
                 claim,
-                verdict,
+                norm,
                 [str(s) for s in source_ids if str(s)],
                 safe_confidence,
             )
@@ -670,18 +683,15 @@ class LightHermes:
         last_error = None
 
         for i, model in enumerate(models):
+            original_model = self.adapter.model
             try:
                 # 临时切换 adapter 的模型
-                original_model = self.adapter.model
                 self.adapter.model = model
 
                 response = self.adapter.create(
                     messages=messages,
                     **kwargs
                 )
-
-                # 恢复原始模型
-                self.adapter.model = original_model
 
                 if i > 0:
                     self.logger.warning(f"降级到模型 {model}")
@@ -692,6 +702,9 @@ class LightHermes:
                     self.logger.error(f"所有模型失败: {e}")
                     raise
                 self.logger.warning(f"模型 {model} 失败，尝试降级: {e}")
+            finally:
+                # 无论成功失败都恢复 original 模型，避免 fallback 残留污染状态
+                self.adapter.model = original_model
 
         raise last_error
 
@@ -1139,7 +1152,7 @@ class LightHermes:
         session_id: str,
         active_session=None
     ):
-        self._finalize_active_recall(active_session, "answered")
+        self._finalize_active_recall(active_session, "sufficient")
         self._run_memory_hook(
             "on_turn_end",
             query,
@@ -1149,7 +1162,8 @@ class LightHermes:
         )
 
         self.query_count = getattr(self, "query_count", 0) + 1
-        if self.memory_enabled and self.query_count % 100 == 0:
+        adapt_interval = getattr(self, "adapt_interval", 100) or 100
+        if self.memory_enabled and self.query_count % adapt_interval == 0:
             self.memory.adapt_weights()
             self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
 
@@ -1326,7 +1340,8 @@ class LightHermes:
                         params["messages"],
                         recorded_tool_calls,
                         user_id,
-                        session_id
+                        session_id,
+                        active_session
                     )
                     return
 

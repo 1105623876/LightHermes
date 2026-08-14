@@ -471,3 +471,76 @@ def test_judge_claim_registered_and_prompted_when_active_memory_on(monkeypatch, 
     system_prompt = adapter.calls[0]["messages"][0]["content"]
     assert "judge_claim" in system_prompt
     assert "尚未检索到" in system_prompt
+
+
+def stream_stop_chunk(content="final"):
+    delta = SimpleNamespace(content=content, tool_calls=None)
+    choice = SimpleNamespace(delta=delta, finish_reason="stop")
+    return SimpleNamespace(choices=[choice])
+
+
+def _make_stream_fake_adapter(chunks):
+    class StreamResponse:
+        def __init__(self, chunks):
+            self.chunks = chunks
+        def __iter__(self):
+            return iter(self.chunks)
+
+    class Adapter:
+        provider = "openai"
+        def __init__(self):
+            self.model = "test-model"
+            self.calls = []
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if isinstance(chunks, Exception):
+                raise chunks
+            return StreamResponse(chunks)
+
+    return Adapter()
+
+
+def _run_stream_once(agent, active_session, max_iterations=3):
+    params = {
+        "messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}],
+        "stream": True,
+    }
+    collected = list(
+        agent._run_stream(
+            params, max_iterations, "q", "user", "session", active_session
+        )
+    )
+    return params, collected
+
+
+@pytest.mark.unit
+def test_stream_normal_stop_marks_active_session_sufficient(monkeypatch, tmp_path):
+    """流式正常结束（finish_reason=stop，无工具调用）应把 trace 标记为 sufficient 而非 cancelled。"""
+    stream_adapter = _make_stream_fake_adapter([stream_stop_chunk("done")])
+    agent = LightHermes.__new__(LightHermes)
+    agent.logger = SimpleNamespace(
+        warning=lambda *a, **k: None, info=lambda *a, **k: None, error=lambda *a, **k: None
+    )
+    agent.adapter = stream_adapter
+    agent.model = "test-model"
+    agent.fallback_models = []
+    agent.api_call_count = 0
+    agent.memory_enabled = False
+    agent.memory = None
+    agent.evolution_enabled = False
+    agent.evolution = None
+    agent.query_count = 0
+    agent.auto_generate_skills = False
+    agent._run_memory_hook = lambda *a, **k: None
+    agent._classify_task = lambda q: "通用"
+    agent.active_recall_persist_traces = True
+    agent.active_recall_trace_dir = str(tmp_path)
+    agent._finish_turn = LightHermes._finish_turn.__get__(agent)
+
+    session = ActiveRecallSession.from_seed("q", [])
+    params, collected = _run_stream_once(agent, session)
+
+    assert collected == ["done"]
+    assert session.trace.stop_reason == "sufficient"
+    # 流式结束后 finally 不应把 sufficient 覆盖成 cancelled
+    assert session.trace.stop_reason == "sufficient"

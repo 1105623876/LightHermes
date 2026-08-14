@@ -370,11 +370,18 @@ class EvolutionEngine:
         min_success_count: int = 3,
         min_failure_count: int = 2,
         skill_validation: str = "sandbox",
-        memory_manager: Any = None
+        memory_manager: Any = None,
+        validator_timeout: int = 30,
+        validator_max_memory_mb: int = 512,
     ):
         self.analyzer = TrajectoryAnalyzer(trajectory_dir)
         self.generator = SkillGenerator(client, model)
-        self.validator = SkillValidator()
+        # sandbox 校验参数从 config 透传；skill_validation == "none" 时调用方
+        # 会跳过 validate_skill（见 L435 / L458 的 != "none" 保护）。
+        self.validator = SkillValidator(
+            timeout=validator_timeout,
+            max_memory_mb=validator_max_memory_mb,
+        )
 
         self.skill_output_dir = Path(skill_output_dir)
         self.skill_output_dir.mkdir(parents=True, exist_ok=True)

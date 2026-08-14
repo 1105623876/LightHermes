@@ -12,6 +12,36 @@ from typing import List, Dict, Any, Optional
 from collections import Counter
 
 
+def tokenize_text(text: str) -> List[str]:
+    """轻量分词：支持中英文混合。中文按单字、英文/数字按词。
+
+    这是 MemoryIndex 与 TFIDFRetriever 共用的唯一分词实现（避免两处维护）。
+    中文字符（CJK 统一汉字区 \u4e00-\u9fff）按单字切分，英文/数字按连续
+    alnum 词切分，空白与标点作为分隔符。
+    """
+    text = (text or "").lower()
+    tokens: List[str] = []
+    current_token = ""
+
+    for char in text:
+        if '一' <= char <= '鿿':
+            if current_token:
+                tokens.append(current_token)
+                current_token = ""
+            tokens.append(char)
+        elif char.isalnum():
+            current_token += char
+        else:
+            if current_token:
+                tokens.append(current_token)
+                current_token = ""
+
+    if current_token:
+        tokens.append(current_token)
+
+    return [token for token in tokens if token]
+
+
 class TFIDFRetriever:
     """TF-IDF 检索器 - 快速初筛"""
 
@@ -20,28 +50,7 @@ class TFIDFRetriever:
         self.idf: Dict[str, float] = {}
 
     def _tokenize(self, text: str) -> List[str]:
-        """轻量分词：支持中英文混合"""
-        text = text.lower()
-        tokens = []
-        current_token = ""
-
-        for char in text:
-            if '一' <= char <= '鿿':
-                if current_token:
-                    tokens.append(current_token)
-                    current_token = ""
-                tokens.append(char)
-            elif char.isalnum():
-                current_token += char
-            else:
-                if current_token:
-                    tokens.append(current_token)
-                    current_token = ""
-
-        if current_token:
-            tokens.append(current_token)
-
-        return [token for token in tokens if token]
+        return tokenize_text(text)
 
     def index_documents(self, documents: List[Dict[str, Any]]):
         """索引文档"""
@@ -234,7 +243,7 @@ class HybridRetriever:
         min_candidates: int = 5,
         fallback_to_all: bool = True,
         semantic_threshold: float = None,
-        score_margin: float = 0.12,
+        score_margin: float = 0.08,
         full_rerank_max_docs: int = 200,
         tfidf_candidate_limit: int = 20
     ):

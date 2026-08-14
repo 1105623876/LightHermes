@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, List
 
 from lighthermes.tools import tool
-from lighthermes.active_memory import JUDGMENT_VERDICTS
+from lighthermes.active_memory import clamp_confidence, normalize_verdict
 
 
 EXCLUDED_DIRS = {".git", ".hg", ".svn", ".claude", "venv", ".venv", "node_modules", "__pycache__", "memory"}
@@ -142,8 +142,11 @@ def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
 def create_claim_tool() -> Callable:
     """注册 judge_claim 工具，供 Active Memory 开启时模型显式写回 claim 判定。
 
-    该工具的实际 ledger 写入由 LightHermes._append_tool_exchange 拦截完成，工具体
-    只返回一个可回显的确认 JSON。Active Memory 关闭时（无会话）返回 no-op，保持兼容。
+    该工具的 schema 与工具体只有一层作用：作为 judge_claim 的可见契约。真正把
+    判定写入本回合证据账本的逻辑在 LightHermes._append_tool_exchange 中拦截
+    ActiveRecallSession 后执行（工具体无法访问 run-local 的 session）。因此当
+    Active Memory 会话存在时 core 不会调用工具体；仅当 Active Memory 关闭或调用时
+    无会话（理论上不该发生，因为开启时才注册）才落到工具体，返回明确的降级提示。
     """
     @tool(
         "judge_claim",
@@ -160,19 +163,13 @@ def create_claim_tool() -> Callable:
         ]
     )
     def judge_claim(claim: str, verdict: str, source_ids=None, confidence=None) -> str:
-        try:
-            safe_confidence = float(confidence) if confidence is not None else None
-            if safe_confidence is not None:
-                safe_confidence = max(0.0, min(1.0, safe_confidence))
-        except (TypeError, ValueError):
-            safe_confidence = None
         return json.dumps({
             "claim": str(claim or ""),
-            "verdict": str(verdict or ""),
+            "verdict": normalize_verdict(verdict),
             "source_ids": [str(s) for s in (source_ids or []) if str(s)],
-            "confidence": safe_confidence,
+            "confidence": clamp_confidence(confidence),
             "accepted": False,
-            "reason": "ledger_update_handled_by_core",
+            "reason": "active_memory_session_required",
         }, ensure_ascii=False)
 
     return judge_claim

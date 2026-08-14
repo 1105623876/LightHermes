@@ -98,6 +98,34 @@ class TestContextCompressor:
 
         assert summary["role"] == "assistant"
         assert "摘要生成失败: boom" in summary["content"]
+        assert summary["degraded"] is True
+
+    def test_compress_failure_not_counted_as_success(self):
+        adapter = FakeAdapter(RuntimeError("boom"))
+        compressor = ContextCompressor(
+            adapter,
+            {
+                "protect_first_n": 1,
+                "protect_recent_tokens": 1,
+                "summary_min_tokens": 10,
+                "summary_max_tokens": 50,
+                "summary_ratio": 0.5
+            }
+        )
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "中间消息一"},
+            {"role": "assistant", "content": "中间消息二"},
+            {"role": "user", "content": "最近消息"}
+        ]
+
+        compressed = compressor.compress(messages)
+
+        # 摘要失败时仍返回结构上完整的占位，但不计入成功压缩统计
+        assert compressed[1]["degraded"] is True
+        assert compressor.compression_count == 0
+        assert compressor.tokens_saved == 0
+        assert compressor.get_stats()["last_degraded"] is True
 
     def test_get_stats_returns_average_saved_tokens(self):
         compressor = ContextCompressor(FakeAdapter("摘要"))
@@ -109,7 +137,8 @@ class TestContextCompressor:
         assert stats == {
             "compression_count": 2,
             "tokens_saved": 9,
-            "avg_tokens_saved": 4
+            "avg_tokens_saved": 4,
+            "last_degraded": False
         }
 
     def test_estimate_tokens_uses_simple_character_ratio(self):
