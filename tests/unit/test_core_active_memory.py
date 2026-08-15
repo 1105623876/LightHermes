@@ -134,7 +134,9 @@ def test_active_recall_config_prompt_and_single_seed_recall(
 
     system_prompt = adapter.calls[0]["messages"][0]["content"]
     assert ("Active Memory 规则" in system_prompt) is expected_prompt
-    assert len(recall_calls) == 1
+    # Active Memory 开启时，seed 召回后若证据不足（not_searched 且 coverage<1），
+    # 停答点会强制执行一轮运行时自搜；关闭时保持单次召回。
+    assert len(recall_calls) == (2 if active else 1)
     assert agent.active_recall_max_rounds == 2
     assert not (tmp_path / "traces").exists()
 
@@ -235,6 +237,92 @@ def test_no_new_evidence_stops_and_blocks_next_search():
     assert len(session.trace.rounds) == 1
     blocked = json.loads(messages[-1]["content"])
     assert blocked["active_memory"]["stop_reason"] == "no_new_evidence"
+
+
+class ThrowingDispatcher:
+    """call_tool 抛错的调度器，用于验证强制搜错误路径不炸回答。"""
+
+    def __init__(self, tool):
+        self.tools = {"search_memory": tool}
+        self.calls = []
+
+    def call_tool(self, name, args):
+        self.calls.append((name, args))
+        raise RuntimeError("search exploded")
+
+
+@pytest.mark.unit
+class TestForcedActiveSearch:
+    """停答点强制搜的 core 层运行时行为（空结果、错误、覆盖、无 dispatcher）。"""
+
+    def _agent(self, tool):
+        agent = LightHermes.__new__(LightHermes)
+        agent.logger = SimpleNamespace(error=lambda *a, **k: None)
+        agent._builtin_search_memory = tool
+        agent.tool_dispatcher = FakeDispatcher(tool, [])
+        return agent
+
+    def test_empty_result_still_executes_and_returns_true(self):
+        builtin = object()
+        agent = self._agent(builtin)
+        agent.tool_dispatcher.responses = iter([
+            json.dumps({"query": "q", "layer": "all", "limit": 5, "results": []})
+        ])
+        session = ActiveRecallSession.from_seed("question", [])
+
+        executed = agent._forced_active_search(session, "non_stream_answer")
+
+        assert executed is True  # 搜空也算执行：必须交回模型，不能复用停答前答句
+        assert len(agent.tool_dispatcher.calls) == 1
+        assert session.ledger.absence_state() == "searched_no_evidence"
+        assert len(session.trace.forced_search) == 1
+        followup = agent._forced_search_followup(session)
+        assert "本轮检索未返回新来源" in followup
+
+    def test_search_error_records_skip_and_returns_false(self):
+        builtin = object()
+        agent = LightHermes.__new__(LightHermes)
+        agent.logger = SimpleNamespace(error=lambda *a, **k: None)
+        agent._builtin_search_memory = builtin
+        agent.tool_dispatcher = ThrowingDispatcher(builtin)
+        session = ActiveRecallSession.from_seed("question", [])
+
+        executed = agent._forced_active_search(session, "non_stream_answer")
+
+        assert executed is False
+        skips = session.trace.metadata["forced_search_skip"]
+        assert skips and skips[0]["skip_reason"].startswith("search_error:")
+        assert session.trace.stop_reason == "error"
+        assert session.trace.forced_search == []
+
+    def test_custom_search_tool_is_skipped_not_called(self):
+        builtin = object()
+        custom = object()
+        agent = LightHermes.__new__(LightHermes)
+        agent.logger = SimpleNamespace(error=lambda *a, **k: None)
+        agent._builtin_search_memory = builtin
+        # tools 里注册的是 custom，不是 builtin 本身 → 视为用户覆盖
+        agent.tool_dispatcher = FakeDispatcher(custom, [])
+        session = ActiveRecallSession.from_seed("question", [])
+
+        executed = agent._forced_active_search(session, "non_stream_answer")
+
+        assert executed is False
+        assert agent.tool_dispatcher.calls == []
+        skips = session.trace.metadata["forced_search_skip"]
+        assert skips[0]["skip_reason"] == "no_builtin_search"
+
+    def test_no_dispatcher_is_skipped(self):
+        agent = LightHermes.__new__(LightHermes)
+        agent.logger = SimpleNamespace(error=lambda *a, **k: None)
+        agent._builtin_search_memory = object()
+        # 不带 tool_dispatcher 属性
+        session = ActiveRecallSession.from_seed("question", [])
+
+        executed = agent._forced_active_search(session, "non_stream_answer")
+
+        assert executed is False
+        assert session.trace.metadata["forced_search_skip"][0]["skip_reason"] == "no_dispatcher"
 
 
 @pytest.mark.unit

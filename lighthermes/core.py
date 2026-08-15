@@ -476,6 +476,79 @@ class LightHermes:
         if session is not None:
             session.observe_search(query, layer, limit, [], latency_ms, error=error)
 
+    def _forced_active_search(
+        self,
+        session,
+        trigger_reason: str,
+    ) -> bool:
+        """停答点确定性 trigger：模型要结束回答且证据不足时，运行时自搜一轮。
+
+        返回「这轮强制搜是否已执行」——空结果也算执行，必须交回模型明确
+        「没有新来源」，不能静默复用停答前的旧答句。
+        """
+        if session is None:
+            return False
+        dispatcher = getattr(self, "tool_dispatcher", None)
+        if dispatcher is None or not hasattr(dispatcher, "call_tool"):
+            self._log_forced_search_skip(session, trigger_reason, "no_dispatcher")
+            return False
+        if not self._active_memory_is_builtin_search("search_memory"):
+            self._log_forced_search_skip(session, trigger_reason, "no_builtin_search")
+            return False
+        allow, skip_reason = session.ledger.should_force_search(session.can_search())
+        if not allow:
+            if skip_reason:
+                self._log_forced_search_skip(session, trigger_reason, skip_reason)
+            return False
+        query = session.build_rewrite_query() or session.trace.initial_query
+        args = {"query": query, "layer": "all", "limit": 5}
+        try:
+            started = time.perf_counter()
+            tool_response = self.tool_dispatcher.call_tool("search_memory", args)
+            latency_ms = (time.perf_counter() - started) * 1000
+            payload = self._parse_active_memory_results(tool_response)
+        except Exception as exc:  # 自搜失败不炸回答路径，但要记 skip 而非静默
+            self._log_forced_search_skip(session, trigger_reason, f"search_error:{exc}")
+            self._resolve_active_trace_error(session, query, "all", 5, str(exc), 0.0)
+            return False
+        session.record_forced_search(trigger_reason, True, query=query, layer="all")
+        session.observe_search(query, "all", 5, payload["results"], latency_ms)
+        # 把原始结果快照交给调用方，调用方注入消息并交回模型。
+        session.trace.metadata.setdefault("forced_results", []).append({
+            "query": query,
+            "results": payload["results"],
+        })
+        return True
+
+    @staticmethod
+    def _forced_search_followup(session) -> str:
+        """构造交回模型的强制搜索后消息（模型看不到 trace，只看到结果摘要）。"""
+        entries = []
+        metadata = getattr(getattr(session, "trace", None), "metadata", None)
+        if isinstance(metadata, dict):
+            for block in metadata.get("forced_results", []):
+                for item in block.get("results", []):
+                    entries.append(
+                        f"[{item.get('layer', '')}: {item.get('name', '')}] "
+                        f"{item.get('content', '')}"
+                    )
+        summary = "\n".join(entries) if entries else "（本轮检索未返回新来源）"
+        return (
+            "系统在证据不足时自动执行了一轮记忆检索，以下是结果；"
+            "请结合这些来源继续回答。若仍不足，请明确说明尚未检索到或证据冲突。\n"
+            f"{summary}"
+        )
+
+    @staticmethod
+    def _log_forced_search_skip(session, trigger_reason: str, skip_reason: str):
+        """记录 trigger 在停答点被放行的原因，保证 A/B 可归因（不入模型上下文）。"""
+        metadata = getattr(session.trace, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata.setdefault("forced_search_skip", []).append({
+                "trigger_evaluated": str(trigger_reason or ""),
+                "skip_reason": str(skip_reason or ""),
+            })
+
     @staticmethod
     def _resolve_config_value(value: Any) -> Any:
         """解析形如 ${ENV_VAR} 或 $(ENV_VAR) 的配置值"""
@@ -1232,6 +1305,15 @@ class LightHermes:
             else:
                 reply = message.content or ""
                 params["messages"].append({"role": "assistant", "content": reply})
+                # 停答点确定性 trigger：证据不足时运行时自搜一轮，并把结果交回模型。
+                if active_session is not None and self._forced_active_search(
+                    active_session, "non_stream_answer"
+                ):
+                    params["messages"].append({
+                        "role": "user",
+                        "content": self._forced_search_followup(active_session),
+                    })
+                    continue
                 self._finish_turn(
                     query,
                     reply,
@@ -1334,6 +1416,15 @@ class LightHermes:
                 finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
                 if finish_reason == "stop" and not any(tc["name"] for tc in tool_calls):
                     params["messages"].append({"role": "assistant", "content": output})
+                    if active_session is not None and self._forced_active_search(
+                        active_session, "stream_answer"
+                    ):
+                        params["messages"].append({
+                            "role": "user",
+                            "content": self._forced_search_followup(active_session),
+                        })
+                        continue_next_iteration = True
+                        break
                     self._finish_turn(
                         query,
                         output,
@@ -1389,6 +1480,14 @@ class LightHermes:
                     continue
 
                 params["messages"].append({"role": "assistant", "content": output})
+                if active_session is not None and self._forced_active_search(
+                    active_session, "stream_answer"
+                ):
+                    params["messages"].append({
+                        "role": "user",
+                        "content": self._forced_search_followup(active_session),
+                    })
+                    continue
                 self._finish_turn(
                     query,
                     output,

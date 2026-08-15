@@ -1,13 +1,13 @@
 # LightHermes 项目状态
 
-**最后更新**: 2026-08-13
+**最后更新**: 2026-08-15
 **发布版本**: v0.3.4
 **开发主线**: v0.4.0 Active Memory
 **状态**: Active Memory P0 + P1 运行时协议已落地（claim 写回、缺席状态、建议改写、来源展开）；默认关闭，质量待 A/B
 
 ## 当前基线
 
-- **测试**: 200/200 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 210/210 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -33,7 +33,7 @@
 
 ### 评测与稳定性
 
-- 200 项单元、集成与性能测试
+- 210 项单元、集成与性能测试
 - Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
 - LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
 - 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%
@@ -100,9 +100,17 @@
 - 搜索回包提供 `suggested_query`；cue 来自 name / entities / cue_anchors
 - 默认关闭；不做 NLI，不强制改写模型最终答句，未做真实 A/B
 
-### 下一步：P2 泛化验证
+### 已完成：停答点确定性 trigger（A/B 准入条件 1）
 
-- 建立 static / agentic A/B 和阶段错误诊断
+- `EvidenceLedger.should_force_search()`：停答点规则 `can_search ∧ absence ∈ {not_searched, evidence_conflict} ∧ coverage < 1`
+- 运行时用 `suggested_query` 自搜一轮（`forced`，非额外模型调用），并把结果交回模型
+- trace 新增触发与可归因字段（`forced_search`、`would_have_stopped_early`）
+- 强制搜失败不炸回答路径；无内置 `search_memory` 时显式跳过并记录 `forced_search_skip`
+
+### 下一步：3.3a 最小闭环
+
+- 写入时 `abstract ≠ raw`；检索打 `abstract + cue_anchors`；回答走 `read_memory` 原文（见 ROADMAP 当前结论决策 2）
+- 冻结宣言已落 `docs/FREEZE_COMMITMENT.md`；A/B 开跑前按五条锁死策略，再跑 static / agentic A/B 与阶段错误诊断
 - 冻结策略后运行验证集、holdout 与结构不同的工作流回放
 - 将工具成功、失败、成本与延迟接入可追溯的经验记录，再决定是否固化为技能
 

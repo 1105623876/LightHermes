@@ -1,5 +1,26 @@
 # LightHermes 开发日志
 
+## Unreleased - 停答点确定性 trigger（A/B 准入）
+
+### 决策与文档
+- ✅ ROADMAP「当前结论」定案三项决策：确定性停答 trigger（瘦 A）、3.3 最小闭环、冻结宣言先行
+- ✅ 3.2 改为「A/B 准入条件」；3.3 拆为 3.3a 最小闭环 / 3.3b 完整表征
+- ✅ 统一陈旧测试基线数字与 ROADMAP 更新日期
+
+### 停答点确定性 trigger
+- ✅ `EvidenceLedger.should_force_search()`：`can_search ∧ absence ∈ {not_searched, evidence_conflict} ∧ coverage < 1`
+- ✅ 停答点运行时自搜一轮（`forced`，不加模型调用），用 `suggested_query` 执行并把结果交回模型
+- ✅ 返回值语义为「强制搜是否执行」——空结果也算执行，必须把「无新来源」交回模型
+- ✅ trace 新增 `forced_search`（trigger_reason/round/query/absence/coverage）与 `would_have_stopped_early`
+- ✅ 复用 `_active_memory_is_builtin_search()` 检测内置工具，不往 dataclass 贴属性；用户覆盖工具不被强制搜调用
+- ✅ 无内置 `search_memory` 或检索失败时显式跳过并记录 `forced_search_skip`，不炸回答路径
+- ✅ 冻结宣言落 `docs/FREEZE_COMMITMENT.md`（五条 + 执行纪律）
+
+### 验证
+- ✅ 全量 pytest：`tests/`（210/210）
+
+---
+
 ## Unreleased - Active Memory P1 运行时协议
 
 ### 模型显式 claim/evidence 判定

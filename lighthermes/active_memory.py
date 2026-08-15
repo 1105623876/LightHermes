@@ -313,6 +313,27 @@ class EvidenceLedger:
             return 0.0
         return sum(claim.resolved for claim in self.claims.values()) / len(self.claims)
 
+    def should_force_search(self, can_search: bool) -> tuple[bool, str | None]:
+        """停答点 trigger：`can_search ∧ coverage<1 ∧ absence ∈ {not_searched, evidence_conflict}`。
+
+        只判「要不要再找」，不判支持/冲突。coverage<1 单独不触发——seed 默认
+        unresolved，否则每回合至少多搜一轮。"""
+
+        if not can_search:
+            return False, None
+        try:
+            cover = float(self.coverage)
+        except (TypeError, ValueError):
+            cover = 0.0
+        if cover >= 1.0:
+            return False, "coverage_complete"
+        absence = self.absence_state()
+        if absence == "not_searched":
+            return True, "absence_not_searched"
+        if absence == "evidence_conflict":
+            return True, "absence_evidence_conflict"
+        return False, f"absence_{absence}"
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "claims": {claim_id: asdict(claim) for claim_id, claim in self.claims.items()},
@@ -373,6 +394,10 @@ class RecallTrace:
     judgments: list[RecallJudgmentTrace] = field(default_factory=list)
     # query rewrite 若被触发，记录改写后的查询与来源 claim。
     rewrites: list[dict[str, Any]] = field(default_factory=list)
+    # 停答点确定性 trigger 的可观测三件套：触发原因、被强制执行的轮次、
+    # 以及若不加 trigger 回合原本是否会提前结束。
+    forced_search: list[dict[str, Any]] = field(default_factory=list)
+    would_have_stopped_early: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -533,6 +558,28 @@ class ActiveRecallSession:
         if round_index is not None:
             entry["round"] = round_index
         self.trace.rewrites.append(entry)
+        self.trace.ledger = self.ledger.to_dict()
+
+    def record_forced_search(
+        self,
+        trigger_reason: str,
+        would_have_stopped_early: bool,
+        query: str = "",
+        layer: str = "all",
+    ):
+        """记录停答点被确定性 trigger 拦截的强制搜索，并复盘 anechoic 结局。"""
+        self.trace.forced_search.append({
+            "round": len(self.trace.rounds) + 1,
+            "trigger_reason": str(trigger_reason or "unknown"),
+            "query": str(query or ""),
+            "layer": str(layer or "all"),
+            "would_have_stopped_early": bool(would_have_stopped_early),
+            "absence": self.ledger.absence_state(),
+            "coverage": float(self.ledger.coverage or 0.0),
+        })
+        self.trace.would_have_stopped_early = bool(
+            self.trace.would_have_stopped_early or would_have_stopped_early
+        )
         self.trace.ledger = self.ledger.to_dict()
 
     def build_rewrite_query(self, max_len: int = 160) -> str:

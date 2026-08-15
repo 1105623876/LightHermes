@@ -148,6 +148,51 @@ class TestQueryRewrite:
 
 
 @pytest.mark.unit
+class TestForceSearchTrigger:
+    """停答点确定性 trigger：absence ∈ {not_searched, evidence_conflict} ∧ coverage < 1。"""
+
+    def test_not_searched_and_unresolved_forces(self):
+        ledger = EvidenceLedger.for_query("问题")
+        assert ledger.coverage == 0
+        assert ledger.absence_state() == "not_searched"
+        assert ledger.should_force_search(can_search=True) == (True, "absence_not_searched")
+
+    def test_searched_no_evidence_does_not_force(self):
+        ledger = EvidenceLedger.for_query("问题")
+        ledger.mark_searched()
+        assert ledger.absence_state() == "searched_no_evidence"
+        assert ledger.should_force_search(can_search=True)[0] is False
+
+    def test_conflict_forces(self):
+        ledger = EvidenceLedger.for_query("问题")
+        claim_id = next(iter(ledger.claims))
+        ledger.mark_conflicting(claim_id, ["s1"])
+        assert ledger.absence_state() == "evidence_conflict"
+        assert ledger.coverage == 0
+        assert ledger.should_force_search(can_search=True) == (True, "absence_evidence_conflict")
+
+    def test_coverage_complete_does_not_force_even_unknown_absence(self):
+        ledger = EvidenceLedger.for_query("问题")
+        claim_id = next(iter(ledger.claims))
+        ledger.mark_supporting(claim_id, ["s1"])
+        assert ledger.coverage == 1
+        assert ledger.should_force_search(can_search=True) == (False, "coverage_complete")
+
+    def test_no_budget_does_not_force(self):
+        ledger = EvidenceLedger.for_query("问题")
+        assert ledger.should_force_search(can_search=False) == (False, None)
+
+    def test_seed_unresolved_alone_does_not_force_when_searched(self):
+        # 反例：seed 默认 unresolved，但已检索无证据时禁止强制搜（避免“每题多搜一轮”）。
+        ledger = EvidenceLedger.for_query("问题")
+        ledger.mark_searched()
+        ledger.record_judgment(next(iter(ledger.claims)), "no_evidence")
+        assert ledger.absence_state() == "searched_no_evidence"
+        assert ledger.coverage == 1  # no_evidence resolves the claim
+        assert ledger.should_force_search(can_search=True)[0] is False
+
+
+@pytest.mark.unit
 class TestObserveJudgment:
     def test_observe_judgment_writes_trace_judgments(self, tmp_path):
         session = ActiveRecallSession.from_seed("部署", [])
