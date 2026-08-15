@@ -40,3 +40,38 @@ class TestToolDispatcher:
         assert dispatcher.register_tools([one, two]) == 2
         assert dispatcher.call_tool("one", {}) == "1"
         assert dispatcher.call_tool("two", {}) == "2"
+
+    def test_array_param_gets_default_items_string(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("tag", "打标签", [
+            {"name": "labels", "type": "array", "description": "标签列表", "required": True},
+        ])
+        def tag(labels):
+            return "ok"
+
+        assert dispatcher.register_tool(tag) is True
+        schema = dispatcher.get_tool_schemas()[0]
+        prop = schema["function"]["parameters"]["properties"]["labels"]
+        assert prop["type"] == "array"
+        assert prop["items"] == {"type": "string"}  # 默认补 items，兼容 OpenAI strict
+
+    def test_array_param_respects_explicit_items(self):
+        dispatcher = ToolDispatcher()
+
+        @tool("count", "计数", [
+            {
+                "name": "nums",
+                "type": "array",
+                "description": "数字列表",
+                "required": False,
+                "items": {"type": "integer"},
+            },
+        ])
+        def count(nums):
+            return "ok"
+
+        assert dispatcher.register_tool(count) is True
+        schema = dispatcher.get_tool_schemas()[0]
+        prop = schema["function"]["parameters"]["properties"]["nums"]
+        assert prop["items"] == {"type": "integer"}  # 显式 items 不被覆盖

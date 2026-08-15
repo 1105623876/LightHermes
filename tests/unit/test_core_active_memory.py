@@ -601,6 +601,140 @@ def _run_stream_once(agent, active_session, max_iterations=3):
     return params, collected
 
 
+class ScriptedAdapter:
+    """按脚本顺序返回响应，并记录每次 create 的 messages，用于端到端合成场景。"""
+
+    provider = "openai"
+
+    def __init__(self, responses):
+        self.model = "test-model"
+        self.responses = list(responses)
+        self.calls = []
+
+    def create(self, messages=None, **kwargs):
+        self.calls.append(messages)
+        if not self.responses:
+            return answer_response("")
+        return self.responses.pop(0)
+
+
+def answer_response(content):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=None))],
+        usage={"total_tokens": 3},
+    )
+
+
+def tool_call_response(tool_calls):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=tool_calls))],
+        usage={"total_tokens": 3},
+    )
+
+
+def _install_scripted_adapter(agent, responses):
+    adapter = ScriptedAdapter(responses)
+    agent.adapter = adapter
+    return adapter
+
+
+@pytest.mark.unit
+class TestSyntheticScenario:
+    """端到端合成 case：强制搜、冲突、无新证据（假模型 + 假记忆走完整 run()）。"""
+
+    def test_not_searched_stop_forces_search_then_model_reanswers(
+        self, monkeypatch, tmp_path
+    ):
+        agent, _ = make_agent(monkeypatch, tmp_path, active=True)
+        adapter = _install_scripted_adapter(
+            agent,
+            [answer_response("第一版答案"), answer_response("补充后的答案")],
+        )
+
+        result = agent.run("ordinary question", session_id="s1")
+
+        assert result == "补充后的答案"
+        assert len(adapter.calls) == 2
+        # 强制搜跟进必须是 system 消息（不是伪 user），模型必须看到并改口
+        followup_messages = [
+            msg for msg in adapter.calls[1]
+            if isinstance(msg, dict)
+            and msg.get("role") == "system"
+            and "本轮检索未返回新来源" in str(msg.get("content", ""))
+        ]
+        assert followup_messages, "强制搜跟进应以 system 角色注入"
+
+    def test_conflict_stop_forces_search_and_hands_back_to_model(
+        self, monkeypatch, tmp_path
+    ):
+        agent, _ = make_agent(monkeypatch, tmp_path, active=True)
+        # 落盘 trace，才能断言「冲突」确实是本次强制搜的触发原因
+        agent.active_recall_persist_traces = True
+        agent.active_recall_trace_dir = str(tmp_path / "traces")
+        adapter = _install_scripted_adapter(
+            agent,
+            [
+                # ① 模型主动写 conflict（claim 与 seed 的初 query 一致，命中 seed claim）
+                tool_call_response([judge_call("call-judge", claim="ordinary question", verdict="conflict")]),
+                # ② 模型第一次回答，停答点因 conflict 被强制再搜
+                answer_response("第一次回答"),
+                # ③ 模型拿到强制搜结果后的最终回答
+                answer_response("冲突澄清后的最终回答"),
+            ],
+        )
+
+        result = agent.run("ordinary question", session_id="s1")
+
+        assert result == "冲突澄清后的最终回答"
+        # ① judge_claim 写 conflict，② 答句触发强制搜，③ 才允许收尾
+        assert len(adapter.calls) == 3
+        # 强制搜跟进以 system 角色出现在第二次 model 调用（③）的输入里
+        followup_messages = [
+            msg for msg in adapter.calls[2]
+            if isinstance(msg, dict)
+            and msg.get("role") == "system"
+            and "本轮检索未返回新来源" in str(msg.get("content", ""))
+        ]
+        assert followup_messages, "强制搜跟进应以 system 角色注入"
+
+        # 钉死触发原因：账本真是 conflict，且强制搜的 trigger_reason 来自冲突
+        traces = list((tmp_path / "traces").glob("*.json"))
+        assert len(traces) == 1
+        trace = json.loads(traces[0].read_text(encoding="utf-8"))
+        claims = trace["ledger"]["claims"]
+        assert any(c["judgment"] == "conflict" for c in claims.values())
+        assert trace["ledger"]["absence"] == "evidence_conflict"
+        assert trace["forced_search"][0]["trigger_reason"] == "absence_evidence_conflict"
+
+    def test_no_new_evidence_stops_without_infinite_force(
+        self, monkeypatch, tmp_path
+    ):
+        agent, _ = make_agent(monkeypatch, tmp_path, active=True)
+        # 落盘 trace，断言停止原因是 no_new_evidence 且那轮无新来源
+        agent.active_recall_persist_traces = True
+        agent.active_recall_trace_dir = str(tmp_path / "traces")
+        # 记忆库里有一条语义记忆，会和 seed 召回同一条 → 强制搜后无新来源 → 停
+        agent.memory.save_semantic("fact", "项目采用分级记忆架构。这是关键结论。", {"type": "fact"})
+        adapter = _install_scripted_adapter(
+            agent,
+            [answer_response("第一次回答"), answer_response("最终回答")],
+        )
+
+        result = agent.run("分级记忆架构", session_id="s1")
+
+        # 第一次答触发强制搜 → 强制搜命中 seed 同源（无新证据）→ 第二次答正常收尾
+        assert result == "最终回答"
+        assert len(adapter.calls) == 2
+
+        traces = list((tmp_path / "traces").glob("*.json"))
+        assert len(traces) == 1
+        trace = json.loads(traces[0].read_text(encoding="utf-8"))
+        assert trace["stop_reason"] == "no_new_evidence"
+        assert trace["rounds"], "强制搜应记录一轮"
+        assert trace["rounds"][0]["new_source_count"] == 0
+        assert trace["forced_search"][0]["trigger_reason"] == "absence_not_searched"
+
+
 @pytest.mark.unit
 def test_stream_normal_stop_marks_active_session_sufficient(monkeypatch, tmp_path):
     """流式正常结束（finish_reason=stop，无工具调用）应把 trace 标记为 sufficient 而非 cancelled。"""

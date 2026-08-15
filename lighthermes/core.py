@@ -495,10 +495,10 @@ class LightHermes:
         if not self._active_memory_is_builtin_search("search_memory"):
             self._log_forced_search_skip(session, trigger_reason, "no_builtin_search")
             return False
-        allow, skip_reason = session.ledger.should_force_search(session.can_search())
+        allow, force_reason = session.ledger.should_force_search(session.can_search())
         if not allow:
-            if skip_reason:
-                self._log_forced_search_skip(session, trigger_reason, skip_reason)
+            if force_reason:
+                self._log_forced_search_skip(session, trigger_reason, force_reason)
             return False
         query = session.build_rewrite_query() or session.trace.initial_query
         args = {"query": query, "layer": "all", "limit": 5}
@@ -511,7 +511,10 @@ class LightHermes:
             self._log_forced_search_skip(session, trigger_reason, f"search_error:{exc}")
             self._resolve_active_trace_error(session, query, "all", 5, str(exc), 0.0)
             return False
-        session.record_forced_search(trigger_reason, True, query=query, layer="all")
+        # trigger_reason 记归因（absence_*），停止点来源单列 trigger_site
+        session.record_forced_search(
+            force_reason, True, query=query, layer="all", trigger_site=trigger_reason
+        )
         session.observe_search(query, "all", 5, payload["results"], latency_ms)
         # 把原始结果快照交给调用方，调用方注入消息并交回模型。
         session.trace.metadata.setdefault("forced_results", []).append({
@@ -1310,7 +1313,7 @@ class LightHermes:
                     active_session, "non_stream_answer"
                 ):
                     params["messages"].append({
-                        "role": "user",
+                        "role": "system",
                         "content": self._forced_search_followup(active_session),
                     })
                     continue
@@ -1420,7 +1423,7 @@ class LightHermes:
                         active_session, "stream_answer"
                     ):
                         params["messages"].append({
-                            "role": "user",
+                            "role": "system",
                             "content": self._forced_search_followup(active_session),
                         })
                         continue_next_iteration = True
@@ -1484,7 +1487,7 @@ class LightHermes:
                     active_session, "stream_answer"
                 ):
                     params["messages"].append({
-                        "role": "user",
+                        "role": "system",
                         "content": self._forced_search_followup(active_session),
                     })
                     continue

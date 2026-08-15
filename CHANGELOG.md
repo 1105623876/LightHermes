@@ -1,5 +1,50 @@
 # LightHermes 开发日志
 
+## Unreleased - A/B 冻结前最小修复
+
+- ✅ 强制搜跟进由伪 `user` 消息改为 `system` 消息（不再污染轨迹/压缩/指令语义）
+- ✅ recall_items 中文 Jaccard 去重改用 `retrieval.tokenize_text`（原 split() 对中文只有 1 个 token）
+- ✅ `register_tool` 为 array 参数默认补 `items: {"type": "string"}`（兼容 OpenAI strict），允许显式覆盖
+- ✅ 合成场景测试钉死归因：冲突断言 `absence == evidence_conflict`、无新证据断言 `new_source_count == 0`；跟进文案改验 system 角色
+
+### 验证
+- ✅ 全量 pytest：`tests/`（220/220）
+
+---
+
+## Unreleased - 合成 case 端到端单测
+
+### 场景覆盖
+- ✅ `TestSyntheticScenario`（假模型 + 假记忆走完整 `run()`）：
+  - 强制搜：not_searched 停答被拦截 → 系统自搜 → followup 交回模型改口
+  - 冲突：judge_claim 报 conflict → 停答点强制再搜 → 模型最终收尾
+  - 无新证据：强制搜命中 seed 同源 → 停止，不无限强制
+- ✅ 新增 `ScriptedAdapter` 可编排多轮响应，记录每次 create 的 messages 供断言
+
+### 归因修正（审查反馈）
+- ✅ `forced_search.trigger_reason` 改为记录**归因**（`absence_not_searched` / `absence_evidence_conflict`），停止点来源单列 `trigger_site`
+- ✅ 冲突用例补强：claim 与初 query 一致，断言账本 conflict 且 `trigger_reason == absence_evidence_conflict`
+- ✅ 无新证据用例补强：开 trace，断言 `stop_reason == no_new_evidence` 且强制搜轮 `new_source_count == 0`
+
+### 验证
+- ✅ 全量 pytest：`tests/`（217/217）
+
+---
+
+## Unreleased - 3.3a 抽象/原文分流（最小闭环）
+
+### 记忆表征
+- ✅ 新增 `derive_abstract()`：首句/首段派生检索摘要，不改写原文
+- ✅ 情景/语义记忆写入时 `abstract ≠ raw`；工作记忆摘要即为 abstract
+- ✅ 检索统一打 abstract：TF-IDF 初筛、embedding 重排、episodic/semantic 关键词匹配
+- ✅ `search_memory` / `recall_items` 返回 `abstract` 字段；`read_memory` / `get_source` 走原文 `content`
+- ✅ 验收（`TestAbstractRawSeparation` 4 项）：同一条记忆，检索命中文本 ≠ 回答展示原文
+
+### 验证
+- ✅ 全量 pytest：`tests/`（214/214）
+
+---
+
 ## Unreleased - 停答点确定性 trigger（A/B 准入）
 
 ### 决策与文档

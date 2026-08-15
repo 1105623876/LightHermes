@@ -11,6 +11,7 @@ from lighthermes.memory import (
     ShortTermMemory,
     SemanticMemory,
     build_memory_context_block,
+    derive_abstract,
     parse_memory_file_content,
     sanitize_memory_context
 )
@@ -413,6 +414,17 @@ class TestMemoryManager:
 
         assert [item["source"] for item in items] == ["working:target"]
 
+    def test_chinese_near_duplicate_recall_dedupes_with_tokenize(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        # 两句只差「使/采」，无空格 → split() 会把整句当 1 个 token 判不相似；
+        # tokenize_text 按单字切才会判相似。
+        mm.save_episodic("a", "用户偏好中文回复，界面使用中文语言。", {"type": "pref"})
+        mm.save_episodic("b", "用户偏好中文回复，界面采用中文语言。", {"type": "pref"})
+
+        items = mm.recall_items("用户偏好中文", layers=["episodic"], limit=5)
+
+        assert len(items) == 1
+
     def test_search_memory_filters_layer_and_metadata(self, temp_memory_dir):
         mm = MemoryManager(
             memory_dir=temp_memory_dir,
@@ -606,6 +618,51 @@ class TestMemoryManager:
         assert memory["metadata"]["type"] == "distilled_semantic"
         assert memory["metadata"]["distilled_from"] == "failure_report_bad_config"
         assert memory["metadata"]["source_layer"] == "episodic"
+
+
+@pytest.mark.unit
+class TestAbstractRawSeparation:
+    """3.3a 最小闭环验收：检索命中所用文本（abstract）≠ 回答展示原文（content）。"""
+
+    LONG_CONTENT = (
+        "项目采用分级记忆架构。短期记忆保存当前对话。"
+        "工作记忆保存会话摘要。情景记忆保存任务事件。语义记忆保存稳定事实。"
+    )
+
+    def test_derive_abstract_takes_first_sentence(self):
+        abstract = derive_abstract(self.LONG_CONTENT)
+        assert abstract == "项目采用分级记忆架构。"
+        assert abstract != self.LONG_CONTENT
+
+    def test_recall_hits_abstract_but_read_returns_raw(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.save_semantic("arch", self.LONG_CONTENT, {"type": "project_fact"})
+
+        items = mm.recall_items("分级记忆架构", layers=["semantic"], limit=5)
+        assert items, "应通过首句 abstract 命中"
+        item = items[0]
+        assert item["content"] == self.LONG_CONTENT  # content 保留原文
+        assert item["abstract"] == "项目采用分级记忆架构。"
+        assert item["abstract"] != item["content"]
+
+    def test_search_memory_exposes_abstract_field(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.save_episodic("debug", self.LONG_CONTENT, {"type": "task"})
+
+        results = mm.search_memory("记忆架构", layer="episodic", limit=5)
+        assert results
+        assert results[0]["content"] == self.LONG_CONTENT
+        assert results[0]["abstract"] == "项目采用分级记忆架构。"
+
+    def test_get_source_reads_raw_content_with_short_abstract(self, temp_memory_dir):
+        mm = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
+        mm.save_semantic("stable_fact", self.LONG_CONTENT, {"type": "project_fact"})
+
+        payload = mm.get_source("semantic:stable_fact")
+        assert payload["found"] is True
+        assert payload["content"] == self.LONG_CONTENT  # 原文
+        assert payload["abstract"] == "项目采用分级记忆架构。"
+        assert payload["abstract"] != payload["content"]
 
 
 @pytest.mark.unit

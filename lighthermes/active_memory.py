@@ -566,21 +566,23 @@ class ActiveRecallSession:
         would_have_stopped_early: bool,
         query: str = "",
         layer: str = "all",
+        trigger_site: str = "",
     ):
-        """记录停答点被确定性 trigger 拦截的强制搜索，并复盘 anechoic 结局。"""
+        """记录停答点被确定性 trigger 拦截的强制搜索，并复盘 anechoic 结局。
+
+        trigger_reason 是归因（absence_not_searched / absence_evidence_conflict），
+        trigger_site 是停止点来源（non_stream_answer / stream_answer）。
+        """
         self.trace.forced_search.append({
             "round": len(self.trace.rounds) + 1,
             "trigger_reason": str(trigger_reason or "unknown"),
+            "trigger_site": str(trigger_site or ""),
             "query": str(query or ""),
             "layer": str(layer or "all"),
             "would_have_stopped_early": bool(would_have_stopped_early),
             "absence": self.ledger.absence_state(),
             "coverage": float(self.ledger.coverage or 0.0),
         })
-        self.trace.would_have_stopped_early = bool(
-            self.trace.would_have_stopped_early or would_have_stopped_early
-        )
-        self.trace.ledger = self.ledger.to_dict()
 
     def build_rewrite_query(self, max_len: int = 160) -> str:
         """从未解决 claim 与 cue anchors 生成确定性改写，供下一轮 search 参考。"""

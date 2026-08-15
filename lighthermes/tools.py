@@ -43,10 +43,14 @@ class ToolDispatcher:
         tool_params = {}
         tool_required = []
         for param in tool_info["tool_params"]:
-            tool_params[param["name"]] = {
+            schema = {
                 "type": param["type"],
                 "description": param["description"],
             }
+            if param["type"] == "array":
+                # OpenAI strict 与部分兼容端点要求 array 显式带 items；调用方可覆盖。
+                schema["items"] = param.get("items", {"type": "string"})
+            tool_params[param["name"]] = schema
             if param["required"]:
                 tool_required.append(param["name"])
 

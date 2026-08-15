@@ -47,8 +47,8 @@
 
 1. ✅ 停答点确定性 trigger + trace（决策 1）——已完成，含空结果/错误/覆盖/无 dispatcher 场景的 core 测试。
 2. ✅ 冻结宣言（决策 3）——半页纸短文已落 `docs/FREEZE_COMMITMENT.md`；真正锁参见第 5 条。
-3. ⬜ abstract/cue 检索、原文回答最小闭环（决策 2，即 3.3a）。
-4. ⬜ 合成 case 单测（强制搜、冲突、无新证据）。
+3. ✅ abstract/cue 检索、原文回答最小闭环（决策 2，即 3.3a）——已完成。
+4. ✅ 合成 case 单测（强制搜、冲突、无新证据）——`TestSyntheticScenario` 3 项端到端通过。
 5. ⬜ 策略冻结 → static / agentic A/B → holdout 一次。
 
 静态臂测召回，主动臂测 trigger+召回；两侧表征相同，结果才拆得开。
@@ -259,10 +259,10 @@
 
 借鉴 Primary Abstraction + Cue Anchors 思路，但不引入独立 MEMORY 模型或重型知识图谱。
 
-- [ ] 写入时 `abstract ≠ raw`：工作记忆已有摘要；情景/语义至少「摘要/首句」与原文分离
-- [ ] 检索打「abstract + cue_anchors」；召回行不再等于原文行
-- [ ] 回答/验证走已有点 `read_memory` 原文
-- [ ] **验收**：同一条记忆，检索命中所用文本 ≠ 回答展示的原文（当前 episodic/semantic `abstract = content` 过不了）
+- [x] 写入时 `abstract ≠ raw`：情景/语义「首句摘要」与原文分离（`derive_abstract`）
+- [x] 检索打「abstract + cue_anchors」；TF-IDF + embedding + 层级关键词匹配都吃 abstract
+- [x] 回答/验证走已有点 `read_memory` / `get_source` 原文
+- [x] **验收**：同一条记忆，检索命中所用文本（abstract）≠ 回答展示原文（content）；`TestAbstractRawSeparation` 4 项覆盖
 
 #### 3.3b 完整表征（A/B 之后）
 
@@ -410,7 +410,7 @@ LoCoMo 40 题只作为已见开发基线，不作为 v0.4.0 的单一优化目�
 ### 质量保证
 - **测试先行**: 主动召回状态机、预算停止、候选融合、来源展开和降级检测先补测试
 - **边界验证**: 重点覆盖索引同步、幂等性、容量限制、显式失败、调用预算和敏感信息边界
-- **基线稳定**: 当前测试基线为 210/210；每个功能完成后跑 `pytest tests/`
+- **基线稳定**: 当前测试基线为 220/220；每个功能完成后跑 `pytest tests/`
 - **真实评测隔离**: benchmark 使用独立记忆、独立缓存和合成/公开数据，不读取真实用户记忆
 
 ---

@@ -57,13 +57,18 @@ class TFIDFRetriever:
         self.documents = documents
         self._compute_idf()
 
+    @staticmethod
+    def _doc_text(doc: Dict[str, Any]) -> str:
+        """检索打 abstract（摘要），缺失时回落到 content；原文不参与打分。"""
+        return str(doc.get("abstract") or doc.get("content", "") or "")
+
     def _compute_idf(self):
         """计算 IDF"""
         doc_count = len(self.documents)
         word_doc_count = Counter()
 
         for doc in self.documents:
-            words = set(self._tokenize(doc["content"]))
+            words = set(self._tokenize(self._doc_text(doc)))
             for word in words:
                 word_doc_count[word] += 1
 
@@ -78,7 +83,7 @@ class TFIDFRetriever:
         scores = []
 
         for doc in self.documents:
-            content_words = self._tokenize(doc["content"])
+            content_words = self._tokenize(self._doc_text(doc))
             word_count = Counter(content_words)
 
             score = 0
@@ -209,7 +214,10 @@ class EmbeddingRetriever:
         if not documents:
             return []
 
-        document_texts = [doc["content"][:500] for doc in documents]
+        document_texts = [
+            str(doc.get("abstract") or doc.get("content", "") or "")[:500]
+            for doc in documents
+        ]
         embeddings = self.embed_many([query, *document_texts])
         query_embedding = embeddings[0]
         scores = []

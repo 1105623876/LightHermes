@@ -82,6 +82,20 @@ def parse_memory_file(file_path: str) -> Optional[Dict[str, Any]]:
     return parse_memory_file_content(content)
 
 
+def derive_abstract(content: str, max_chars: int = 200) -> str:
+    """取首句/首段作为检索摘要；不改变原文。
+
+    3.3a 最小闭环：检索打 abstract（首句），原文走 read_memory。单句内容
+    摘要等于原文，属可接受退化——没有更短且保语义的文本可选。
+    """
+    text = str(content or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"[。！？!?.\n]", text)
+    head = text[:match.end()].strip() if match else text
+    return head[:max_chars].strip() or text[:max_chars].strip()
+
+
 class MemoryStats:
     """记忆统计 - 追踪各层级命中率"""
 
@@ -522,11 +536,13 @@ class EpisodicMemory:
             if not memory:
                 continue
 
-            content_tokens = set(self.index._tokenize(memory["content"]))
+            search_text = memory.get("abstract") or derive_abstract(memory.get("content", ""))
+            content_tokens = set(self.index._tokenize(search_text))
             matches = len(query_tokens & content_tokens)
             if matches > 0:
                 memory["name"] = name
                 memory["score"] = matches
+                memory["abstract"] = memory.get("abstract") or derive_abstract(memory.get("content", ""))
                 results.append(memory)
 
         results.sort(key=lambda item: item.get("score", 0), reverse=True)
@@ -649,6 +665,7 @@ class SemanticMemory:
             memory = self._parse_memory(content)
             if memory:
                 memory["name"] = file_path.stem
+                memory["abstract"] = memory.get("abstract") or derive_abstract(memory.get("content", ""))
                 documents.append(memory)
 
         self._hybrid_documents = documents
@@ -879,13 +896,15 @@ class SemanticMemory:
             memory = self.load(name)
 
             if memory:
-                # 使用相同的分词逻辑
-                content_tokens = set(self.index._tokenize(memory["content"]))
+                # 检索打 abstract（首句摘要），原文留给 read_memory
+                search_text = memory.get("abstract") or derive_abstract(memory.get("content", ""))
+                content_tokens = set(self.index._tokenize(search_text))
 
                 matches = len(query_tokens & content_tokens)
                 if matches > 0:
                     memory["name"] = name
                     memory["score"] = matches
+                    memory["abstract"] = memory.get("abstract") or derive_abstract(memory.get("content", ""))
                     results.append(memory)
 
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -1114,12 +1133,15 @@ class MemoryManager:
         score: int = 0,
         priority: int = 0,
         metadata: Dict[str, Any] = None,
-        source: str = ""
+        source: str = "",
+        abstract: str = ""
     ) -> Dict[str, Any]:
         return {
             "layer": layer,
             "name": name,
             "content": content,
+            # abstract 是检索摘要（首句），content 是原文；二者分流是 3.3a 验收线。
+            "abstract": str(abstract or "") or derive_abstract(content),
             "score": score,
             "priority": priority,
             "metadata": metadata or {},
@@ -1237,7 +1259,8 @@ class MemoryManager:
                     score=memory.get("score", 0),
                     priority=2,
                     metadata=memory.get("metadata", {}),
-                    source=f"episodic:{name}"
+                    source=f"episodic:{name}",
+                    abstract=memory.get("abstract", "")
                 ))
             self.stats.record_hit("episodic", len(episodic_results), time.time() - start_time)
 
@@ -1252,7 +1275,8 @@ class MemoryManager:
                     score=memory.get("score", 0),
                     priority=1,
                     metadata=memory.get("metadata", {}),
-                    source=f"semantic:{name}"
+                    source=f"semantic:{name}",
+                    abstract=memory.get("abstract", "")
                 ))
             self.stats.record_hit("semantic", len(semantic_results), time.time() - start_time)
 
@@ -1263,8 +1287,8 @@ class MemoryManager:
             memories = self._limit_hybrid_working_context(reranked_memories)
 
         def jaccard_similarity(text1: str, text2: str) -> float:
-            words1 = set(text1.lower().split())
-            words2 = set(text2.lower().split())
+            words1 = set(tokenize_text(text1))
+            words2 = set(tokenize_text(text2))
             if not words1 or not words2:
                 return 0.0
             return len(words1 & words2) / len(words1 | words2)
@@ -1370,6 +1394,7 @@ class MemoryManager:
                 "layer": item["layer"],
                 "name": item["name"],
                 "content": item["content"],
+                "abstract": item.get("abstract", ""),
                 "score": item.get("score", 0),
                 "source": item.get("source", ""),
             }
@@ -1439,7 +1464,7 @@ class MemoryManager:
                 return None
             content = memory.get("content", "")
             return {
-                "abstract": content,
+                "abstract": memory.get("abstract") or derive_abstract(content),
                 "content": content,
                 "metadata": memory.get("metadata", {}) or {},
             }
@@ -1449,7 +1474,7 @@ class MemoryManager:
                 return None
             content = memory.get("content", "")
             return {
-                "abstract": content,
+                "abstract": memory.get("abstract") or derive_abstract(content),
                 "content": content,
                 "metadata": memory.get("metadata", {}) or {},
             }

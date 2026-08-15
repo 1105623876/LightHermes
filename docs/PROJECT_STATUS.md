@@ -7,7 +7,7 @@
 
 ## 当前基线
 
-- **测试**: 210/210 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 220/220 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -33,7 +33,7 @@
 
 ### 评测与稳定性
 
-- 210 项单元、集成与性能测试
+- 220 项单元、集成与性能测试
 - Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
 - LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
 - 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%
@@ -107,10 +107,20 @@
 - trace 新增触发与可归因字段（`forced_search`、`would_have_stopped_early`）
 - 强制搜失败不炸回答路径；无内置 `search_memory` 时显式跳过并记录 `forced_search_skip`
 
-### 下一步：3.3a 最小闭环
+### 已完成：3.3a 最小闭环（抽象/原文分流）
 
-- 写入时 `abstract ≠ raw`；检索打 `abstract + cue_anchors`；回答走 `read_memory` 原文（见 ROADMAP 当前结论决策 2）
-- 冻结宣言已落 `docs/FREEZE_COMMITMENT.md`；A/B 开跑前按五条锁死策略，再跑 static / agentic A/B 与阶段错误诊断
+- `derive_abstract()` 取首句作为检索摘要；情景/语义写入时 abstract ≠ 原文
+- 检索统一打 abstract：TF-IDF 初筛 + embedding 重排 + episodic/semantic 关键词匹配
+- `search_memory` / `recall_items` 返回 `abstract` 字段；`read_memory` / `get_source` 走原文 `content`
+- 验收：同一条记忆，检索命中所用文本 ≠ 回答展示原文（`TestAbstractRawSeparation`）
+
+### 已完成：合成 case 端到端单测
+
+- `TestSyntheticScenario`：强制搜（not_searched 停答拦截）、冲突（judge_claim conflict 后强制再搜）、无新证据（搜到同源后停止，不无限强制）
+
+### 下一步：策略冻结 → A/B
+
+- 按 `docs/FREEZE_COMMITMENT.md` 五条锁死策略，再跑 static / agentic A/B 与阶段错误诊断
 - 冻结策略后运行验证集、holdout 与结构不同的工作流回放
 - 将工具成功、失败、成本与延迟接入可追溯的经验记录，再决定是否固化为技能
 
