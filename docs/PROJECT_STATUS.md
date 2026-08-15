@@ -7,7 +7,7 @@
 
 ## 当前基线
 
-- **测试**: 192/192 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 200/200 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -33,7 +33,7 @@
 
 ### 评测与稳定性
 
-- 177 项单元、集成与性能测试
+- 200 项单元、集成与性能测试
 - Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
 - LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
 - 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%

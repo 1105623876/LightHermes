@@ -15,7 +15,7 @@
 - ✅ cue 来自记录的 `cue_anchors`、`entities` 和 `name`，不做 NLI、不强制改写最终自然语言回答
 
 ### 验证
-- ✅ 全量 pytest：`tests/`（192/192）
+- ✅ 全量 pytest：`tests/`（200/200；含 8/14 回退加固新增用例）
 
 ---
 
