@@ -9,6 +9,7 @@ category 5 is intentionally excluded from the lightweight run.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import random
@@ -17,6 +18,7 @@ import string
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
@@ -182,13 +184,15 @@ def build_session_documents(sample: dict[str, Any]) -> list[dict[str, Any]]:
                 text = f"{text} [Image: {caption}]".strip()
             dialogue_lines.append(f"{turn.get('speaker', 'unknown')}: {text}")
 
-        content_parts = [f"Session date: {timestamp}"]
-        if summary:
-            content_parts.append(f"Session summary: {summary}")
+        # 检索打整段 session summary；回答/验证走日期+原文对话，不回退全文混检索。
+        content_parts = []
+        if timestamp:
+            content_parts.append(f"Session date: {timestamp}")
         content_parts.append("Dialogue:\n" + "\n".join(dialogue_lines))
         documents.append({
             "name": session_key,
             "content": "\n".join(content_parts),
+            "abstract": str(summary or "").strip(),
             "metadata": {
                 "type": "locomo_session",
                 "session_id": session_key,
@@ -284,7 +288,7 @@ def create_memory(
         semantic_max_chars=2_000_000,
         use_hybrid_retrieval=True,
         embedding_provider=embedding.get("provider", "openai"),
-        embedding_model=embedding.get("model_name", "text-embedding-3-small"),
+        embedding_model=resolved(embedding.get("model_name", "text-embedding-3-small")),
         api_key=resolved(embedding.get("api_key")),
         embedding_base_url=resolved(embedding.get("base_url")),
         embedding_cache_file=(
@@ -304,14 +308,17 @@ def create_model_adapter(config: dict[str, Any]):
     model = config.get("model", {})
     return get_adapter(
         provider=model.get("provider", "openai"),
-        model=model.get("model_name", "gpt-5.4-mini"),
+        model=resolved(model.get("model_name", "gpt-4o-mini")),
         api_key=resolved(model.get("api_key")),
         base_url=resolved(model.get("base_url")),
     )
 
 
 def call_model(adapter: Any, messages: list[dict[str, str]], max_tokens: int) -> Any:
-    return adapter.create(messages=messages, stream=False, max_tokens=max_tokens)
+    response = adapter.create(messages=messages, stream=False, max_tokens=max_tokens)
+    if isinstance(response, str):
+        raise RuntimeError(f"模型接口返回了非 ChatCompletion：{response[:180]!r}")
+    return response
 
 
 def answer_question(adapter: Any, question: str, context: str) -> Any:
@@ -320,10 +327,7 @@ def answer_question(adapter: Any, question: str, context: str) -> Any:
         [
             {
                 "role": "system",
-                "content": (
-                    "Answer from the supplied conversation memories. Be concise and "
-                    "specific. Resolve dates from timestamps. Do not invent unsupported facts."
-                ),
+                "content": STATIC_ANSWER_INSTRUCTION,
             },
             {
                 "role": "user",
@@ -353,7 +357,7 @@ def judge_answer(adapter: Any, question: str, gold: str, generated: str) -> Any:
                 ),
             },
         ],
-        max_tokens=32,
+        max_tokens=128,
     )
 
 
@@ -388,144 +392,478 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
     temp_path.replace(path)
 
 
+STATIC_ANSWER_INSTRUCTION = (
+    "Answer from the supplied conversation memories. Be concise and "
+    "specific. Resolve dates from timestamps. Do not invent unsupported facts."
+)
+
+
+def freeze_snapshot(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """A/B 冻结清单：只记可复现设置，不写密钥。"""
+    model = config.get("model", {})
+    embedding = config.get("embedding", {})
+    hybrid = config.get("memory", {}).get("hybrid_retrieval", {})
+    return {
+        "date": "2026-08-15",
+        "split": "locomo_dev_stratified",
+        "holdout": False,
+        "stream": False,
+        "seed": int(args.seed),
+        "per_category": int(args.per_category),
+        "categories": list(CATEGORY_NAMES.values()),
+        "top_k": int(args.top_k),
+        "max_context_chars": int(args.max_context_chars),
+        "model": resolved(model.get("model_name")),
+        "model_provider": model.get("provider", "openai"),
+        "base_url": resolved(model.get("base_url")),
+        "embedding_model": resolved(embedding.get("model_name")),
+        "embedding_base_url": resolved(embedding.get("base_url")),
+        "hybrid_semantic_threshold": hybrid.get("semantic_threshold"),
+        "hybrid_score_margin": hybrid.get("score_margin"),
+        "trigger": (
+            "should_force_search: can_search and coverage<1 "
+            "and absence in {not_searched, evidence_conflict}"
+        ),
+        "static_arm": "recall_items Top-K + dedicated QA prompt; no active_recall",
+        "agentic_arm": (
+            "LightHermes.run non-stream, active_recall=true, runtime forced search; "
+            "same answering instruction as static"
+        ),
+        "judge": "CORRECT/WRONG, wording-generous, one shot",
+    }
+
+
+def compare_arm_summaries(
+    static_summary: dict[str, Any],
+    agentic_summary: dict[str, Any],
+) -> dict[str, Any]:
+    def delta(metric: str) -> dict[str, Any]:
+        left = static_summary.get("overall", {}).get(metric)
+        right = agentic_summary.get("overall", {}).get(metric)
+        change = None
+        if left is not None and right is not None:
+            change = (float(right) - float(left)) * 100
+        return {"static": left, "agentic": right, "delta_pp": change}
+
+    return {
+        "judge_accuracy": delta("judge_accuracy"),
+        "retrieval_hit_rate": delta("retrieval_hit_rate"),
+        "evidence_recall": delta("evidence_recall"),
+        "token_f1": delta("token_f1"),
+        "avg_latency_ms": {
+            "static": static_summary.get("overall", {}).get("avg_latency_ms"),
+            "agentic": agentic_summary.get("overall", {}).get("avg_latency_ms"),
+        },
+    }
+
+
+def latest_trace(trace_dir: Path) -> dict[str, Any] | None:
+    files = sorted(trace_dir.glob("*.json"), key=lambda path: path.stat().st_mtime)
+    if not files:
+        return None
+    return json.loads(files[-1].read_text(encoding="utf-8"))
+
+
+def items_from_sources(memory: MemoryManager, source_ids: Iterable[str]) -> list[dict[str, Any]]:
+    items = []
+    for source in source_ids:
+        record = memory.get_source(str(source or ""))
+        if record.get("found"):
+            items.append({"metadata": record.get("metadata") or {}})
+    return items
+
+
+def create_runtime_agent(
+    config_path: Path,
+    config: dict[str, Any],
+    memory_dir: Path,
+    embedding_cache_file: Path,
+    trace_dir: Path,
+) -> LightHermes:
+    cfg = copy.deepcopy(config)
+    memory_cfg = cfg.setdefault("memory", {})
+    active = memory_cfg.setdefault("active_recall", {})
+    active["enabled"] = True
+    active["persist_traces"] = True
+    active["trace_dir"] = str(trace_dir)
+    hybrid = memory_cfg.setdefault("hybrid_retrieval", {})
+    hybrid["enabled"] = True
+    hybrid["strict_hybrid_retrieval"] = True
+    hybrid["full_rerank_max_docs"] = 1000
+    memory_cfg.setdefault("retention", {})["semantic_max_chars"] = 2_000_000
+    cfg["evolution"] = {"enabled": False}
+    cfg["context_compression"] = {"enabled": False}
+    cfg.setdefault("skills", {})["dirs"] = []
+    cfg["logging"] = {"level": "ERROR", "file": None, "debug": False}
+    return LightHermes.from_config(
+        str(config_path),
+        config=cfg,
+        name="locomo-ab",
+        role=STATIC_ANSWER_INSTRUCTION,
+        memory_dir=str(memory_dir),
+        evolution_enabled=False,
+        skill_dirs=[],
+        embedding_cache_file=str(embedding_cache_file),
+    )
+
+
+def populate_memory(
+    memory: MemoryManager,
+    documents: list[dict[str, Any]],
+) -> None:
+    for document in documents:
+        metadata = dict(document.get("metadata") or {})
+        abstract = " ".join(str(document.get("abstract") or "").split())
+        if abstract:
+            metadata["abstract"] = abstract
+        memory.save_semantic(
+            document["name"],
+            document["content"],
+            metadata,
+        )
+
+
+def retrieved_preview(retrieved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "rank": rank,
+            "name": item.get("name"),
+            "score": item.get("score"),
+            "session_id": item.get("metadata", {}).get("session_id"),
+        }
+        for rank, item in enumerate(retrieved, 1)
+    ]
+
+
+def grade_answer(
+    adapter: Any,
+    usage: UsageTotals,
+    question: str,
+    gold: str,
+    generated: str,
+) -> dict[str, Any]:
+    judge_response = judge_answer(adapter, question, gold, generated)
+    usage.add_response(judge_response)
+    judge_text = response_text(judge_response)
+    return {
+        "generated_answer": generated,
+        "token_f1": token_f1(generated, gold),
+        "judge_correct": parse_judge_label(judge_text),
+        "judge_response": judge_text,
+    }
+
+
+def run_static_case(
+    memory: MemoryManager,
+    adapter: Any | None,
+    usage: UsageTotals,
+    case: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    retrieved = memory.recall_items(
+        case["question"],
+        layers=["semantic"],
+        limit=args.top_k,
+        max_chars=args.max_context_chars,
+    )
+    result = {
+        **case,
+        "arm": "static",
+        "category_name": CATEGORY_NAMES[case["category"]],
+        "retrieval": retrieval_metrics(retrieved, case["evidence"]),
+        "retrieved": retrieved_preview(retrieved),
+    }
+    if adapter is not None:
+        context = "\n\n".join(item["content"] for item in retrieved)
+        answer_response = answer_question(adapter, case["question"], context)
+        usage.add_response(answer_response)
+        result.update(grade_answer(
+            adapter, usage, case["question"], case["answer"],
+            response_text(answer_response),
+        ))
+        result["model_calls"] = 1
+    return result
+
+
+def run_agentic_case(
+    config_path: Path,
+    config: dict[str, Any],
+    documents: list[dict[str, Any]],
+    adapter: Any,
+    usage: UsageTotals,
+    case: dict[str, Any],
+    args: argparse.Namespace,
+    memory_dir: Path,
+    embedding_cache_file: Path,
+    trace_dir: Path,
+) -> dict[str, Any]:
+    agent = create_runtime_agent(
+        config_path, config, memory_dir, embedding_cache_file, trace_dir,
+    )
+    populate_memory(agent.memory, documents)
+    # agent.run 内部走 agent.adapter.create，包装计数，让模型调用与 token 进 UsageTotals。
+    raw_create = agent.adapter.create
+
+    def counted_create(**kwargs):
+        response = raw_create(**kwargs)
+        usage.add_response(response)
+        return response
+
+    agent.adapter.create = counted_create
+    seed = agent.memory.recall_items(
+        case["question"],
+        layers=["semantic"],
+        limit=args.top_k,
+        max_chars=args.max_context_chars,
+    )
+    generated = agent.run(
+        case["question"],
+        stream=False,
+        session_id=f"ab-{case['conversation_index']}-{case['qa_index']}",
+        max_iterations=6,
+    )
+    if not isinstance(generated, str):
+        generated = "".join(generated)
+    trace = latest_trace(trace_dir) or {}
+    seen_sources = list(trace.get("ledger", {}).get("seen_sources") or [])
+    # 主比对指标必须和 static 同口径：都用 seed Top-K 算，不再用 ledger 反推。
+    seed_retrieval = retrieval_metrics(seed, case["evidence"])
+    # ledger 覆盖仅作诊断，展示主动搜索最终把哪些来源纳入账本，不参与 A/B 对比。
+    covered = items_from_sources(agent.memory, seen_sources) if seen_sources else seed
+    result = {
+        **case,
+        "arm": "agentic",
+        "category_name": CATEGORY_NAMES[case["category"]],
+        "retrieval": seed_retrieval,
+        "seed_retrieval": seed_retrieval,
+        "ledger_retrieval": retrieval_metrics(covered, case["evidence"]),
+        "ledger_sources": seen_sources,
+        "retrieved": retrieved_preview(seed),
+        "model_calls": int(getattr(agent, "api_call_count", 0) or 0),
+        "agent_tokens": int(getattr(agent, "total_tokens_used", 0) or 0),
+        "stop_reason": trace.get("stop_reason"),
+        "forced_search": trace.get("forced_search") or [],
+        "forced_search_skip": (trace.get("metadata") or {}).get("forced_search_skip") or [],
+        "absence": (trace.get("ledger") or {}).get("absence"),
+    }
+    result.update(grade_answer(
+        adapter, usage, case["question"], case["answer"], generated,
+    ))
+    return result
+
+
+def empty_error_result(case: dict[str, Any], arm: str, exc: Exception, started: float) -> dict[str, Any]:
+    return {
+        **case,
+        "arm": arm,
+        "category_name": CATEGORY_NAMES[case["category"]],
+        "retrieval": {"evidence_count": 0, "hit": None, "recall": None, "rr": None},
+        "error": f"{type(exc).__name__}: {exc}",
+        "latency_ms": (time.perf_counter() - started) * 1000,
+    }
+
+
 def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     config_path = Path(args.config).resolve()
     data_path = Path(args.data_path).resolve()
     output_path = Path(args.output).resolve()
     embedding_cache_file = Path(args.embedding_cache).resolve()
     config = load_config(config_path)
+    if args.mode in {"qa", "ab"}:
+        if not resolved(config.get("model", {}).get("api_key")):
+            raise ValueError("缺少 LIGHTHERMES_API_KEY（或 config model.api_key）")
+        if not resolved(config.get("model", {}).get("model_name")):
+            raise ValueError("缺少 LIGHTHERMES_MODEL")
+        if not resolved(config.get("model", {}).get("base_url")):
+            raise ValueError("缺少 LIGHTHERMES_BASE_URL")
     dataset = load_dataset(data_path)
     cases = stratified_sample(dataset, args.per_category, args.seed)
     cases_by_conversation: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for case in cases:
         cases_by_conversation[case["conversation_index"]].append(case)
 
-    usage = UsageTotals()
-    adapter = create_model_adapter(config) if args.mode == "qa" else None
-    results: list[dict[str, Any]] = []
+    static_usage = UsageTotals()
+    agentic_usage = UsageTotals()
+    adapter = create_model_adapter(config) if args.mode in {"qa", "ab"} else None
+    static_results: list[dict[str, Any]] = []
+    agentic_results: list[dict[str, Any]] = []
     started_at = time.time()
     consecutive_errors = 0
+    freeze = freeze_snapshot(config, args)
+
+    def persist(status: str = "completed", error: str | None = None) -> dict[str, Any]:
+        if args.mode == "ab":
+            report = {
+                "status": status,
+                "freeze": freeze,
+                "settings": vars(args),
+                "arms": {
+                    "static": {
+                        "summary": summarize_results(static_results),
+                        "usage": asdict(static_usage),
+                        "estimated_cost_usd": static_usage.estimated_cost(
+                            args.input_price, args.output_price
+                        ),
+                        "results": static_results,
+                    },
+                    "agentic": {
+                        "summary": summarize_results(agentic_results),
+                        "usage": asdict(agentic_usage),
+                        "estimated_cost_usd": agentic_usage.estimated_cost(
+                            args.input_price, args.output_price
+                        ),
+                        "results": agentic_results,
+                    },
+                },
+                "comparison": compare_arm_summaries(
+                    summarize_results(static_results),
+                    summarize_results(agentic_results),
+                ),
+                "elapsed_seconds": time.time() - started_at,
+            }
+        else:
+            results = static_results
+            usage = static_usage
+            report = {
+                "status": status,
+                "settings": vars(args),
+                "summary": summarize_results(results),
+                "usage": asdict(usage),
+                "estimated_cost_usd": usage.estimated_cost(
+                    args.input_price, args.output_price
+                ),
+                "elapsed_seconds": time.time() - started_at,
+                "results": results,
+            }
+        if error:
+            report["error"] = error
+        write_report(output_path, report)
+        return report
 
     with tempfile.TemporaryDirectory(prefix="lighthermes-locomo-") as temp_dir:
         original_cwd = Path.cwd()
         os.chdir(temp_dir)
         try:
             for conversation_index, conversation_cases in sorted(cases_by_conversation.items()):
-                memory = create_memory(
-                    Path(temp_dir) / f"conversation-{conversation_index}",
-                    config,
-                    embedding_cache_file,
-                )
-                for document in build_session_documents(dataset[conversation_index]):
-                    memory.save_semantic(
-                        document["name"],
-                        document["content"],
-                        document["metadata"],
+                try:
+                    documents = build_session_documents(dataset[conversation_index])
+                    static_memory = create_memory(
+                        Path(temp_dir) / f"conversation-{conversation_index}",
+                        config,
+                        embedding_cache_file,
                     )
+                    populate_memory(static_memory, documents)
+                except Exception as exc:
+                    traceback.print_exc()
+                    persist("failed", f"setup conversation {conversation_index}: {type(exc).__name__}: {exc}")
+                    raise
 
                 for case in conversation_cases:
-                    case_started = time.perf_counter()
-                    try:
-                        retrieved = memory.recall_items(
-                            case["question"],
-                            layers=["semantic"],
-                            limit=args.top_k,
-                            max_chars=args.max_context_chars,
-                        )
-                        metrics = retrieval_metrics(retrieved, case["evidence"])
-                        result = {
-                            **case,
-                            "category_name": CATEGORY_NAMES[case["category"]],
-                            "retrieval": metrics,
-                            "retrieved": [
-                                {
-                                    "rank": rank,
-                                    "name": item.get("name"),
-                                    "score": item.get("score"),
-                                    "session_id": item.get("metadata", {}).get("session_id"),
-                                }
-                                for rank, item in enumerate(retrieved, 1)
-                            ],
-                        }
-
-                        if adapter is not None:
-                            context = "\n\n".join(item["content"] for item in retrieved)
-                            answer_response = answer_question(adapter, case["question"], context)
-                            usage.add_response(answer_response)
-                            generated = response_text(answer_response)
-                            judge_response = judge_answer(
-                                adapter,
-                                case["question"],
-                                case["answer"],
-                                generated,
+                    if args.mode in {"retrieval", "qa"}:
+                        case_started = time.perf_counter()
+                        try:
+                            result = run_static_case(
+                                static_memory, adapter, static_usage, case, args
                             )
-                            usage.add_response(judge_response)
-                            judge_text = response_text(judge_response)
-                            result.update({
-                                "generated_answer": generated,
-                                "token_f1": token_f1(generated, case["answer"]),
-                                "judge_correct": parse_judge_label(judge_text),
-                                "judge_response": judge_text,
-                            })
+                            result["latency_ms"] = (time.perf_counter() - case_started) * 1000
+                            static_results.append(result)
+                            consecutive_errors = 0
+                            print(
+                                f"[{len(static_results)}/{len(cases)}] "
+                                f"{result['category_name']} hit={result['retrieval']['hit']} "
+                                f"judge={result.get('judge_correct')}",
+                                flush=True,
+                            )
+                        except HybridRetrievalError as exc:
+                            static_results.append(
+                                empty_error_result(case, "static", exc, case_started)
+                            )
+                            persist("failed", f"{type(exc).__name__}: {exc}")
+                            raise
+                        except Exception as exc:
+                            consecutive_errors += 1
+                            static_results.append(
+                                empty_error_result(case, "static", exc, case_started)
+                            )
+                            print(f"ERROR {type(exc).__name__}: {exc}")
+                            if consecutive_errors >= 3:
+                                persist("failed", f"{type(exc).__name__}: {exc}")
+                                raise RuntimeError(
+                                    "Stopped after 3 consecutive benchmark errors"
+                                ) from exc
+                    else:
+                        static_started = time.perf_counter()
+                        try:
+                            static_result = run_static_case(
+                                static_memory, adapter, static_usage, case, args
+                            )
+                            static_result["latency_ms"] = (
+                                time.perf_counter() - static_started
+                            ) * 1000
+                        except HybridRetrievalError as exc:
+                            persist("failed", f"{type(exc).__name__}: {exc}")
+                            raise
+                        except Exception as exc:
+                            consecutive_errors += 1
+                            static_result = empty_error_result(
+                                case, "static", exc, static_started
+                            )
+                            traceback.print_exc()
+                            print(f"STATIC ERROR {type(exc).__name__}: {exc}", flush=True)
+                        static_results.append(static_result)
 
-                        result["latency_ms"] = (time.perf_counter() - case_started) * 1000
-                        results.append(result)
-                        consecutive_errors = 0
+                        agentic_started = time.perf_counter()
+                        try:
+                            agentic_dir = Path(temp_dir) / (
+                                f"agentic-{conversation_index}-{case['qa_index']}"
+                            )
+                            agentic_result = run_agentic_case(
+                                config_path,
+                                config,
+                                documents,
+                                adapter,
+                                agentic_usage,
+                                case,
+                                args,
+                                agentic_dir,
+                                embedding_cache_file,
+                                agentic_dir / "traces",
+                            )
+                            agentic_result["latency_ms"] = (
+                                time.perf_counter() - agentic_started
+                            ) * 1000
+                            consecutive_errors = 0
+                        except HybridRetrievalError as exc:
+                            persist("failed", f"{type(exc).__name__}: {exc}")
+                            raise
+                        except Exception as exc:
+                            consecutive_errors += 1
+                            agentic_result = empty_error_result(
+                                case, "agentic", exc, agentic_started
+                            )
+                            traceback.print_exc()
+                            print(f"AGENTIC ERROR {type(exc).__name__}: {exc}", flush=True)
+                        agentic_results.append(agentic_result)
                         print(
-                            f"[{len(results)}/{len(cases)}] {result['category_name']} "
-                            f"hit={metrics['hit']} judge={result.get('judge_correct')}"
+                            f"[{len(static_results)}/{len(cases)}] "
+                            f"{static_result['category_name']} "
+                            f"static_hit={static_result.get('retrieval', {}).get('hit')} "
+                            f"static_judge={static_result.get('judge_correct')} "
+                            f"agentic_hit={agentic_result.get('retrieval', {}).get('hit')} "
+                            f"agentic_judge={agentic_result.get('judge_correct')} "
+                            f"force={len(agentic_result.get('forced_search') or [])} "
+                            f"stop={agentic_result.get('stop_reason')}",
+                            flush=True,
                         )
-                    except HybridRetrievalError as exc:
-                        results.append({
-                            **case,
-                            "category_name": CATEGORY_NAMES[case["category"]],
-                            "retrieval": {"evidence_count": 0, "hit": None, "recall": None, "rr": None},
-                            "error": f"{type(exc).__name__}: {exc}",
-                            "latency_ms": (time.perf_counter() - case_started) * 1000,
-                        })
-                        write_report(output_path, {
-                            "status": "failed",
-                            "settings": vars(args),
-                            "error": f"{type(exc).__name__}: {exc}",
-                            "summary": summarize_results(results),
-                            "usage": asdict(usage),
-                            "estimated_cost_usd": usage.estimated_cost(
-                                args.input_price,
-                                args.output_price,
-                            ),
-                            "elapsed_seconds": time.time() - started_at,
-                            "results": results,
-                        })
-                        raise
-                    except Exception as exc:
-                        consecutive_errors += 1
-                        results.append({
-                            **case,
-                            "category_name": CATEGORY_NAMES[case["category"]],
-                            "retrieval": {"evidence_count": 0, "hit": None, "recall": None, "rr": None},
-                            "error": f"{type(exc).__name__}: {exc}",
-                            "latency_ms": (time.perf_counter() - case_started) * 1000,
-                        })
                         if consecutive_errors >= 3:
-                            raise RuntimeError("Stopped after 3 consecutive benchmark errors") from exc
+                            persist("failed", "Stopped after 3 consecutive benchmark errors")
+                            raise RuntimeError("Stopped after 3 consecutive benchmark errors")
 
-                    report = {
-                        "status": "completed",
-                        "settings": vars(args),
-                        "summary": summarize_results(results),
-                        "usage": asdict(usage),
-                        "estimated_cost_usd": usage.estimated_cost(
-                            args.input_price,
-                            args.output_price,
-                        ),
-                        "elapsed_seconds": time.time() - started_at,
-                        "results": results,
-                    }
-                    write_report(output_path, report)
+                    persist("completed")
         finally:
             os.chdir(original_cwd)
 
-    return report
+    return persist("completed")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -537,7 +875,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-path", default=str(default_data))
     parser.add_argument("--embedding-cache", default=str(default_cache))
     parser.add_argument("--download", action="store_true")
-    parser.add_argument("--mode", choices=["retrieval", "qa"], default="retrieval")
+    parser.add_argument(
+        "--mode",
+        choices=["retrieval", "qa", "ab"],
+        default="retrieval",
+        help="retrieval=召回; qa=静态问答; ab=同一开发集 static vs agentic",
+    )
     parser.add_argument("--per-category", type=int, default=10)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-context-chars", type=int, default=30000)
@@ -560,15 +903,24 @@ def main() -> int:
         )
 
     report = run_benchmark(args)
-    print(json.dumps({
-        "summary": report["summary"],
-        "usage": report["usage"],
-        "estimated_cost_usd": report["estimated_cost_usd"],
-        "elapsed_seconds": report["elapsed_seconds"],
+    payload = {
+        "status": report.get("status"),
+        "elapsed_seconds": report.get("elapsed_seconds"),
         "output": str(Path(args.output).resolve()),
-    }, ensure_ascii=False, indent=2))
-    return 0
+    }
+    if "comparison" in report:
+        payload["comparison"] = report["comparison"]
+    else:
+        payload["summary"] = report.get("summary")
+        payload["usage"] = report.get("usage")
+        payload["estimated_cost_usd"] = report.get("estimated_cost_usd")
+    print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
+    return 0 if report.get("status") == "completed" else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        traceback.print_exc()
+        raise

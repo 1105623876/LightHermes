@@ -3,20 +3,19 @@
 secrets:
   env_file: .env.local
 
-# 模型配置
+# 模型配置（model / key / url 都在 .env.local，见 .env.example）
 model:
   provider: openai
-  model_name: gpt-5.4-mini
-  api_key: ${OPENAI_API_KEY}
-  base_url: https://api.api2cn.com/v1
-  fallback_models:
-    - gpt-5.4  # API 失败时自动切换
+  model_name: ${LIGHTHERMES_MODEL}
+  api_key: ${LIGHTHERMES_API_KEY}
+  base_url: ${LIGHTHERMES_BASE_URL}
+  fallback_models: []
 
 embedding:
   provider: openai
-  model_name: BAAI/bge-m3
-  api_key: ${SILICONFLOW_API_KEY}
-  base_url: https://api.siliconflow.cn/v1
+  model_name: ${LIGHTHERMES_EMBEDDING_MODEL}
+  api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
+  base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
 
 # 记忆配置
 memory:
@@ -108,9 +107,8 @@ context_compression:
   # 触发阈值（当 token 使用达到上下文窗口的 75% 时触发压缩）
   trigger_threshold: 0.75
 
-  # 摘要模型（默认使用便宜模型节省成本）
-  summary_model: gpt-5.4-mini
-  # summary_model: null  # 使用主模型
+  # 摘要模型与主模型同一套 env，避免旧端点写死
+  summary_model: ${LIGHTHERMES_MODEL}
 
   # 保护策略
   protect_first_n: 3  # 保护前 N 条消息（系统提示 + 初始对话）

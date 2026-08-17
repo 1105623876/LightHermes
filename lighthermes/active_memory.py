@@ -169,8 +169,10 @@ class EvidenceLedger:
 
     @staticmethod
     def _record_anchors(record: MemoryRecord) -> list[str]:
+        # 只收录语义线索（cue_anchors / entities）；record.name 是内部标识
+        # （如 "session_8"），不是可检索文本，混入会污染 query rewrite。
         anchors: list[str] = []
-        for value in list(record.cue_anchors or []) + list(record.entities or []) + [record.name]:
+        for value in list(record.cue_anchors or []) + list(record.entities or []):
             text = str(value or "").strip()
             if text and text not in anchors:
                 anchors.append(text)

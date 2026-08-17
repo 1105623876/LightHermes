@@ -36,27 +36,19 @@ python -m venv venv
 
 ### 配置密钥
 
-密钥可以只放在项目级 `.env.local`，不需要设置全局环境变量：
+密钥、模型名和端点只放在项目级 `.env.local`，不要写进 `config.yaml`。复制 `.env.example` 后填写：
 
 ```env
-OPENAI_API_KEY=your_main_model_key
-SILICONFLOW_API_KEY=your_embedding_key
+LIGHTHERMES_MODEL=your-model-id
+LIGHTHERMES_API_KEY=your_main_model_key
+LIGHTHERMES_BASE_URL=https://your-gateway.example.com/v1
+
+LIGHTHERMES_EMBEDDING_MODEL=BAAI/bge-m3
+LIGHTHERMES_EMBEDDING_API_KEY=your_embedding_key
+LIGHTHERMES_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
 ```
 
-在 `config.yaml` 中引用变量：
-
-```yaml
-secrets:
-  env_file: .env.local
-
-model:
-  provider: openai
-  model_name: gpt-5.4-mini
-  api_key: ${OPENAI_API_KEY}
-  base_url: https://api.openai.com/v1
-```
-
-支持 `${ENV_VAR}` 和 `$(ENV_VAR)` 两种形式。`.env`、`.env.local` 和 `*.env` 默认不会被 Git 跟踪。
+`config.yaml` 通过 `${LIGHTHERMES_*}` 引用这些变量。`base_url` 填到 `/v1` 为止。`.env`、`.env.local` 默认不会被 Git 跟踪。
 
 ### 运行
 
@@ -98,15 +90,7 @@ for chunk in agent.run("解释当前项目架构", stream=True):
 
 ### OpenAI 兼容端点
 
-```yaml
-model:
-  provider: openai
-  model_name: gpt-5.4-mini
-  api_key: ${SUB2API_KEY}
-  base_url: https://your-gateway.example.com/v1
-```
-
-`base_url` 通常填写到 `/v1`，不要填写完整的 `/chat/completions` 路径。
+在 `.env.local` 填 `LIGHTHERMES_MODEL` / `LIGHTHERMES_API_KEY` / `LIGHTHERMES_BASE_URL`。`base_url` 填到 `/v1`，不要带 `/chat/completions`。
 
 ### Anthropic / MiniMax
 
@@ -132,9 +116,9 @@ MiniMax 累积式流文本会在 Adapter 层转换为增量文本。
 ```yaml
 embedding:
   provider: openai
-  model_name: BAAI/bge-m3
-  api_key: ${SILICONFLOW_API_KEY}
-  base_url: https://api.siliconflow.cn/v1
+  model_name: ${LIGHTHERMES_EMBEDDING_MODEL}
+  api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
+  base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
 
 memory:
   hybrid_retrieval:

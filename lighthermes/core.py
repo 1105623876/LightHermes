@@ -65,6 +65,7 @@ class LightHermes:
         log_level: str = "INFO",
         log_file: str = None,
         fallback_models: List[str] = None,
+        embedding_cache_file: str = None,
         config_path: str = "config.yaml",
         config: Dict[str, Any] = None,
     ):
@@ -161,7 +162,7 @@ class LightHermes:
                     "provider",
                     embedding_config.get("provider", embedding_provider)
                 ),
-                embedding_model=hybrid_config.get(
+                embedding_model=self._resolve_config_value(hybrid_config.get(
                     "model",
                     hybrid_config.get(
                         "model_name",
@@ -170,7 +171,7 @@ class LightHermes:
                             embedding_config.get("model", embedding_model)
                         )
                     )
-                ),
+                )),
                 api_key=self._resolve_config_value(configured_embedding_api_key),
                 embedding_base_url=self._resolve_config_value(configured_embedding_base_url),
                 hybrid_min_candidates=hybrid_config.get("min_candidates", 5),
@@ -180,6 +181,7 @@ class LightHermes:
                 hybrid_full_rerank_max_docs=hybrid_config.get("full_rerank_max_docs", 200),
                 hybrid_tfidf_candidate_limit=hybrid_config.get("tfidf_candidate_limit", 20),
                 archive_inactive_days=adaptive_config.get("archive_days", 30),
+                embedding_cache_file=embedding_cache_file,
             )
             self.adapt_interval = adaptive_config.get("adapt_interval", 100)
         else:
@@ -239,7 +241,11 @@ class LightHermes:
             self.evolution = None
 
         # 初始化上下文压缩器
-        compression_config = config.get("context_compression", {})
+        compression_config = dict(config.get("context_compression", {}) or {})
+        if "summary_model" in compression_config:
+            compression_config["summary_model"] = self._resolve_config_value(
+                compression_config.get("summary_model")
+            ) or model
         self.compression_enabled = compression_config.get("enabled", True)
         self.extract_compression_to_memory = compression_config.get("extract_to_memory", False)
         if self.compression_enabled:
@@ -668,20 +674,28 @@ class LightHermes:
         cli_config = config.get("cli", {})
         logging_config = config.get("logging", {})
 
+        fallback_models = []
+        for item in model_config.get("fallback_models") or []:
+            resolved = cls._resolve_config_value(item)
+            if resolved:
+                fallback_models.append(resolved)
+
         params = {
             "name": agent_config.get("name"),
             "role": agent_config.get("role"),
-            "model": model_config.get("model_name", model_config.get("model", "gpt-4o-mini")),
+            "model": cls._resolve_config_value(
+                model_config.get("model_name", model_config.get("model", "gpt-4o-mini"))
+            ),
             "provider": model_config.get("provider", "openai"),
             "api_key": cls._resolve_config_value(model_config.get("api_key")),
-            "base_url": model_config.get("base_url"),
+            "base_url": cls._resolve_config_value(model_config.get("base_url")),
             "memory_enabled": memory_config.get("enabled", True),
             "memory_dir": memory_config.get("storage_dir", "memory"),
             "embedding_provider": embedding_config.get("provider", "openai"),
-            "embedding_model": embedding_config.get(
+            "embedding_model": cls._resolve_config_value(embedding_config.get(
                 "model_name",
                 embedding_config.get("model", "text-embedding-3-small")
-            ),
+            )),
             "embedding_api_key": cls._resolve_config_value(embedding_config.get("api_key")),
             "embedding_base_url": cls._resolve_config_value(embedding_config.get("base_url")),
             "evolution_enabled": evolution_config.get("enabled", True),
@@ -692,7 +706,8 @@ class LightHermes:
             "debug": cli_config.get("show_skill_usage", logging_config.get("debug", False)),
             "log_level": logging_config.get("level", "INFO"),
             "log_file": logging_config.get("file"),
-            "fallback_models": model_config.get("fallback_models"),
+            "fallback_models": fallback_models,
+            "embedding_cache_file": embedding_config.get("cache_file"),
             "config_path": config_path,
             "config": config,
         }

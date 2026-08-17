@@ -120,6 +120,7 @@
 
 ### 下一步：策略冻结 → A/B
 
+- 冻结清单已落 `docs/FREEZE_LOCK.md`；入口：`benchmarks/locomo_light.py --mode ab`（非流式，40 题开发集，非 holdout）
 - 按 `docs/FREEZE_COMMITMENT.md` 五条锁死策略，再跑 static / agentic A/B 与阶段错误诊断
 - 冻结策略后运行验证集、holdout 与结构不同的工作流回放
 - 将工具成功、失败、成本与延迟接入可追溯的经验记录，再决定是否固化为技能

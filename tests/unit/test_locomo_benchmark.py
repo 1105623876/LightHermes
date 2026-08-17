@@ -1,8 +1,16 @@
+import json
+from argparse import Namespace
+
+from lighthermes.memory import MemoryManager
+
 from benchmarks.locomo_light import (
     UsageTotals,
     build_session_documents,
+    compare_arm_summaries,
     create_memory,
+    freeze_snapshot,
     parse_judge_label,
+    populate_memory,
     retrieval_metrics,
     stratified_sample,
     token_f1,
@@ -20,7 +28,9 @@ def _sample(conversation_id: int):
                 {"speaker": "B", "text": "Noted.", "dia_id": f"D{conversation_id}:2"},
             ],
         },
-        "session_summary": {"session_1_summary": "A likes tea."},
+        "session_summary": {
+            "session_1_summary": "A likes tea. She later bought a green bicycle."
+        },
         "qa": [
             {
                 "question": f"Question {conversation_id}-{category}",
@@ -48,9 +58,24 @@ def test_build_session_documents_preserves_summary_and_evidence_ids():
     documents = build_session_documents(_sample(3))
 
     assert len(documents) == 1
+    assert documents[0]["abstract"] == "A likes tea. She later bought a green bicycle."
     assert documents[0]["content"].startswith("Session date: 1 Jan 2024")
-    assert "Session summary: A likes tea." in documents[0]["content"]
+    assert "Dialogue:" in documents[0]["content"]
+    assert "green bicycle" not in documents[0]["content"]
     assert documents[0]["metadata"]["dia_ids"] == "D3:1,D3:2"
+
+
+def test_locomo_recall_uses_full_summary_not_first_sentence(tmp_path):
+    documents = build_session_documents(_sample(3))
+    memory = MemoryManager(memory_dir=str(tmp_path), use_hybrid_retrieval=False)
+    populate_memory(memory, documents)
+
+    items = memory.recall_items("green bicycle", layers=["semantic"], limit=5)
+
+    assert items
+    assert "green bicycle" in items[0]["abstract"]
+    assert items[0]["abstract"] != items[0]["content"]
+    assert "I like tea" in items[0]["content"]
 
 
 def test_retrieval_metrics_uses_dialogue_evidence_rank():
@@ -77,6 +102,40 @@ def test_answer_metrics_and_usage_cost():
 
     usage = UsageTotals(prompt_tokens=1_000_000, completion_tokens=1_000_000)
     assert usage.estimated_cost(0.75, 4.50) == 5.25
+
+
+def test_freeze_snapshot_omits_secrets_and_locks_dev_split():
+    args = Namespace(seed=42, per_category=10, top_k=5, max_context_chars=30000)
+    snapshot = freeze_snapshot({
+        "model": {
+            "provider": "openai",
+            "model_name": "demo-model",
+            "api_key": "should-not-appear",
+            "base_url": "https://example.test/v1",
+        },
+        "embedding": {
+            "model_name": "bge",
+            "api_key": "also-secret",
+            "base_url": "https://embed.example/v1",
+        },
+        "memory": {"hybrid_retrieval": {"semantic_threshold": 0.5, "score_margin": 0.08}},
+    }, args)
+
+    dumped = json.dumps(snapshot)
+    assert "should-not-appear" not in dumped
+    assert "also-secret" not in dumped
+    assert snapshot["seed"] == 42
+    assert snapshot["holdout"] is False
+    assert snapshot["stream"] is False
+    assert snapshot["model"] == "demo-model"
+
+
+def test_compare_arm_summaries_reports_percentage_point_delta():
+    static = {"overall": {"judge_accuracy": 0.50, "retrieval_hit_rate": 0.60}}
+    agentic = {"overall": {"judge_accuracy": 0.55, "retrieval_hit_rate": 0.58}}
+    comparison = compare_arm_summaries(static, agentic)
+    assert abs(comparison["judge_accuracy"]["delta_pp"] - 5.0) < 1e-9
+    assert abs(comparison["retrieval_hit_rate"]["delta_pp"] - (-2.0)) < 1e-9
 
 
 def test_create_memory_uses_independent_embedding_cache(tmp_path, monkeypatch):

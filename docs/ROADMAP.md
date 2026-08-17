@@ -49,7 +49,7 @@
 2. ✅ 冻结宣言（决策 3）——半页纸短文已落 `docs/FREEZE_COMMITMENT.md`；真正锁参见第 5 条。
 3. ✅ abstract/cue 检索、原文回答最小闭环（决策 2，即 3.3a）——已完成。
 4. ✅ 合成 case 单测（强制搜、冲突、无新证据）——`TestSyntheticScenario` 3 项端到端通过。
-5. ⬜ 策略冻结 → static / agentic A/B → holdout 一次。
+5. ⬜ 策略冻结 → static / agentic A/B → holdout 一次。冻结清单已落 `docs/FREEZE_LOCK.md`；开发集 A/B 入口为 `benchmarks/locomo_light.py --mode ab`。
 
 静态臂测召回，主动臂测 trigger+召回；两侧表征相同，结果才拆得开。
 

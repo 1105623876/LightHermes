@@ -67,7 +67,8 @@ def parse_memory_file_content(content: str) -> Optional[Dict[str, Any]]:
 
     return {
         "metadata": metadata,
-        "content": parts[2].strip()
+        "content": parts[2].strip(),
+        "abstract": str(metadata.get("abstract") or ""),
     }
 
 
@@ -678,9 +679,11 @@ class SemanticMemory:
         return copied
 
     def _cache_memory(self, name: str, content: str, metadata: Dict[str, Any], file_path: Path):
+        metadata = {key: str(value) for key, value in (metadata or {}).items()}
         self._memory_cache[name] = {
-            "metadata": {key: str(value) for key, value in (metadata or {}).items()},
-            "content": content
+            "metadata": metadata,
+            "content": content,
+            "abstract": metadata.get("abstract") or derive_abstract(content),
         }
         try:
             self._file_mtimes[name] = file_path.stat().st_mtime

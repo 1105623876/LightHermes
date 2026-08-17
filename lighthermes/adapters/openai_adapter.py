@@ -20,8 +20,15 @@ class OpenAIAdapter(BaseAdapter):
         super().__init__(model, api_key, base_url, **kwargs)
         self.client = OpenAI(
             api_key=api_key,
-            base_url=base_url or "https://api.openai.com/v1"
+            base_url=self._normalize_base_url(base_url)
         )
+
+    @staticmethod
+    def _normalize_base_url(base_url: Optional[str]) -> str:
+        url = str(base_url or "https://api.openai.com/v1").rstrip("/")
+        if not url.endswith("/v1"):
+            url = f"{url}/v1"
+        return url
 
     def create(
         self,

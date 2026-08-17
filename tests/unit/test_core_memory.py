@@ -148,6 +148,46 @@ cli:
         assert captured_adapter_kwargs["api_key"] == "env-api-key"
         assert captured_adapter_kwargs["base_url"] == "https://example.test/anthropic"
 
+    def test_from_config_resolves_model_name_and_base_url_from_env(self, temp_memory_dir, tmp_path, monkeypatch):
+        config_path = tmp_path / "env-model.yaml"
+        config_path.write_text(
+            f"""
+model:
+  provider: openai
+  model_name: ${{LIGHTHERMES_MODEL}}
+  api_key: ${{LIGHTHERMES_API_KEY}}
+  base_url: ${{LIGHTHERMES_BASE_URL}}
+  fallback_models: []
+memory:
+  enabled: true
+  storage_dir: "{temp_memory_dir.replace(chr(92), '/')}"
+  hybrid_retrieval:
+    enabled: false
+evolution:
+  enabled: false
+context_compression:
+  enabled: false
+""",
+            encoding="utf-8",
+        )
+        captured = {}
+
+        def fake_get_adapter(**kwargs):
+            captured.update(kwargs)
+            return FakeAdapter()
+
+        monkeypatch.setenv("LIGHTHERMES_MODEL", "my-gateway-model")
+        monkeypatch.setenv("LIGHTHERMES_API_KEY", "env-key")
+        monkeypatch.setenv("LIGHTHERMES_BASE_URL", "https://gateway.example/v1")
+        monkeypatch.setattr("lighthermes.core.get_adapter", fake_get_adapter)
+
+        agent = LightHermes.from_config(str(config_path))
+
+        assert agent.model == "my-gateway-model"
+        assert captured["model"] == "my-gateway-model"
+        assert captured["api_key"] == "env-key"
+        assert captured["base_url"] == "https://gateway.example/v1"
+
     def test_save_compression_summary_to_working_memory(self, temp_memory_dir):
         """测试压缩摘要写入工作记忆"""
         agent = LightHermes.__new__(LightHermes)
