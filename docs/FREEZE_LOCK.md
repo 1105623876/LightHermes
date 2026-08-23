@@ -1,6 +1,6 @@
 # A/B 冻结清单（开发集）
 
-**日期**: 2026-08-15  
+**日期**: 2026-08-17  
 **状态**: 已锁。修改须同步 ROADMAP，不得按开发集个例拧参。  
 **范围**: LoCoMo 40 题分层开发集，**不是 holdout**。
 
@@ -16,8 +16,8 @@
 | Embedding | `LIGHTHERMES_EMBEDDING_MODEL` + 独立缓存 |
 | Trigger | `can_search ∧ coverage<1 ∧ absence ∈ {not_searched, evidence_conflict}` |
 | LoCoMo 检索文本 | 整段 session summary（写入 `abstract`），不是首句，也不是 Dialogue |
-| Static 臂 | `recall_items` + 专用 QA 提示，不开 Active Memory |
-| Agentic 臂 | `LightHermes.run(stream=False)`，`active_recall=true`，运行时强制搜 |
+| Static 臂 | `recall_items(limit=5, max_chars=30000)` + 专用 QA 提示，不开 Active Memory |
+| Agentic 臂 | `LightHermes.run(stream=False)`，`active_recall=true`，运行时强制搜；注入上下文与搜索返回值已对齐 static 证据预算（`seed_limit=Top-K`、`seed_max_chars=30000`、`item_max_chars=0` 不截断、`search_max_chars=30000`）。这是口径修复（消除两臂证据量不对称），不是按开发集调参 |
 | Judge | 一次 CORRECT/WRONG，措辞宽松 |
 | Holdout | 本次不跑 |
 

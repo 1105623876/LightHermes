@@ -492,7 +492,9 @@ class ActiveRecallSession:
                 self.record_rewrite(rewritten, unresolved, round_index=len(self.trace.rounds))
         if error:
             self._stop("error")
-        elif not accepted_source_ids:
+        elif not records:
+            # 检索真正返回 0 条结果才判定「无证据」；返回了结果但全是已见来源时
+            # 不算无证据，让 max_rounds 自然收口，避免把「没有新来源」误读成「记忆里没有」。
             self._stop("no_new_evidence")
         elif len(self.trace.rounds) >= self.trace.max_rounds:
             self._stop("budget_exhausted")

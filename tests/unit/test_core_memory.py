@@ -1368,3 +1368,55 @@ context_compression:
         assert agent.memory.semantic.strict_hybrid_retrieval is True
         # score_margin 未显式传 config，应取 0.08 统一默认
         assert captured["score_margin"] == 0.08
+
+
+@pytest.mark.unit
+def test_adapter_create_is_single_model_call_exit(temp_memory_dir, monkeypatch):
+    """走非流式 run 时，模型调用的唯一出口是 agent.adapter.create。
+
+    benchmark 靠替换 agent.adapter.create 来统计 usage；此测试锁住该前提，
+    防止未来多出一条绕过 adapter.create 的调用路径。
+    """
+    adapter_calls = {"n": 0}
+    wrapper_calls = {"n": 0}
+
+    class TrackingAdapter:
+        def __init__(self):
+            self.model = "gpt-4o-mini"
+
+        def create(self, **kwargs):
+            adapter_calls["n"] += 1
+            return FakeResponse("计数回复")
+
+    tracker = TrackingAdapter()
+    monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: tracker)
+    monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: type("SkillLoader", (), {
+        "match_skill": lambda self, query: None,
+        "recall_failure_reports": lambda self, query, task_type, limit=2: []
+    })())
+    monkeypatch.setattr("lighthermes.core.EvolutionEngine", lambda *args, **kwargs: None)
+
+    agent = LightHermes(
+        model="gpt-4o-mini",
+        provider="openai",
+        api_key="test-key",
+        memory_dir=temp_memory_dir,
+        memory_enabled=True,
+        evolution_enabled=False,
+    )
+
+    raw_create = agent.adapter.create
+
+    def counted_create(**kwargs):
+        wrapper_calls["n"] += 1
+        return raw_create(**kwargs)
+
+    agent.adapter.create = counted_create
+
+    reply = agent.run("你好", user_id="u", session_id="s")
+
+    assert reply == "计数回复"
+    # 关键不变量：wrapper 与底层 adapter 一一对应，且模型确实被调用过。
+    # 若存在绕过 wrapper 的第二条路径，adapter_calls 会大于 wrapper_calls。
+    assert wrapper_calls["n"] == adapter_calls["n"]
+    assert wrapper_calls["n"] >= 1

@@ -969,7 +969,11 @@ class MemoryManager:
         working_to_episodic_limit: int = 20,
         episodic_to_semantic_access_threshold: int = 10,
         archive_inactive_days: int = 30,
-        distill_recent_limit: int = 20
+        distill_recent_limit: int = 20,
+        recall_seed_limit: int = 8,
+        recall_seed_max_chars: int = 2000,
+        recall_item_max_chars: int = 500,
+        search_max_chars: int = 10000
     ):
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -981,6 +985,10 @@ class MemoryManager:
         self.episodic_to_semantic_access_threshold = episodic_to_semantic_access_threshold
         self.archive_inactive_days = archive_inactive_days
         self.distill_recent_limit = distill_recent_limit
+        self.recall_seed_limit = recall_seed_limit
+        self.recall_seed_max_chars = recall_seed_max_chars
+        self.recall_item_max_chars = recall_item_max_chars
+        self.search_max_chars = search_max_chars
         self.logger = setup_logger("lighthermes.memory")
 
         # 初始化统计系统
@@ -1032,7 +1040,9 @@ class MemoryManager:
 
     def on_turn_start(self, query: str, user_id: str = "default", session_id: str = "", include_items: bool = False):
         """回合开始：一次召回同时提供兼容文本和可选结构化条目。"""
-        items = self.recall_items(query, user_id=user_id, limit=8, max_chars=2000)
+        items = self.recall_items(
+            query, user_id=user_id, limit=self.recall_seed_limit, max_chars=self.recall_seed_max_chars
+        )
         context = build_memory_context_block(self._format_recall_items(items))
         if include_items:
             return context, items
@@ -1353,7 +1363,7 @@ class MemoryManager:
 
         layers = None if layer == "all" else [layer]
         if query and query.strip():
-            items = self.recall_items(query, layers=layers, limit=limit, max_chars=10000)
+            items = self.recall_items(query, layers=layers, limit=limit, max_chars=self.search_max_chars)
         else:
             items = []
             selected_layers = layers or ["working", "episodic", "semantic"]
@@ -1625,19 +1635,24 @@ class MemoryManager:
 
     def recall(self, query: str, user_id: str = "default") -> str:
         """召回相关记忆 - 保留字符串兼容接口"""
-        items = self.recall_items(query, user_id=user_id, limit=8, max_chars=2000)
+        items = self.recall_items(
+            query, user_id=user_id, limit=self.recall_seed_limit, max_chars=self.recall_seed_max_chars
+        )
         return self._format_recall_items(items)
 
     def _format_recall_items(self, items: List[Dict[str, Any]]) -> str:
         parts = []
+        max_chars = self.recall_item_max_chars
         for item in items:
             name = item.get("name", "unknown")
             score = item.get("score", 0)
             content = item.get("content", "")
             if item["layer"] == "working":
                 parts.append(f"[working] 最近对话: {content}")
+            elif max_chars == 0:
+                parts.append(f"[{item['layer']}:{name} score={score}] {content}")
             else:
-                parts.append(f"[{item['layer']}:{name} score={score}] {content[:500]}")
+                parts.append(f"[{item['layer']}:{name} score={score}] {content[:max_chars]}")
         return "\n".join(parts)
 
     def save_episodic(self, name: str, content: str, metadata: Dict[str, Any] = None):

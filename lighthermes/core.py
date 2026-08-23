@@ -143,6 +143,7 @@ class LightHermes:
             hybrid_config = memory_config.get("hybrid_retrieval", {})
             retention_config = memory_config.get("retention", {})
             adaptive_config = memory_config.get("adaptive", {})
+            recall_config = memory_config.get("recall", {})
             configured_embedding_api_key = hybrid_config.get("api_key", embedding_api_key)
             if configured_embedding_api_key is None:
                 configured_embedding_api_key = embedding_config.get("api_key")
@@ -182,6 +183,10 @@ class LightHermes:
                 hybrid_tfidf_candidate_limit=hybrid_config.get("tfidf_candidate_limit", 20),
                 archive_inactive_days=adaptive_config.get("archive_days", 30),
                 embedding_cache_file=embedding_cache_file,
+                recall_seed_limit=recall_config.get("seed_limit", 8),
+                recall_seed_max_chars=recall_config.get("seed_max_chars", 2000),
+                recall_item_max_chars=recall_config.get("item_max_chars", 500),
+                search_max_chars=recall_config.get("search_max_chars", 10000),
             )
             self.adapt_interval = adaptive_config.get("adapt_interval", 100)
         else:

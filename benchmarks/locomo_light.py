@@ -368,11 +368,19 @@ def average(values: Iterable[float | int | bool | None]) -> float | None:
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
+        context_hit = average(
+            (item.get("context_retrieval") or {}).get("hit") for item in items
+        )
+        context_recall = average(
+            (item.get("context_retrieval") or {}).get("recall") for item in items
+        )
         return {
             "count": len(items),
             "retrieval_hit_rate": average(item["retrieval"]["hit"] for item in items),
             "evidence_recall": average(item["retrieval"]["recall"] for item in items),
             "mrr": average(item["retrieval"]["rr"] for item in items),
+            "context_hit_rate": context_hit,
+            "context_recall": context_recall,
             "token_f1": average(item.get("token_f1") for item in items),
             "judge_accuracy": average(item.get("judge_correct") for item in items),
             "avg_latency_ms": average(item.get("latency_ms") for item in items),
@@ -449,6 +457,8 @@ def compare_arm_summaries(
         "judge_accuracy": delta("judge_accuracy"),
         "retrieval_hit_rate": delta("retrieval_hit_rate"),
         "evidence_recall": delta("evidence_recall"),
+        "context_hit_rate": delta("context_hit_rate"),
+        "context_recall": delta("context_recall"),
         "token_f1": delta("token_f1"),
         "avg_latency_ms": {
             "static": static_summary.get("overall", {}).get("avg_latency_ms"),
@@ -479,6 +489,8 @@ def create_runtime_agent(
     memory_dir: Path,
     embedding_cache_file: Path,
     trace_dir: Path,
+    top_k: int,
+    max_context_chars: int,
 ) -> LightHermes:
     cfg = copy.deepcopy(config)
     memory_cfg = cfg.setdefault("memory", {})
@@ -491,6 +503,13 @@ def create_runtime_agent(
     hybrid["strict_hybrid_retrieval"] = True
     hybrid["full_rerank_max_docs"] = 1000
     memory_cfg.setdefault("retention", {})["semantic_max_chars"] = 2_000_000
+    # agentic 臂的证据预算与 static 逐条对齐：Top-K 条、完整原文、不截断。
+    memory_cfg["recall"] = {
+        "seed_limit": top_k,
+        "seed_max_chars": max_context_chars,
+        "item_max_chars": 0,
+        "search_max_chars": max_context_chars,
+    }
     cfg["evolution"] = {"enabled": False}
     cfg["context_compression"] = {"enabled": False}
     cfg.setdefault("skills", {})["dirs"] = []
@@ -571,6 +590,7 @@ def run_static_case(
         "arm": "static",
         "category_name": CATEGORY_NAMES[case["category"]],
         "retrieval": retrieval_metrics(retrieved, case["evidence"]),
+        "context_retrieval": retrieval_metrics(retrieved, case["evidence"]),
         "retrieved": retrieved_preview(retrieved),
     }
     if adapter is not None:
@@ -599,6 +619,7 @@ def run_agentic_case(
 ) -> dict[str, Any]:
     agent = create_runtime_agent(
         config_path, config, memory_dir, embedding_cache_file, trace_dir,
+        args.top_k, args.max_context_chars,
     )
     populate_memory(agent.memory, documents)
     # agent.run 内部走 agent.adapter.create，包装计数，让模型调用与 token 进 UsageTotals。
@@ -630,13 +651,16 @@ def run_agentic_case(
     seed_retrieval = retrieval_metrics(seed, case["evidence"])
     # ledger 覆盖仅作诊断，展示主动搜索最终把哪些来源纳入账本，不参与 A/B 对比。
     covered = items_from_sources(agent.memory, seen_sources) if seen_sources else seed
+    context_metrics = retrieval_metrics(covered, case["evidence"])
+    context_metrics["rr"] = None
     result = {
         **case,
         "arm": "agentic",
         "category_name": CATEGORY_NAMES[case["category"]],
         "retrieval": seed_retrieval,
         "seed_retrieval": seed_retrieval,
-        "ledger_retrieval": retrieval_metrics(covered, case["evidence"]),
+        "context_retrieval": context_metrics,
+        "ledger_retrieval": context_metrics,
         "ledger_sources": seen_sources,
         "retrieved": retrieved_preview(seed),
         "model_calls": int(getattr(agent, "api_call_count", 0) or 0),

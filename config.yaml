@@ -55,6 +55,13 @@ memory:
     semantic_similarity_threshold: 0.85
     distill_recent_limit: 20
 
+  # 召回截断参数（默认值保持与历史行为一致，长文档记忆可放开）
+  recall:
+    seed_limit: 8
+    seed_max_chars: 2000
+    item_max_chars: 500      # 0 表示不截断
+    search_max_chars: 10000
+
 # 进化配置
 evolution:
   enabled: true

@@ -209,18 +209,23 @@ def test_builtin_search_stops_after_two_rounds_without_third_dispatch():
 
 
 @pytest.mark.unit
-def test_no_new_evidence_stops_and_blocks_next_search():
+def test_seen_sources_burn_rounds_then_budget_exhausted():
+    # 返回了结果但全是已见来源：不触发 no_new_evidence，继续消耗轮次直到 budget。
     builtin = object()
-    response = json.dumps({
-        "query": "q1",
-        "layer": "all",
-        "limit": 5,
-        "results": [{"source": "seed", "content": "same"}],
-    })
+    responses = [
+        json.dumps({
+            "query": "q1", "layer": "all", "limit": 5,
+            "results": [{"source": "seed", "content": "same"}],
+        }),
+        json.dumps({
+            "query": "q2", "layer": "all", "limit": 5,
+            "results": [{"source": "seed", "content": "same again"}],
+        }),
+    ]
     agent = LightHermes.__new__(LightHermes)
     agent.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
     agent._builtin_search_memory = builtin
-    agent.tool_dispatcher = FakeDispatcher(builtin, [response])
+    agent.tool_dispatcher = FakeDispatcher(builtin, responses)
     session = ActiveRecallSession.from_seed(
         "question", [{"source": "seed", "content": "initial"}]
     )
@@ -232,11 +237,11 @@ def test_no_new_evidence_stops_and_blocks_next_search():
         active_session=session,
     )
 
-    assert len(agent.tool_dispatcher.calls) == 1
-    assert session.trace.stop_reason == "no_new_evidence"
-    assert len(session.trace.rounds) == 1
+    assert len(agent.tool_dispatcher.calls) == 2
+    assert session.trace.stop_reason == "budget_exhausted"
+    assert len(session.trace.rounds) == 2
     blocked = json.loads(messages[-1]["content"])
-    assert blocked["active_memory"]["stop_reason"] == "no_new_evidence"
+    assert blocked["active_memory"]["stop_reason"] == "budget_exhausted"
 
 
 class ThrowingDispatcher:
@@ -706,14 +711,13 @@ class TestSyntheticScenario:
         assert trace["ledger"]["absence"] == "evidence_conflict"
         assert trace["forced_search"][0]["trigger_reason"] == "absence_evidence_conflict"
 
-    def test_no_new_evidence_stops_without_infinite_force(
+    def test_seen_sources_do_not_infinite_force(
         self, monkeypatch, tmp_path
     ):
         agent, _ = make_agent(monkeypatch, tmp_path, active=True)
-        # 落盘 trace，断言停止原因是 no_new_evidence 且那轮无新来源
         agent.active_recall_persist_traces = True
         agent.active_recall_trace_dir = str(tmp_path / "traces")
-        # 记忆库里有一条语义记忆，会和 seed 召回同一条 → 强制搜后无新来源 → 停
+        # 记忆库里有一条和 seed 同源的语义记忆 → 强制搜返回已见来源 → 不触发 no_new_evidence
         agent.memory.save_semantic("fact", "项目采用分级记忆架构。这是关键结论。", {"type": "fact"})
         adapter = _install_scripted_adapter(
             agent,
@@ -722,14 +726,14 @@ class TestSyntheticScenario:
 
         result = agent.run("分级记忆架构", session_id="s1")
 
-        # 第一次答触发强制搜 → 强制搜命中 seed 同源（无新证据）→ 第二次答正常收尾
+        # 第一轮触发强制搜（已见来源）→ 第二轮停答点 absence=unresolved 放行 → 正常收尾
         assert result == "最终回答"
         assert len(adapter.calls) == 2
 
         traces = list((tmp_path / "traces").glob("*.json"))
         assert len(traces) == 1
         trace = json.loads(traces[0].read_text(encoding="utf-8"))
-        assert trace["stop_reason"] == "no_new_evidence"
+        assert trace["stop_reason"] == "sufficient"
         assert trace["rounds"], "强制搜应记录一轮"
         assert trace["rounds"][0]["new_source_count"] == 0
         assert trace["forced_search"][0]["trigger_reason"] == "absence_not_searched"

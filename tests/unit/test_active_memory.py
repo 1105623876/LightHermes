@@ -229,9 +229,9 @@ class TestActiveRecallSession:
         assert session.observe_search("问题", "all", 5, [{"source": "s3"}], 1) is False
         assert len(session.trace.rounds) == 2
 
-    def test_no_new_evidence_and_answered_cancelled(self):
+    def test_zero_results_stops_and_answered_cancelled(self):
         session = ActiveRecallSession.from_seed("问题", [{"source": "s1"}])
-        session.observe_search("问题", "all", 5, [{"source": "s1"}], 1)
+        session.observe_search("问题", "all", 5, [], 1)
         assert session.trace.stop_reason == "no_new_evidence"
 
         answered = ActiveRecallSession.from_seed("问题", [])
@@ -242,6 +242,13 @@ class TestActiveRecallSession:
         cancelled = ActiveRecallSession.from_seed("问题", [])
         cancelled.mark_cancelled()
         assert cancelled.trace.stop_reason == "cancelled"
+
+    def test_seen_sources_do_not_stop_no_new_evidence(self):
+        # 返回了结果但全是已见来源：不算「无证据」，不应停止，让 max_rounds 自然收口。
+        session = ActiveRecallSession.from_seed("问题", [{"source": "s1"}], max_rounds=2)
+        session.observe_search("问题", "all", 5, [{"source": "s1", "content": "已见"}], 1)
+        assert session.trace.stop_reason is None
+        assert session.can_search() is True
 
     def test_error_and_atomic_json_persistence(self, tmp_path):
         session = ActiveRecallSession.from_seed("问题", [], metadata={"session_id": "s1"})

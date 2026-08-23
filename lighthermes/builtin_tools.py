@@ -81,6 +81,7 @@ def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
         def search_memory(query: str, layer: str = "all", limit: int = 5) -> str:
             safe_limit = max(1, min(int(limit or 5), 10))
             safe_layer = layer if layer in {"all", "working", "episodic", "semantic"} else "all"
+            item_max_chars = getattr(memory_manager, "recall_item_max_chars", 500)
             results = memory_manager.search_memory(
                 query or "",
                 layer=safe_layer,
@@ -95,7 +96,7 @@ def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
                     {
                         "layer": item.get("layer", ""),
                         "name": item.get("name", ""),
-                        "content": item.get("content", "")[:500],
+                        "content": item.get("content", "") if item_max_chars == 0 else item.get("content", "")[:item_max_chars],
                         "score": item.get("score", 0),
                         "source": item.get("source", ""),
                         "metadata": item.get("metadata", {}),
