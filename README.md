@@ -150,7 +150,7 @@ memory:
 
 P1 运行时还提供 `judge_claim`：模型可把 `support` / `conflict` / `unknown` / `no_evidence` 写回本回合账本。单 claim 时改写文本会落到 seed claim；未检索时 `no_evidence` 会被拒绝。`search_memory` 回包带 `absence` 与 `suggested_query`。系统不把改写强加为最终答句，也不做自然语言蕴含判定。
 
-这仍是运行时基座，尚未通过真实 static/agentic A/B 证明记忆质量提升；模型级 claim 判定目前是提示驱动的工具回写，独立完善仍未完成。
+开发集 A/B（grok-4.6，口径对齐后）里 agentic QA 相对 static +5pp，强制搜很少触发。未过 3.6 的调用/泛化门槛，默认仍关闭。模型级 claim 判定目前是提示驱动的工具回写。
 
 ## 架构
 
@@ -239,6 +239,18 @@ CLI / Python API
 
 这组结果揭示了合成集没有暴露的问题：固定 Top-K 在长对话中的召回覆盖不足，模型在证据命中后仍会遇到信息聚合、计数和时间推理失败。因此，合成集上的 100% 不能外推为真实记忆能力。
 
+同一 40 题、证据预算对齐后的 static / agentic A/B（grok-4.6，与上表 gpt-5.4-mini 不可同比）：
+
+| 指标 | static | agentic |
+|------|------:|--------:|
+| Judge QA | 37.5% | 42.5% |
+| context Hit | 53.8% | 66.7% |
+| 强制搜 | — | 4/40 |
+| 平均模型调用 | 2.0 | 2.48 |
+| 估算成本 | $0.66 | $1.18 |
+
+agentic 有小幅正收益，但未过 3.6（调用 ≤1.6、跨场景泛化）。Active Memory 默认仍关闭。完整结果见 `logs/locomo_ab_dev.json`。
+
 同时需要避免反向过拟合：这 40 题只是已见开发样本，LoCoMo 也只是评测轨道之一。运行时策略不得读取 benchmark 标签、evidence、样本 ID，不能根据失败个例硬编码题型或关键词。v0.4.0 将使用合成回归、长对话、更新/冲突和隐私安全工作流回放组成多轨验证。
 
 运行静态召回评测：
@@ -251,6 +263,12 @@ CLI / Python API
 
 ```powershell
 .\venv\Scripts\python.exe benchmarks\locomo_light.py --mode qa
+```
+
+同一开发集上的 static / agentic 对比：
+
+```powershell
+.\venv\Scripts\python.exe benchmarks\locomo_light.py --download --mode ab --seed 42 --output logs\locomo_ab_dev.json
 ```
 
 benchmark 使用独立持久 embedding 缓存和严格 hybrid 模式。embedding 失败会明确终止并写入 `status=failed`，不会把关键词降级结果计入正式指标。
@@ -320,7 +338,7 @@ tools:
 ## 开发状态
 
 - 发布版本：`v0.3.4`
-- 当前开发基线：`220/220` 测试通过
+- 当前开发基线：`226/226` 测试通过
 - 测试层次：单元、集成、性能、合成记忆质量和长对话抽样评测
 - 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成与 LoCoMo 抽样评测
 
@@ -333,17 +351,17 @@ tools:
 当前限制：
 
 - 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- Active Memory 已有 evidence ledger、模型 `judge_claim` 判定、query rewrite、两轮停止策略和 `read_memory` 来源展开，但默认关闭；尚未通过真实 static/agentic A/B 证明质量与成本边界。
-- Memory Eval v2.1 是合成回归；LoCoMo 目前只有 40 题已见开发样本，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
+- Active Memory 已有 evidence ledger、停答点强制搜、`judge_claim`、query rewrite 和 `read_memory`；开发集 A/B 有 +5pp QA，未过 3.6，默认关闭。
+- Memory Eval v2.1 是合成回归；LoCoMo 40 题开发集 A/B 已跑，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
 - 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
 - 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
 - 插件加载、网络 Channel、多模态和 Web UI 尚未进入稳定主线。
 
 近期方向：
 
-1. 建立 static / agentic A/B 与 Indexing、Retrieval、Reading、Answering 阶段诊断。
-2. 在真实任务里验证模型是否会使用 `suggested_query` 与 `judge_claim`。
-3. 冻结策略后运行长对话 holdout、更新/冲突和隐私安全工作流回放，验证跨场景泛化。
+1. 冻结策略后运行 holdout、更新/冲突和结构不同的工作流回放，验证跨场景泛化。
+2. 不按开发集 40 题拧参；3.6 过线前 Active Memory 默认关闭。
+3. 在真实任务里验证模型是否会使用 `suggested_query` 与 `judge_claim`。
 
 详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
 

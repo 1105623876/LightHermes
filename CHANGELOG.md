@@ -1,5 +1,19 @@
 # LightHermes 开发日志
 
+## Unreleased - 开发集 A/B（口径对齐后）
+
+- ✅ agentic 臂证据预算对齐 static：`seed_limit=Top-K`、全文不截断（不再每条 500 字）
+- ✅ `no_new_evidence` 只在检索返回 0 条时停止，已见来源不再被误判成「记忆里没有」
+- ✅ 召回截断参数化（`memory.recall`）；产品默认仍保持历史 500 字
+- ✅ 报告同时输出 seed 与 context 检索指标
+- ✅ 评测脚本断点续跑；Windows 临时目录清理失败不淹没已完成结果
+- ✅ LoCoMo 40 题开发集 A/B（grok-4.6，非流式，seed=42）：static QA 37.5%，agentic QA 42.5%（+5pp）；强制搜 4/40；平均 2.48 次调用；成本 1.81×。未过 3.6，默认仍关闭，holdout 未跑
+
+### 验证
+- ✅ 全量 pytest：`tests/`（226/226）
+
+---
+
 ## Unreleased - A/B 冻结前最小修复
 
 - ✅ 强制搜跟进由伪 `user` 消息改为 `system` 消息（不再污染轨迹/压缩/指令语义）

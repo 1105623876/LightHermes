@@ -1,6 +1,6 @@
 # 测试框架说明
 
-当前测试基线为 **220/220 通过**（Active Memory P1 运行时协议 + 停答点 trigger + 3.3a 抽象/原文分流 + 合成 case 场景 + A/B 冻结前最小修复后）。
+当前测试基线为 **226/226 通过**（含证据预算对齐、`no_new_evidence` 语义和 `adapter.create` 唯一出口）。
 
 ## 安装测试依赖
 
@@ -87,5 +87,5 @@ tests/
 ## 待补测试
 
 - [ ] 真实 API 集成测试（需要外部凭据，不进入默认离线回归）
-- [ ] Active Memory static / agentic A/B
+- [x] Active Memory static / agentic A/B（开发集诊断，见 `logs/locomo_ab_dev.json`）
 - [ ] 冻结验证集、最终 holdout 和跨场景工作流回放

@@ -1,13 +1,13 @@
 # LightHermes 项目状态
 
-**最后更新**: 2026-08-15
+**最后更新**: 2026-08-23
 **发布版本**: v0.3.4
 **开发主线**: v0.4.0 Active Memory
-**状态**: Active Memory P0 + P1 运行时协议已落地（claim 写回、缺席状态、建议改写、来源展开）；默认关闭，质量待 A/B
+**状态**: 开发集 static / agentic A/B 已跑（口径对齐后）；Active Memory 默认仍关闭，未过 3.6 发布闸，holdout 未跑
 
 ## 当前基线
 
-- **测试**: 220/220 通过（`.\venv\Scripts\python.exe -m pytest tests`）
+- **测试**: 226/226 通过（`.\venv\Scripts\python.exe -m pytest tests`）
 - **核心依赖**: `openai`、`anthropic`、`pyyaml`
 - **可选增强**: `sentence-transformers`、`colorama`
 - **模型端点**: 主模型与 embedding 可分别配置 provider、model、API key 和 base URL
@@ -33,10 +33,11 @@
 
 ### 评测与稳定性
 
-- 220 项单元、集成与性能测试
+- 226 项单元、集成与性能测试
 - Memory Eval v2.1：Recall@K、MRR、Precision@K、噪声率、延迟和质量门槛
-- LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录和 strict 失败模式
-- 当前 LoCoMo 静态开发基线：Evidence Hit@5 59.0%，QA 50.0%
+- LoCoMo 轻量入口：固定分层样本、独立 embedding 缓存、token/成本记录、strict 失败模式和 `--mode ab`
+- LoCoMo 旧静态基线（gpt-5.4-mini）：Evidence Hit@5 59.0%，QA 50.0%
+- LoCoMo 口径对齐后开发集 A/B（grok-4.6，2026-08-23）：static QA 37.5%，agentic QA 42.5%（+5pp）；强制搜 4/40
 
 ## 当前判断
 
@@ -48,24 +49,23 @@
 4. trace 记录候选 ID/分数、来源增益、延迟、错误和公开 session 元数据，不记录隐藏推理。
 5. 新路径默认关闭；用户自定义同名工具和原有静态路径保持兼容。
 
-这已具备主动记忆的质量闭环雏形，但仍是运行时：模型显式 claim/evidence 判定、query rewrite 与「无证据」输出协议已落地，但真实 static/agentic A/B 尚未完成、证据充分性的模型级 trigger 仍是提示驱动。当前 evidence ledger 会聚合 candidate source，并可由 `judge_claim` 工具写入 support/conflict/unknown/no_evidence；query rewrite 自动从未解决 claim 与 cue anchors 构造并记录；回答阶段可通过 `searched` 状态区分「记忆中没有」与「尚未检索到」。按 source 读取原文与邻接展开已经可用。
+这已具备主动记忆的质量闭环雏形。模型显式 claim/evidence 判定、query rewrite 与「无证据」输出协议已落地；停答点强制搜是兜底，不是每题必搜。开发集 A/B 在证据预算对齐后，agentic QA 相对 static +5pp，未达到 3.6 的调用/泛化门槛，产品默认仍关闭。
 
 详细设计见 `docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md`。
 
 ## 已知限制
 
-1. **主动召回仍是运行时，未做真实 A/B**
-   - 已有单回合状态、两轮预算、模型 claim 判定、query rewrite 和 trace，但默认关闭。
-   - 尚未通过真实 static / agentic A/B 证明质量收益与成本边界。
-   - query rewrite 目前是可观测的确定性改写，尚未接入模型自主选择改写后查询的闭环。
+1. **开发集 A/B 有小幅正收益，未过发布闸**
+   - 口径对齐后 grok-4.6 上 agentic QA 37.5%→42.5%（+5pp，净胜 2 题），context Hit +12.8pp。
+   - 强制搜只触发 4/40：模型第一轮常自己搜，兜底按设计不应常出现。
+   - 平均 2.48 次调用、成本 1.81× static，未满足 3.6 的 ≤1.6 次调用门槛。默认仍关闭。
 
 2. **证据充分性的模型级 trigger 仍偏提示驱动**
-   - 模型是否在证据不足时主动调用 `judge_claim` 依赖系统提示，尚无独立、可计量的充分性判断。
-   - 已有 `judge_claim` 与 `searched` 区分，但「无证据」和「未知」的长期记忆回写策略仍属后续。
+   - 停答点规则只覆盖 `not_searched` / `evidence_conflict`。Grok 自己搜之后 `absence=unresolved`，强制搜基本不上场。
+   - 模型是否调用 `judge_claim` 仍依赖系统提示；「无证据」和「未知」的长期记忆回写策略仍属后续。
 
-3. **长期记忆表征仍偏检索条目**
-   - 已有来源与状态元数据，但缺少统一的 abstract、cue anchors 和版本链契约。
-   - 回答阶段尚未把「检索摘要」和「可验证原始来源」明确分层。
+3. **长期记忆表征仍不完整**
+   - 3.3a 已把检索 abstract 与回答原文分开；`cue_anchors` 写入、`supersedes` 版本链仍未做。
 
 4. **真实评测规模有限**
    - LoCoMo 40 题属于已见开发样本，不代表生产质量。
@@ -98,7 +98,7 @@
 - 单 claim 改写回写 seed；未检索不得 `no_evidence`；冲突保持未决
 - `absence` 区分尚未检索与已检索无证据；收尾写入 trace.metadata
 - 搜索回包提供 `suggested_query`；cue 来自 name / entities / cue_anchors
-- 默认关闭；不做 NLI，不强制改写模型最终答句，未做真实 A/B
+- 默认关闭；不做 NLI，不强制改写模型最终答句
 
 ### 已完成：停答点确定性 trigger（A/B 准入条件 1）
 
@@ -118,11 +118,17 @@
 
 - `TestSyntheticScenario`：强制搜（not_searched 停答拦截）、冲突（judge_claim conflict 后强制再搜）、无新证据（搜到同源后停止，不无限强制）
 
-### 下一步：策略冻结 → A/B
+### 已完成：开发集 A/B（口径对齐后）
 
-- 冻结清单已落 `docs/FREEZE_LOCK.md`；入口：`benchmarks/locomo_light.py --mode ab`（非流式，40 题开发集，非 holdout）
-- 按 `docs/FREEZE_COMMITMENT.md` 五条锁死策略，再跑 static / agentic A/B 与阶段错误诊断
-- 冻结策略后运行验证集、holdout 与结构不同的工作流回放
+- agentic 臂证据预算对齐 static（Top-K 全文，不截 500 字）；`no_new_evidence` 只在检索 0 条时停止
+- 40 题开发集结果见 `logs/locomo_ab_dev.json`；入口：`benchmarks/locomo_light.py --mode ab`
+- 评测脚本支持断点续跑；Windows 临时目录清理失败不再淹没已完成结果
+
+### 下一步：holdout 与 3.6，不要对着这 40 题拧参
+
+- 开发集只诊断。按 `docs/FREEZE_COMMITMENT.md`，不因 +5pp 改 prompt / trigger / 阈值
+- 冻结后跑验证集、holdout 与结构不同的工作流回放
+- 3.3b / 3.4 / 3.5 仍排在跨场景验证之后
 - 将工具成功、失败、成本与延迟接入可追溯的经验记录，再决定是否固化为技能
 
 ## 参考文档
