@@ -702,9 +702,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError("缺少 LIGHTHERMES_BASE_URL")
     dataset = load_dataset(data_path)
     cases = stratified_sample(dataset, args.per_category, args.seed)
-    cases_by_conversation: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for case in cases:
-        cases_by_conversation[case["conversation_index"]].append(case)
+    total_cases = len(cases)
 
     static_usage = UsageTotals()
     agentic_usage = UsageTotals()
@@ -714,6 +712,42 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     started_at = time.time()
     consecutive_errors = 0
     freeze = freeze_snapshot(config, args)
+    if args.mode == "ab" and output_path.exists():
+        try:
+            prev = json.loads(output_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            prev = {}
+        prev_settings = prev.get("settings") or {}
+        if prev_settings.get("seed") == args.seed and prev_settings.get("mode") == "ab":
+            static_results = list((prev.get("arms") or {}).get("static", {}).get("results") or [])
+            agentic_results = list((prev.get("arms") or {}).get("agentic", {}).get("results") or [])
+            done = {
+                (item["conversation_index"], item["qa_index"])
+                for item in static_results
+            }
+            skipped = len(cases) - len([
+                case for case in cases
+                if (case["conversation_index"], case["qa_index"]) not in done
+            ])
+            cases = [
+                case for case in cases
+                if (case["conversation_index"], case["qa_index"]) not in done
+            ]
+            for bucket, usage in (
+                ((prev.get("arms") or {}).get("static", {}).get("usage") or {}, static_usage),
+                ((prev.get("arms") or {}).get("agentic", {}).get("usage") or {}, agentic_usage),
+            ):
+                usage.calls = int(bucket.get("calls") or 0)
+                usage.prompt_tokens = int(bucket.get("prompt_tokens") or 0)
+                usage.completion_tokens = int(bucket.get("completion_tokens") or 0)
+                usage.reasoning_tokens = int(bucket.get("reasoning_tokens") or 0)
+                usage.total_tokens = int(bucket.get("total_tokens") or 0)
+            started_at -= float(prev.get("elapsed_seconds") or 0)
+            print(f"resume: skip {skipped}, remaining {len(cases)}", flush=True)
+
+    cases_by_conversation: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for case in cases:
+        cases_by_conversation[case["conversation_index"]].append(case)
 
     def persist(status: str = "completed", error: str | None = None) -> dict[str, Any]:
         if args.mode == "ab":
@@ -764,7 +798,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         write_report(output_path, report)
         return report
 
-    with tempfile.TemporaryDirectory(prefix="lighthermes-locomo-") as temp_dir:
+    with tempfile.TemporaryDirectory(
+        prefix="lighthermes-locomo-", ignore_cleanup_errors=True
+    ) as temp_dir:
         original_cwd = Path.cwd()
         os.chdir(temp_dir)
         try:
@@ -793,7 +829,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                             static_results.append(result)
                             consecutive_errors = 0
                             print(
-                                f"[{len(static_results)}/{len(cases)}] "
+                                f"[{len(static_results)}/{total_cases}] "
                                 f"{result['category_name']} hit={result['retrieval']['hit']} "
                                 f"judge={result.get('judge_correct')}",
                                 flush=True,
@@ -869,7 +905,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                             print(f"AGENTIC ERROR {type(exc).__name__}: {exc}", flush=True)
                         agentic_results.append(agentic_result)
                         print(
-                            f"[{len(static_results)}/{len(cases)}] "
+                            f"[{len(static_results)}/{total_cases}] "
                             f"{static_result['category_name']} "
                             f"static_hit={static_result.get('retrieval', {}).get('hit')} "
                             f"static_judge={static_result.get('judge_correct')} "
@@ -883,11 +919,10 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                             persist("failed", "Stopped after 3 consecutive benchmark errors")
                             raise RuntimeError("Stopped after 3 consecutive benchmark errors")
 
-                    persist("completed")
+                    persist("running")
+            return persist("completed")
         finally:
             os.chdir(original_cwd)
-
-    return persist("completed")
 
 
 def build_parser() -> argparse.ArgumentParser:
