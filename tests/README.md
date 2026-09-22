@@ -11,6 +11,7 @@
 ## 结构
 
 - `unit/`：记忆、检索、工具、适配器、压缩、配置、旧进化与 Active Memory。
+- `unit/test_store.py`：R2 新存储的保存/重开、scope 隔离、候选、纠正、遗忘、索引重建与事务故障；尚不代表主循环已切换。
 - `integration/test_cli.py`：CLI 命令和输入循环。
 - `unit/test_bash.py`、`integration/test_bash_agent.py`：真实本地命令、输出上限、进程组清理、授权、预算、取消与读/改/测闭环。
 - `integration/test_session_lifecycle.py`：真实 SQLite 保存、重置、重启、默认用户一致性、失败保留与自动机制停止。
