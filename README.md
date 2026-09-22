@@ -2,18 +2,18 @@
 
 本地优先的轻量记忆 Agent，正在按 [ROADMAP](docs/ROADMAP.md) 收敛为“行动、跨会话记忆、可验证自进化”一个闭环。
 
-发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0 基础收敛与 R1 bash 行动已实现；统一记忆存储与验证式自进化按 R2/R3 推进，不能把路线图当作已交付功能。**
+发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具；旧数据迁移和验证式自进化尚未完成。**
 
 ## 当前可用能力
 
 - OpenAI / Anthropic 及兼容端点，流式与非流式工具循环。
 - 本地 bash：每次独立进程、会话授权、超时/取消清理进程组、有限输出和工具调用预算。
-- `search_memory` / `read_memory`、关键词与可选 embedding 检索、上下文压缩。
-- CLI 会话 ID 正确轮换，保存后重启可以按来源读取；不再自动跨层复制或按“命中条目数量”调参。
-- 人工 Markdown 技能，支持指定目录、禁用技能和重新加载时移除已删除技能。
-- 旧四级存储和实验模块尚未替换；旧自动技能激活已停止，生成技能目录不再默认加载。
+- `search_memory` / `read_memory` / `update_memory`：同一 SQLite 保存事件、长期条目与 FTS5 索引，支持有来源的纠正、归档与遗忘。
+- 消息、工具调用意图和观察逐步持久化；流式取消保留已交付片段，任务状态单独记录。模型正常返回不代表任务已验证。
+- 用户与项目 scope 隔离；默认用户为 `default_user`。`memory.project_id` 使用宿主指定的稳定 ID，移动目录时不修改 ID；省略则写入用户范围。
+- 人工 Markdown 技能、人工 `SOUL.md` / 默认用户的 `USER.md` 仍可使用，模型不再自动改写这些文件。
 
-当前仍有重要限制：会话保存主要发生在 CLI 结束/重置，保存内容来自当前短期窗口；不提供完整的崩溃恢复或全量事件日志。项目级隔离、可靠纠正/遗忘、统一容量治理在 R2 实现。旧进化引擎只有显式调用入口，其成功标签不代表经过任务验证。
+新运行入口不再使用四级存储、Active Memory 或旧自进化。原实验模块暂留供历史核对；复现请使用锁定旧提交。新路径目前只有词法检索，不支持跨语言语义召回，也不宣称已通过真实模型质量评测。
 
 ## 安装与运行
 
@@ -26,7 +26,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。需要 embedding 时配置独立端点；无需 embedding 可设 `memory.hybrid_retrieval.enabled: false`。
+复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。新运行路径不需要 embedding。
 
 ```python
 from lighthermes import LightHermes
@@ -40,9 +40,20 @@ print(agent.run("解释这个项目的设计"))
 .venv/bin/python -m pytest tests
 ```
 
-CLI：`/help`、`/skills`、`/memory`、`/stats`、`/config`、`/compress`、`/export`、`/reset`、`/exit`。同一次 CLI 会话保持相同 ID，`/reset` 保存成功后才分配新 ID；保存失败会显示错误、拒绝 `/reset` 或正常 `/exit` 并保留内存内容；强制结束进程仍不能保证恢复。
+**有旧记忆时先不要直接启动默认目录。** 检测到旧 SQLite / episodic / semantic 文件会明确报错，不自动忽略或转换。迁移工具尚待下一切片；试用新路径可显式指定新的空目录：
 
-Python `run()` 未传 ID 时使用该 Agent 实例的稳定会话 ID。需要新的独立上下文应新建 Agent；显式 `session_id` 不会自动切换/加载历史。旧 `default` 用户名的数据保留，可显式传 `user_id="default"` 查询；默认统一为 `default_user`，不会偷偷改写旧数据库。
+```python
+agent = LightHermes.from_config("config.yaml", memory_dir="memory-r2", project_id="my-project")
+print(agent.run("请记住：这个项目使用 Python"))
+```
+
+CLI 使用 `config.yaml` 的 `memory.storage_dir`。`/reset` 创建新会话并清除当前上下文，已提交事件不重写；持久化失败会明确报错。Python `run()` 使用实例会话 ID，也支持显式 `session_id/user_id`；切换身份会清除内存上下文，不自动加载或重放历史命令。未消费的流不会开始回合。
+
+每回合 seed 最多 4 条、1500 估算 tokens；记忆结果、人工设定和自动技能共享 4000 总预算。主动搜索最多两次，候选最多 50 条。读长记录支持字符 offset；默认接续上次读取位置。使用保守 UTF-8 字节估算，不等于供应商计费 tokens。
+
+遗忘会删除纠正链和索引，并将来源回合排除出再次提取；保留的原始事件不再通过模型记忆工具读取。`erase` 目前只额外删除条目直接引用的来源事件；同回合其他观察、外部日志和备份并非完整物理清除范围，全面删除预览仍待后续实现。共享来源会明确拒绝扩大删除。
+
+事件保存包含常见 Bearer / `sk-` 脱敏及 32,000 字节文本上限，截断有标记；不是通用秘密检测。默认数据库容量保护 256 MiB，含 SQLite sidecar；尚非整个运行目录的硬配额。未完成任务的自动恢复、旧数据迁移和规模评测仍未交付。
 
 ## bash 行动
 
@@ -60,21 +71,22 @@ print(agent.last_turn["status"])
 
 bash 在本机以当前账号权限执行，**不是沙箱**；工作目录不限制文件访问。每次命令默认 60 秒、最多 300 秒，输出最多 12,000 字符。`cd`/`export` 不跨调用保留，不支持后台任务；核心只继承基本环境，额外环境由宿主通过 `bash_env` 显式提供，模型不能修改执行授权。
 
-`max_iterations` 同时限制模型迭代和工具调用总数；超出剩余预算的整批工具不会执行。取消立即停止后续命令，不自动重试副作用。`last_turn` 提供当前回合的会话 ID、状态和消息/工具观察；它仅保留在内存中，持久化事件日志属于 R2。`completed` 表示流程完成，不表示任务已外部验证。
+`max_iterations` 同时限制模型迭代和工具调用总数；超出剩余预算的整批工具不会执行。取消立即停止后续命令，不自动重试副作用。`last_turn` 提供当前回合的会话 ID、状态和消息/工具观察；同时有按 session/turn 关联的 SQLite 事件；重启不会自动重放。`completed` 表示流程完成，不表示任务已外部验证。
 
 ## 配置变化
 
-- `memory.retention.short_term_turns`、`working_memory_days` 已在构造时接通。
+- `memory.storage_dir/project_id/max_bytes` 是新记忆配置；旧 `retention/recall` 非空配置会拒绝，防止静默失效。
 - `skills.dirs: []` 真的禁用加载，`skills.disabled` 真的排除指定技能。
 - 不支持的 `plugins.dirs`、`skills.enabled/auto_load`、`episodic_auto_archive`、`evolution.sandbox.max_memory_mb` 会明确报错。
 - `memory.adaptive.enabled: true`、`adapt_interval` 和 `auto_generate_skills: true` 已退出产品路径，旧配置需要移除这些项。
+- 旧 `embedding_*` Python 构造参数已移除；启用旧 hybrid / Active Memory / evolution 会报错。压缩摘要仅作临时上下文，不能自动提升为事实。
 - `agent.load_config()` 不再只修改部分字段而留下旧模型连接；使用 `LightHermes.from_config()` 创建新实例。
 
 完整消费关系与验证见 [PROJECT_STATUS](docs/PROJECT_STATUS.md)。
 
 ## 实验与历史
 
-旧 Active Memory 默认关闭，当前保留代码和回归测试。原 LoCoMo 实验的复现应使用锁定版本、配置和历史结果，不能把当前重构版本冒充原冻结条件。有关数据划分、holdout 与调用预算的纪律仍由 [冻结宣言](docs/FREEZE_COMMITMENT.md) 和 [冻结清单](docs/FREEZE_LOCK.md) 约束。
+旧 Active Memory 已退出主循环；独立实验模块暂留，主循环专属旧测试由 Git 历史归档。原 LoCoMo 实验的复现应使用锁定版本、配置和历史结果，不能把当前重构版本冒充原冻结条件。有关数据划分、holdout 与调用预算的纪律仍由 [冻结宣言](docs/FREEZE_COMMITMENT.md) 和 [冻结清单](docs/FREEZE_LOCK.md) 约束。
 
 - [当前路线与开发边界](docs/ROADMAP.md)
 - [当前已实现状态](docs/PROJECT_STATUS.md)

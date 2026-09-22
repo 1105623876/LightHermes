@@ -76,8 +76,8 @@ def test_normal_turn_never_runs_hit_adaptation_or_skill_activation(tmp_path, mon
     def forbidden(*args, **kwargs):
         pytest.fail("Normal turns must not run legacy automatic maintenance")
 
-    monkeypatch.setattr(agent.memory, "adapt_weights", forbidden)
-    monkeypatch.setattr(agent.memory, "auto_migrate", forbidden)
+    monkeypatch.setattr(agent.memory, "adapt_weights", forbidden, raising=False)
+    monkeypatch.setattr(agent.memory, "auto_migrate", forbidden, raising=False)
     agent.query_count = 99
     assert agent.run("hello") == "Done"
     first_id = agent.session_id
@@ -85,7 +85,7 @@ def test_normal_turn_never_runs_hit_adaptation_or_skill_activation(tmp_path, mon
     assert agent.session_id == first_id
     assert agent.evolution is None
     agent.memory.on_session_end(first_id, summary="Normal completion")
-    assert agent.memory.working.get_recent_sessions(DEFAULT_USER_ID)[0]["session_id"] == first_id
+    assert agent.memory.store.db.execute("SELECT session_id FROM events LIMIT 1").fetchone()[0] == first_id
 
 
 def test_working_store_propagates_persistence_failure(tmp_path, monkeypatch):

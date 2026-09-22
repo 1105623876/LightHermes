@@ -27,7 +27,7 @@ class MemoryStore:
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.execute("PRAGMA secure_delete=ON")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise ValueError(f"Unsupported memory schema: {version}")
             tables = self.db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if version == 0 and tables:
@@ -59,6 +59,19 @@ class MemoryStore:
                     CREATE INDEX events_turn ON events(scope,session_id,turn_id);
                     CREATE VIRTUAL TABLE entry_fts USING fts5(id UNINDEXED, tokens);
                     PRAGMA user_version=1;
+                    COMMIT;
+                """)
+            if version in (0, 1):
+                self.db.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE excluded_turns (
+                        scope TEXT NOT NULL, session_id TEXT NOT NULL, turn_id TEXT NOT NULL,
+                        PRIMARY KEY(scope,session_id,turn_id)
+                    );
+                    INSERT OR IGNORE INTO excluded_turns
+                        SELECT e.scope,e.session_id,e.turn_id FROM events e
+                        JOIN excluded_sources s ON s.event_id=e.id;
+                    PRAGMA user_version=2;
                     COMMIT;
                 """)
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
@@ -128,6 +141,9 @@ class MemoryStore:
         result['payload'] = json.loads(result['payload'])
         result['excluded'] = self.db.execute(
             "SELECT 1 FROM excluded_sources WHERE event_id=?", (event_id,)).fetchone() is not None
+        result['excluded'] |= self.db.execute(
+            "SELECT 1 FROM excluded_turns WHERE scope=? AND session_id=? AND turn_id=?",
+            (row['scope'], row['session_id'], row['turn_id'])).fetchone() is not None
         return result
 
     def _entry(self, entry_id, scope):
@@ -238,6 +254,11 @@ class MemoryStore:
                 self._index(item, '', 'deleted')
                 self.db.execute("DELETE FROM entries WHERE id=?", (item,))
             for ref in refs:
+                event = self.read_event(ref, scope)
+                # Tool intents/observations may repeat the same fact. Exclude the
+                # source turn, including later events, from future extraction.
+                self.db.execute("INSERT OR IGNORE INTO excluded_turns VALUES(?,?,?)",
+                                (scope, event['session_id'], event['turn_id']))
                 self.db.execute("INSERT OR IGNORE INTO excluded_sources VALUES(?)", (ref,))
                 if erase_sources:
                     self.db.execute("DELETE FROM events WHERE id=? AND scope=?", (ref, scope))

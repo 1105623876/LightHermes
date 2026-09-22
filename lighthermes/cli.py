@@ -146,11 +146,10 @@ class CLI:
         print("\n记忆系统统计:")
         print(f"  短期记忆: {len(self.agent.memory.short_term.messages)} 条消息")
 
-        episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
-        print(f"  情景记忆: {episodic_count} 个项目/任务")
-
-        semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
-        print(f"  语义记忆: {semantic_count} 条知识")
+        counts = self.agent.memory.store.db.execute(
+            "SELECT status, count(*) FROM entries GROUP BY status").fetchall()
+        for status, count in counts:
+            print(f"  {status}: {count} 条")
         print()
 
     def show_config(self):
@@ -212,11 +211,7 @@ class CLI:
             self._print("\n记忆统计:", "yellow")
             print(f"  短期记忆: {self._colorize(str(len(self.agent.memory.short_term.messages)), 'cyan')} 条消息")
 
-            episodic_count = len(list(Path(self.agent.memory.episodic.storage_dir).glob("*.md")))
-            print(f"  情景记忆: {self._colorize(str(episodic_count), 'cyan')} 个项目/任务")
-
-            semantic_count = len(list(Path(self.agent.memory.semantic.storage_dir).glob("*.md")))
-            print(f"  语义记忆: {self._colorize(str(semantic_count), 'cyan')} 条知识")
+            self.show_memory_stats()
 
         if self.agent.compression_enabled:
             stats = self.agent.compressor.get_stats()

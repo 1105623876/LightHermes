@@ -156,3 +156,18 @@ def test_broken_index_is_an_error_not_empty_recall(tmp_path):
         store.db.execute('DROP TABLE entry_fts')
         with pytest.raises(sqlite3.OperationalError):
             store.search('Python', 'user:u')
+
+
+def test_owned_v1_upgrade_preserves_data_and_exclusions(tmp_path):
+    path = tmp_path / 'memory.db'
+    with MemoryStore(path) as store:
+        source, old = save(store, 'Python', status='active')
+        store.forget(old, 'user:u')
+        store.db.execute('DROP TABLE excluded_turns')
+        store.db.execute('PRAGMA user_version=1')
+    with MemoryStore(path) as store:
+        assert store.db.execute('PRAGMA user_version').fetchone()[0] == 2
+        assert store.read_event(source, 'user:u')['excluded']
+        later = store.append_event('user:u', 'session-1', 'turn-1', {'content': 'Python repeated'})
+        with pytest.raises(ValueError, match='Forgotten'):
+            store.remember('user:u', 'fact', 'Python', [later], status='active')

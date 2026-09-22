@@ -30,21 +30,16 @@ def test_explicit_plugin_and_auto_activation_arguments_rejected():
         LightHermes(config_path=None, auto_generate_skills=True)
 
 
-def test_empty_skill_dirs_stays_empty_and_retention_is_effective(tmp_path, monkeypatch):
+def test_empty_skill_dirs_stays_empty(tmp_path, monkeypatch):
     skills = tmp_path / "skills/core"
     skills.mkdir(parents=True)
     (skills / "unexpected.md").write_text("---\nname: unexpected\n---\nDo not load me")
     monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: SimpleNamespace())
     agent = LightHermes(api_key="test", config_path=None, skill_dirs=[],
                         memory_dir=str(tmp_path / "memory"), config={
-                            "memory": {"retention": {"short_term_turns": 2, "working_memory_days": 14}},
                             "context_compression": {"enabled": False},
                         })
     assert agent.skill_loader.get_all_skills() == []
-    for i in range(8):
-        agent.memory.add_message("user", str(i))
-    assert len(agent.memory.get_context()) == 4
-    assert agent.memory.working.retention_days == 14
 
 
 def test_disabled_skill_and_removed_file_do_not_survive_reload(tmp_path):

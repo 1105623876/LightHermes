@@ -141,5 +141,7 @@ class TestContextCompressor:
             "last_degraded": False
         }
 
-    def test_estimate_tokens_uses_simple_character_ratio(self):
-        assert estimate_tokens("x" * 12) == 3
+    def test_estimate_tokens_does_not_undercount_cjk_or_code(self):
+        assert estimate_tokens("x" * 12) == 12
+        assert estimate_tokens("汉字") == 6
+        assert estimate_tokens('{"a": 1}') == 8

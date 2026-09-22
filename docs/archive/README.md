@@ -19,3 +19,7 @@
 删除的旧脚本：`test_adapter.py`、`test_complete.py`、`test_comprehensive.py`、`test_evolution.py`、`test_minimax_anthropic.py`、`test_stability_basic.py`、`test_tool_decorator.py`。基础覆盖分别由 `tests/unit/test_adapters.py`、`test_memory.py`、`test_core_memory.py`、`test_evolution.py`、`test_tools.py` 和流式测试保留；真实 API smoke 没有伪装成离线覆盖，后续必须单独授权运行。
 
 恢复单个旧文件可先查看 `git show backup/pre-refactor-20260922:原路径`。完整原版本为 `04bb985`（包含新路线图），旧运行时代码为 `f470f11`。Git 历史是原路径索引，不维护重复的当前文档。
+
+## R2 主循环整理
+
+`6d0918d` 保存完整的切换前代码和测试。移除 `tests/unit/test_core_active_memory.py`，并从 `test_core_memory.py` 移除自动提炼、固定设定写入、四级配置转发与旧轨迹评分等已退役行为；合计 43 项。没有复制一套可误执行的旧测试目录。保留模型配置、fallback、文件工具、工具覆盖和供应商响应测试，新行为由 `integration/test_runtime_memory.py` 覆盖。旧独立存储/实验模块尚未整体删除，其独立测试继续保留。实际旧实验复现仍使用 `f470f11`。

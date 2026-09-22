@@ -9,8 +9,8 @@ import json
 
 
 def estimate_tokens(text: str) -> int:
-    """粗略估算 token 数量（参考 hermes-agent）"""
-    return len(text) // 4
+    """Conservative UTF-8 byte estimate; not provider billing tokens."""
+    return len(text.encode("utf-8"))
 
 
 class ContextCompressor:

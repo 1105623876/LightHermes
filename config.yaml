@@ -11,49 +11,13 @@ model:
   base_url: ${LIGHTHERMES_BASE_URL}
   fallback_models: []
 
-embedding:
-  provider: openai
-  model_name: ${LIGHTHERMES_EMBEDDING_MODEL}
-  api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
-  base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
-
-# 记忆配置
+# R2 统一 SQLite；旧目录需要显式迁移，不能直接当空库继续。
 memory:
   enabled: true
   storage_dir: memory
-  active_recall:
-    enabled: false
-    max_rounds: 2
-    persist_traces: true
-    trace_dir: memory/recall_traces
-
-  # 混合检索配置 (可选 - 提升记忆检索精度)
-  # 默认使用简单关键词匹配,无需额外依赖
-  # 启用混合检索需要: pip install sentence-transformers (本地) 或使用 OpenAI API
-  hybrid_retrieval:
-    enabled: true                # 是否启用混合检索 (默认 false)
-    strict_hybrid_retrieval: false  # true 时 embedding/hybrid 失败即抛错而非回退关键词
-    min_candidates: 5            # TF-IDF 候选少于该值时触发 embedding fallback
-    fallback_to_all: true        # 候选不足时回退到全量语义记忆 embedding rerank
-    semantic_threshold: 0.50     # BGE-M3 评测起点；其他模型需按相似度分布调参
-    score_margin: 0.08           # BGE-M3 保留接近 top 的结果，抑制语义尾部噪声
-    full_rerank_max_docs: 200    # 全量 rerank 的最大语义记忆条数
-    tfidf_candidate_limit: 20    # TF-IDF 初筛候选上限
-
-  retention:
-    short_term_turns: 50
-    working_memory_days: 7
-    semantic_max_entries: 1000
-    semantic_max_chars: 200000
-    semantic_similarity_threshold: 0.85
-    distill_recent_limit: 20
-
-  # 召回截断参数（默认值保持与历史行为一致，长文档记忆可放开）
-  recall:
-    seed_limit: 8
-    seed_max_chars: 2000
-    item_max_chars: 500      # 0 表示不截断
-    search_max_chars: 10000
+  # 项目范围使用稳定 ID；移动目录时保持此值。省略则写入用户范围。
+  project_id: null
+  max_bytes: 268435456
 
 # R0 暂停旧自动进化；R3 将接入可验证的经验闭环
 # 不再支持 auto_generate_skills: true
@@ -73,8 +37,6 @@ skills:
 tools:
   builtin:
     enabled: true
-    memory_search: true
-    memory_read: true
     file_read: false
     file_search: false
     file_write: false

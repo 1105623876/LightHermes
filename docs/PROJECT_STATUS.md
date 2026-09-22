@@ -1,71 +1,59 @@
 # LightHermes 当前状态
 
-更新时间：2026-09-22。开发依据：[ROADMAP](ROADMAP.md)。发布版本仍为 0.3.4；当前是 v0.4.0 收敛开发分支。
+更新时间：2026-09-22。开发依据：[ROADMAP](ROADMAP.md)。发布版本仍为 0.3.4；当前为 v0.4.0 重构分支。
 
-## R0：基础收敛
+## Git 与历史
 
-- Git 备份分支：`backup/pre-refactor-20260922`，提交 `04bb985`。工作分支：`refactor/memory-core-20260922`。
-- 原发布开发基线：`f470f11`；本地 Git bundle 与工作状态归档已验证。R0/R1 工作分支已推送至 origin（`b838ff0`），备份分支与本地状态归档未上传。
-- 新路线图已单独提交。文档与测试整理清单：[archive/README.md](archive/README.md)。
-- CLI 会话 ID 按新会话生成，重置前保存；连续关闭幂等，保存失败不清空当前会话。
-- `LightHermes.run()` 默认沿用实例会话 ID；Memory/CLI 默认用户统一为 `default_user`。旧 `default` 数据未迁移，仍可显式查询。
-- 会话结束不再自动提升/蒸馏/归档；回合结束不再按命中数量自适应。旧手动方法暂保留到替代存储完成。
-- 旧 Evolution 默认关闭，自动技能激活明确拒绝；人工技能继续可用。生成目录不默认加载，加载器尊重空目录/禁用项并在重载时移除已删技能。
-- 测试使用临时目录并禁网；核心/测试依赖分开，本地模型包不再随默认 requirements 安装。
+- 工作分支 `refactor/memory-core-20260922`；远端已推送至 R0/R1 的 `b838ff0`。后续 R2 提交目前保留本地。
+- 备份分支 `backup/pre-refactor-20260922` 指向 `04bb985`；本地 Git bundle 与工作状态归档已经验证，不上传私人配置和运行数据。
+- 原运行时代码 `f470f11`，新存储第一切片 `6d0918d`。[归档清单](archive/README.md) 说明旧文档、测试的恢复出处。
+- 真实记忆、日志和用户本地配置未迁移或清理，旧 worktree refs 未删除。
 
-## R1：bash 行动
+## 当前运行闭环
 
-- 默认内置 `bash`，模型可见但未授权不执行；CLI 按会话授权，Python 使用 `bash_authorized=True`。工作目录与额外环境由 `bash_cwd/bash_env` 提供。
-- 支持 macOS/Linux bash；独立进程、有限首尾输出、UTF-8 增量解码、超时/取消清理进程组，不支持后台任务。
-- 流式与非流式共用工具分发，整批工具不能突破剩余调用预算；取消、错误、预算耗尽不会记为完成回合。
-- `last_turn` 关联会话 ID 与内存消息/观察，明确区分完成、取消、错误与预算耗尽；持久化和验证结果仍由 R2/R3 接入。
-- 脚本化模型 + 真实 bash 在临时项目完成读取、修改计算函数与断言验证，两种响应路径都通过。没有运行真实 LLM，不宣称模型任务成功率。
+- R0：统一默认用户与会话 ID，停止命中计数自适应、自动跨层复制与自动技能激活，离线测试隔离真实数据和网络。
+- R1：默认内置 bash；CLI 按会话授权，Python 使用 `bash_authorized=True`。独立进程、有限首尾输出、超时/取消清理进程组，整批调用不突破剩余预算。不是系统沙箱。
+- R2：`LightHermes → RuntimeMemory → MemoryStore` 是唯一产品写入/召回路径。SQLite 保存事件、长期条目、来源、排除标记和 FTS5 索引；无新旧存储开关、双写、自动迁移或额外提炼模型调用。
+- 回合开始保存用户事件，工具执行前保存意图，执行后保存观察；流式文本在交付前保存片段。完成/取消/失败/预算耗尽有独立状态事件。未消费的流不启动任务；重启不自动重放副作用。
+- `search_memory/read_memory/update_memory` 在两种模型响应路径共用。持久化/索引异常直接中止，不能伪装空结果或保存成功；参数错误返回有限工具错误。
+- 主动记忆写入由同一模型循环按用户明确请求调用工具，不再按关键词追加 SOUL/USER。来源绑定当前用户事件，scope 由宿主固定。经验/技能始终写入 candidate，模型不能自报验证并激活。
+- 精确 ID 纠正事务性失效旧索引，保留可审计历史；归档退出召回。遗忘删除整个纠正链，排除来源回合（包括重复工具观察与随后追加事件），防止从这些来源再次提取。索引重建不恢复旧事实。
+- user_id 隔离用户；项目 scope 由 user_id + 稳定 project_id 标识，移动工作目录不改变项目身份。缺省 project_id 表示用户范围；有项目时读取当前项目与用户级 active 条目，写入当前项目。不同会话/用户切换清空内存上下文。
+- seed 一次最多 4 条/1500 估算 tokens；结果、人工设定、自动技能共享 4000。主动搜索最多两次，跨 scope 总候选最多 50；重复预览去重，读取可接续或显式指定 offset。预算采用保守 UTF-8 字节估算，含 JSON 返回格式；供应商 usage 另计，尚无误差校准报告。
+- 原始事件采用有限 JSON 文本封装，32,000 字节文本上限并标记截断，处理常见 Bearer / `sk-` 凭据；不声称通用秘密检测。长期条目最多 8000 字节，过长明确拒绝。
+- 人工 SOUL 与默认用户的 USER 文件只读、有界注入；人工技能最多匹配一个并共用记忆预算。压缩摘要仅为临时上下文，不提升为永久事实。
 
-## R2：第一切片——统一存储基础
+## 当前限制与下一步
 
-- 新增 `lighthermes/store.py:MemoryStore`，只接受显式数据库路径；尚未接入 `LightHermes`、CLI 或默认配置，没有自动迁移、双写或新旧后端开关。
-- 同一 SQLite 保存增量事件与长期条目；每条记录有精确 scope，事件关联 session/turn。长期条目必须有同 scope 的事件来源；默认 candidate，只有宿主明确激活后才进入检索。
-- FTS5 复用中英文分词，索引完整正文；最多返回 50 条，只查 active 和指定 scope。不是语义检索：同义词/跨语言、中文单字误匹配和上下文污染阈值还需后续验证，当前不能宣称无关请求必然零注入。
-- 精确 ID 纠正在事务中产生新条目、保留历史、失效旧索引；未批准候选不能覆盖 active。归档退出召回；重建索引不会恢复历史状态。
-- 遗忘删除整条纠正链及索引，来源 ID 留无正文排除标记，拒绝再次提取。可明确清除来源原文；若原文还支撑链外条目则整次拒绝，不隐式扩大删除范围。保留来源模式仍可显式读取原文并看到 excluded 标记。
-- SQLite 写入和索引同事务，错误直接抛出。默认 256 MiB 应用容量保护，计入该库及 SQLite sidecar，并限制数据库页数；不是操作系统硬配额，也尚不覆盖未来外部日志/缓存。容量失败保留已提交事实，不删除旧原文腾空间。
-- 不引入运行依赖、embedding 缓存或后台维护。原文 payload 的限长/脱敏、任务完成状态、项目稳定 ID 绑定、全回合预算和主循环接入仍待下一切片；当前 API 由宿主负责提供可信 scope 和已处理 payload，不能直接作为模型工具暴露。
-- 旧实现仍有实际调用者，其行为测试保留；这次不额外复制历史文档，不删除尚在运行的旧测试。真实记忆未读取内容或迁移。
+**R2 尚未整体验收。** 下一切片是旧数据只读清单、转换预览与幂等迁移工具，再核对真实转换范围。发现旧数据库或 episodic/semantic 内容时明确拒绝启动，不能把旧数据当空库；试用新路径需显式使用空目录。
 
-## 配置消费审计
+- 目前只有 FTS5 词法检索，没有 embedding 或其缓存。长正文尾部已验证；近义/跨语言漏检、中文单字误匹配与无关上下文污染率尚待更大回放，不能承诺所有无关请求都零注入。
+- `forget` 保留原始事件但禁止模型读取与再提取来源回合；`erase` 只额外删除直接引用事件，共享来源则拒绝。其他观察、外部日志/备份并不在完整物理清除承诺内；全范围删除预览未完成。
+- 256 MiB 应用容量保护计入 SQLite 数据与 sidecar，不是 OS 硬配额；外部日志/缓存及分类占用统计、接近上限的维护仍待实现。归档不假装释放磁盘。
+- 已保存事件可审计，但尚无显式恢复未完成任务的用户入口。保存后的完成状态不是外部任务验证，R3 尚未交付。
+- 旧独立模块保留到 R4 逐项清理；主循环中已删除旧 Active Memory、关键词提炼、失败报告重复注入和伪成功进化记录。旧实验复现使用锁定提交，不使用当前运行时冒充原条件。
 
-| 配置 | 消费入口与现状 |
+## 配置与接口变化
+
+| 配置/接口 | 当前消费者或处置 |
 |---|---|
-| `secrets.env_file`、`model.*` | `from_config` / 环境加载 / Adapter；支持主模型与 fallback，密钥不入示例配置 |
-| `embedding.*`、`memory.hybrid_retrieval.*` | MemoryManager → SemanticMemory / HybridRetriever；保留实验 strict 模式 |
-| `memory.retention.short_term_turns/working_memory_days` | 已补接构造参数；限制短期窗口与旧会话保留期 |
-| 其他现有 `memory.retention.*`、`memory.recall.*` | 容量、手动蒸馏上限、seed/search 截断，旧存储仍有对应消费者 |
-| `memory.active_recall.*` | 旧实验会话及 trace；默认关闭，冻结复现使用旧提交 |
-| `memory.adaptive.enabled: true` / `adapt_interval` | 已拒绝；`archive_days` 仅供显式旧归档方法，默认配置不再暴露 |
-| `evolution.enabled`、`triggers`、`sandbox.timeout` | 显式旧引擎入口；默认关闭，不作为验证式自进化交付 |
-| `auto_generate_skills: true` | 已拒绝；不再每 50 回合生成并热加载 |
-| `evolution.sandbox.max_memory_mb` | 从未实际限制内存，现明确拒绝，不能宣称沙箱配额 |
-| `skills.dirs/disabled` | SkillLoader；空目录与排除名单生效 |
-| `plugins.dirs`、`plugin_dirs` | 未实现，非空时拒绝 |
-| `skills.enabled/auto_load`、`episodic_auto_archive` | 曾无真实消费者，现拒绝并从示例移除 |
-| `tools.builtin.*` | 现有记忆/文件工具与 R1 bash；文件工具仍默认关闭，bash 另需显式宿主授权 |
-| `context_compression.*` | ContextCompressor / 压缩收尾；原有 token 估算待 R2 改进 |
-| `cli.*`、`logging.*` | CLI 展示/流式与 logger；用 `from_config` 获取完整配置 |
-| `agent.load_config()` | 原为不一致的部分热更新，现拒绝；应新建实例 |
+| `model.*`、`secrets.env_file` | from_config / Adapter，保留 fallback |
+| `memory.enabled/storage_dir/project_id/max_bytes` | 唯一 RuntimeMemory / SQLite 路径 |
+| `memory.retention/recall` | 非空时拒绝；不再承诺旧保留期和旧召回参数 |
+| `memory.hybrid_retrieval.enabled`、`memory.active_recall.enabled` | true 时拒绝；旧实验请用历史版本 |
+| 旧 Python `embedding_*`、`skill_validation` 构造参数 | 已移除；默认配置不再暴露 embedding |
+| `evolution.enabled`、自动技能激活、命中自适应 | 开启时拒绝，R3 另行实现验证式闭环 |
+| `context_compression.*` | ContextCompressor；extract_to_memory=true 拒绝，估算不再使用 len//4 |
+| `skills.dirs/disabled` | 空目录与禁用名单有效；人工文件不被模型改写 |
+| `tools.builtin.enabled`、文件工具配置 | 默认 bash + 三个记忆工具；文件工具仍显式启用；宿主自定义工具可覆盖内置工具，覆盖后不继承内置记忆契约 |
+| 旧占位插件/技能开关、max_memory_mb | 仍明确拒绝，不制造无效配置 |
+| `agent.load_config()` | 拒绝部分热更新，应重新构造实例 |
+| CLI `/memory`、`/stats`、`/reset`、`/exit` | 新存储统计与逐事件保存，不再依赖退出时批量摘要写回 |
 
 ## 验证记录
 
-- Python 3.12.14；SQLite 3.53.1 的 FTS5 可用；`/bin/bash` 可用。
-- 项目 `.venv`：openai 3.17.0、anthropic 1.7.0、PyYAML 6.0.3、pytest 9.1.1。安装均来自项目既有声明，无新运行依赖。
-- 重构前：在临时工作目录且拒绝网络的条件下，226 passed / 3.61s。
-- R0 重构后：242 passed / 1.57s；新增会话持久化与失败路径、配置拒绝和技能失效验证。
-- R1 最终离线回归：267 passed；包含真实 bash 执行、文件修复与断言验证、输出上限、超时/取消和批量调用预算。
-- R2 存储切片：新增 11 项行为测试，全套离线回归 278 passed / 2.86s；通过公开写入 API 保存事件/条目后关闭重开验证，不宣称已通过 Agent 端到端记忆验收。包含故障回滚、容量不足和错误不伪装为空结果。
-- 112 个备份中的本地配置/资料/运行数据文件逐一校验未改动；活动文档链接与 Git 差异格式检查通过。
-- 本轮没有运行真实模型、LoCoMo 或 holdout，也没有迁移真实记忆。
-
-## 下一阶段与当前限制
-
-下一步将 R2 存储接入现有主循环与三个记忆工具，补充事件脱敏/限长、任务状态、项目绑定、seed 与总上下文预算，验证流式/非流式完整保存回放；再提供只读迁移清单与幂等转换工具，真实数据转换单独核对范围。完成后才进入 R3 验证式经验闭环。
-
-当前四级存储、窗口截断、历史保留期、按词触发固定设定写入仍为旧实现；R0 没有解决全部记忆质量问题。已有记忆与日志没有被清理或迁移，旧 worktree 引用也未删除。
+- 环境：Python 3.12.14、SQLite 3.53.1 / FTS5、macOS bash。无新增运行依赖，无真实模型调用。
+- 历史基线：重构前 226 项；R0 242 项；R1 267 项；R2 第一存储切片 278 项。
+- 本次移除 43 项只保护已退役主循环行为的测试；保留模型配置、fallback、供应商适配、文件工具和自定义覆盖等当前契约。
+- 新增 20 项运行时行为回放及 1 项 schema 升级测试；全套离线回归 **256 passed / 2.98s**。覆盖真实保存/重开、两种响应模式、scope、纠正/遗忘、来源回合排除、长记录尾部、预算、取消、错误传播、CLI 重置和旧库不改写。
+- 未运行真实模型、LoCoMo、holdout 或规模评测；没有迁移真实记忆，不以脚本化模型测试声称模型任务成功率。
