@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Generator, Union
 
-from lighthermes.memory import MemoryManager
+from lighthermes.memory import DEFAULT_USER_ID, MemoryManager
 from lighthermes.active_memory import (
     ActiveRecallSession,
     JUDGMENT_VERDICTS,
@@ -54,8 +54,8 @@ class LightHermes:
         embedding_model: str = "text-embedding-3-small",
         embedding_api_key: str = None,
         embedding_base_url: str = None,
-        evolution_enabled: bool = True,
-        auto_generate_skills: bool = True,
+        evolution_enabled: bool = False,
+        auto_generate_skills: bool = False,
         skill_validation: str = "sandbox",
         skill_dirs: List[str] = None,
         plugin_dirs: List[str] = None,
@@ -70,14 +70,30 @@ class LightHermes:
         config: Dict[str, Any] = None,
     ):
         # 读取配置文件
+        load_default_config = config is None
         if config is None:
             config = {}
-        if not config and config_path and os.path.exists(config_path):
+        if load_default_config and config_path and os.path.exists(config_path):
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f) or {}
             except Exception as e:
                 print(f"警告: 读取配置文件失败: {e}")
+
+        if plugin_dirs or config.get("plugins", {}).get("dirs"):
+            raise ValueError("Plugin loading is not implemented; remove plugin_dirs/plugins.dirs")
+        if auto_generate_skills or config.get("evolution", {}).get("auto_generate_skills"):
+            raise ValueError("Automatic skill activation is retired; use verified experience (ROADMAP R3)")
+        adaptive = config.get("memory", {}).get("adaptive", {})
+        if adaptive.get("enabled") or "adapt_interval" in adaptive:
+            raise ValueError("Hit-count adaptation is retired; remove memory.adaptive.enabled/adapt_interval")
+        if "max_memory_mb" in config.get("evolution", {}).get("sandbox", {}):
+            raise ValueError("evolution.sandbox.max_memory_mb was never enforced; remove this option")
+        if "episodic_auto_archive" in config.get("memory", {}).get("retention", {}):
+            raise ValueError("episodic_auto_archive was never supported; remove this option")
+        for option in ("enabled", "auto_load"):
+            if option in config.get("skills", {}):
+                raise ValueError(f"skills.{option} was never supported; use skills.dirs: [] to disable loading")
 
         self._load_local_env_files(config_path, config)
 
@@ -100,6 +116,7 @@ class LightHermes:
         if not log_file and config.get("logging", {}).get("file"):
             log_file = config["logging"]["file"]
 
+        self.session_id = uuid.uuid4().hex
         self.name = name or f"LightHermes-{uuid.uuid4().hex[:8]}"
         self.role = role or "你是一个有用的AI助手"
         self.model = model
@@ -153,6 +170,8 @@ class LightHermes:
 
             self.memory = MemoryManager(
                 memory_dir=memory_dir,
+                short_term_turns=retention_config.get("short_term_turns", 50),
+                working_memory_days=retention_config.get("working_memory_days", 7),
                 semantic_max_entries=retention_config.get("semantic_max_entries", 1000),
                 semantic_max_chars=retention_config.get("semantic_max_chars", 200000),
                 semantic_similarity_threshold=retention_config.get("semantic_similarity_threshold", 0.85),
@@ -188,16 +207,15 @@ class LightHermes:
                 recall_item_max_chars=recall_config.get("item_max_chars", 500),
                 search_max_chars=recall_config.get("search_max_chars", 10000),
             )
-            self.adapt_interval = adaptive_config.get("adapt_interval", 100)
         else:
             self.memory = None
-            self.adapt_interval = 100
 
         self.evolution_enabled = evolution_enabled
         self.auto_generate_skills = auto_generate_skills
 
-        skill_dirs = skill_dirs or ["skills/core", "skills/user", "skills/generated"]
-        self.skill_loader = SkillLoader(skill_dirs)
+        if skill_dirs is None:
+            skill_dirs = ["skills/core", "skills/user"]
+        self.skill_loader = SkillLoader(skill_dirs, disabled=disabled_skills) if disabled_skills else SkillLoader(skill_dirs)
 
         self.tool_dispatcher = ToolDispatcher()
         builtin_config = config.get("tools", {}).get("builtin", {})
@@ -703,10 +721,10 @@ class LightHermes:
             )),
             "embedding_api_key": cls._resolve_config_value(embedding_config.get("api_key")),
             "embedding_base_url": cls._resolve_config_value(embedding_config.get("base_url")),
-            "evolution_enabled": evolution_config.get("enabled", True),
-            "auto_generate_skills": evolution_config.get("auto_generate_skills", True),
+            "evolution_enabled": evolution_config.get("enabled", False),
+            "auto_generate_skills": evolution_config.get("auto_generate_skills", False),
             "skill_validation": evolution_config.get("skill_validation", "sandbox"),
-            "skill_dirs": skills_config.get("dirs", ["skills/core", "skills/user", "skills/generated"]),
+            "skill_dirs": skills_config.get("dirs", ["skills/core", "skills/user"]),
             "disabled_skills": skills_config.get("disabled", []),
             "debug": cli_config.get("show_skill_usage", logging_config.get("debug", False)),
             "log_level": logging_config.get("level", "INFO"),
@@ -970,13 +988,16 @@ class LightHermes:
         query: str,
         *,
         stream: bool = False,
-        user_id: str = "default_user",
+        user_id: str = DEFAULT_USER_ID,
         session_id: str = None,
         history: List[Dict] = None,
         max_iterations: int = 10,
     ) -> Union[str, Generator]:
         """运行 Agent"""
-        session_id = session_id or uuid.uuid4().hex
+        if session_id is None:
+            if not getattr(self, "session_id", None):
+                self.session_id = uuid.uuid4().hex
+            session_id = self.session_id
 
         system_prompt = f"{self.role}\n\n你的名字是 {self.name}。"
 
@@ -1258,11 +1279,6 @@ class LightHermes:
         )
 
         self.query_count = getattr(self, "query_count", 0) + 1
-        adapt_interval = getattr(self, "adapt_interval", 100) or 100
-        if self.memory_enabled and self.query_count % adapt_interval == 0:
-            self.memory.adapt_weights()
-            self.logger.info(f"已完成 {self.query_count} 次查询，执行记忆自适应调整")
-
         if not (self.evolution_enabled and self.evolution):
             return
 
@@ -1276,12 +1292,6 @@ class LightHermes:
                 iterations=len(tool_calls)
             )
 
-            if getattr(self, "auto_generate_skills", True) and self.query_count % 50 == 0:
-                self.logger.info(f"触发自动进化（已完成 {self.query_count} 次对话）")
-                result = self.evolution.evolve()
-                if result.get("success_skills"):
-                    self.skill_loader.load_all()
-                    self.logger.info(f"热加载了 {len(result['success_skills'])} 个新技能")
         except Exception as e:
             self.logger.warning(f"记录自进化轨迹失败: {e}")
 
@@ -1525,18 +1535,5 @@ class LightHermes:
         self._finalize_active_recall(active_session, "budget_exhausted")
 
     def load_config(self, config_path: str = "config.yaml"):
-        """从配置文件加载配置"""
-        if not os.path.exists(config_path):
-            return
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-
-        if "model" in config:
-            self.model = config["model"].get("model_name", self.model)
-
-        if "memory" in config and self.memory_enabled:
-            memory_config = config["memory"]
-            if "retention" in memory_config:
-                retention = memory_config["retention"]
-                self.memory.short_term.max_turns = retention.get("short_term_turns", 50)
+        """Reject partial live reloads that left the model adapter out of sync."""
+        raise ValueError("Live config reload is unsupported; create a new agent with LightHermes.from_config()")

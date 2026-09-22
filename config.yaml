@@ -27,12 +27,6 @@ memory:
     persist_traces: true
     trace_dir: memory/recall_traces
 
-  # 自适应记忆配置
-  adaptive:
-    enabled: true
-    adapt_interval: 100  # 每 100 次查询评估一次
-    archive_days: 30     # 30 天未访问则归档
-
   # 混合检索配置 (可选 - 提升记忆检索精度)
   # 默认使用简单关键词匹配,无需额外依赖
   # 启用混合检索需要: pip install sentence-transformers (本地) 或使用 OpenAI API
@@ -49,7 +43,6 @@ memory:
   retention:
     short_term_turns: 50
     working_memory_days: 7
-    episodic_auto_archive: true
     semantic_max_entries: 1000
     semantic_max_chars: 200000
     semantic_similarity_threshold: 0.85
@@ -62,26 +55,16 @@ memory:
     item_max_chars: 500      # 0 表示不截断
     search_max_chars: 10000
 
-# 进化配置
+# R0 暂停旧自动进化；R3 将接入可验证的经验闭环
+# 不再支持 auto_generate_skills: true
 evolution:
-  enabled: true
-  auto_generate_skills: true
-  skill_validation: sandbox
-  triggers:
-    min_success_count: 3
-    min_failure_count: 2
-  sandbox:
-    timeout: 30
-    max_memory_mb: 512
+  enabled: false
 
 # 技能配置
 skills:
-  enabled: true
-  auto_load: true
   dirs:
     - skills/core
     - skills/user
-    - skills/generated
   disabled: []
 
 # 工具配置
@@ -100,12 +83,6 @@ tools:
     max_read_chars: 20000
     max_write_chars: 20000
     max_search_results: 20
-
-# 插件配置
-plugins:
-  dirs:
-    - plugins/tools
-    - plugins/memory
 
 # 上下文压缩配置
 context_compression:

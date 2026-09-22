@@ -29,3 +29,17 @@ def sample_memory_content():
         "java": "Java是一种面向对象的编程语言，广泛用于企业开发",
         "react": "React是一个用于构建用户界面的JavaScript库"
     }
+
+
+@pytest.fixture(autouse=True)
+def isolated_offline_run(tmp_path, monkeypatch):
+    """Unit/integration tests must not read local config, mutate real memory or call APIs."""
+    import socket
+
+    monkeypatch.chdir(tmp_path)
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("Offline tests cannot open network connections")
+
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", no_network)

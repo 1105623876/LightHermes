@@ -1,379 +1,66 @@
 # LightHermes
 
-轻量级记忆增强智能体框架。在不引入 LangChain、LlamaIndex 或 LangGraph 的前提下，提供分级记忆、工具调用、上下文压缩和轻量自进化能力。
+本地优先的轻量记忆 Agent，正在按 [ROADMAP](docs/ROADMAP.md) 收敛为“行动、跨会话记忆、可验证自进化”一个闭环。
 
-当前发布版本为 `v0.3.4`；`master` 开发基线包含 Memory Eval v2.1、LoCoMo 轻量评测、批量 embedding、跨层统一重排，以及默认关闭的 Active Memory Runtime MVP。v0.4.0 的主线仍是预算受控、跨场景泛化的主动记忆，而不是针对单一 benchmark 调参。
+发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0 基础收敛已实现；bash、统一记忆存储与验证式自进化按后续阶段推进，不能把路线图当作已交付功能。**
 
-## 核心能力
+## 当前可用能力
 
-| 能力 | 说明 |
-|------|------|
-| 四级记忆 | 短期、工作、情景、语义记忆分层存储和迁移 |
-| 混合检索 | 关键词初筛、embedding 重排、跨层候选融合和噪声过滤 |
-| Active Memory | 证据账本、候选分数轨迹、两轮搜索预算、模型 claim 判定、query rewrite 和停止原因 |
-| 生命周期 | 回合开始/结束、压缩前、会话结束和记忆写入钩子 |
-| 上下文压缩 | 接近窗口上限时保留设定、关键决策和最近消息 |
-| 工具系统 | 默认提供 `search_memory` 和 `read_memory`，文件工具按配置显式开启 |
-| 自进化 | 记录轨迹，从高质量成功经验生成 Markdown 技能，并沉淀失败报告 |
-| 记忆评测 | 合成回归、LoCoMo 长对话抽样、阶段指标、token 与成本记录 |
-| 多模型端点 | OpenAI、OpenAI 兼容端点、Anthropic 和 MiniMax Anthropic 兼容端点 |
-| CLI | 交互对话、记忆统计、压缩、导出和会话重置 |
+- OpenAI / Anthropic 及兼容端点，流式与非流式工具循环。
+- `search_memory` / `read_memory`、关键词与可选 embedding 检索、上下文压缩。
+- CLI 会话 ID 正确轮换，保存后重启可以按来源读取；不再自动跨层复制或按“命中条目数量”调参。
+- 人工 Markdown 技能，支持指定目录、禁用技能和重新加载时移除已删除技能。
+- 旧四级存储和实验模块尚未替换；旧自动技能激活已停止，生成技能目录不再默认加载。
 
-LightHermes 当前更适合单用户、本地运行或嵌入 Python 应用。多用户记忆隔离、网络 Channel 和插件生态仍属于后续阶段。
+当前仍有重要限制：会话保存主要发生在 CLI 结束/重置，保存内容来自当前短期窗口；不提供完整的崩溃恢复或全量事件日志。项目级隔离、可靠纠正/遗忘、统一容量治理在 R2 实现。旧进化引擎只有显式调用入口，其成功标签不代表经过任务验证。
 
-## 快速开始
+## 安装与运行
 
-### 安装
+需要 Python 3.10+。核心依赖只有 `openai`、`anthropic`、`pyyaml`；本地 embedding 和 CLI 颜色为可选项。
 
-建议使用项目虚拟环境：
-
-```powershell
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+# 仅开发测试需要：
+.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-核心依赖为 `openai`、`anthropic` 和 `pyyaml`。本地 embedding 的 `sentence-transformers` 属于可选依赖。
-
-### 配置密钥
-
-密钥、模型名和端点只放在项目级 `.env.local`，不要写进 `config.yaml`。复制 `.env.example` 后填写：
-
-```env
-LIGHTHERMES_MODEL=your-model-id
-LIGHTHERMES_API_KEY=your_main_model_key
-LIGHTHERMES_BASE_URL=https://your-gateway.example.com/v1
-
-LIGHTHERMES_EMBEDDING_MODEL=BAAI/bge-m3
-LIGHTHERMES_EMBEDDING_API_KEY=your_embedding_key
-LIGHTHERMES_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
-```
-
-`config.yaml` 通过 `${LIGHTHERMES_*}` 引用这些变量。`base_url` 填到 `/v1` 为止。`.env`、`.env.local` 默认不会被 Git 跟踪。
-
-### 运行
+复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。需要 embedding 时配置独立端点；无需 embedding 可设 `memory.hybrid_retrieval.enabled: false`。
 
 ```python
 from lighthermes import LightHermes
 
 agent = LightHermes.from_config("config.yaml")
-response = agent.run("帮我分析这段代码")
-print(response)
+print(agent.run("解释这个项目的设计"))
 ```
 
-流式调用：
-
-```python
-for chunk in agent.run("解释当前项目架构", stream=True):
-    print(chunk, end="", flush=True)
+```bash
+.venv/bin/python -m lighthermes.cli
+.venv/bin/python -m pytest tests
 ```
 
-流式和非流式路径共享同一套回合收尾逻辑。只有流被完整消费并正常结束时，最终回复才会写入完成态记忆和轨迹。
+CLI：`/help`、`/skills`、`/memory`、`/stats`、`/config`、`/compress`、`/export`、`/reset`、`/exit`。同一次 CLI 会话保持相同 ID，`/reset` 保存成功后才分配新 ID；保存失败会显示错误并保留内存内容。
 
-### CLI
+Python `run()` 未传 ID 时使用该 Agent 实例的稳定会话 ID。需要新的独立上下文应新建 Agent；显式 `session_id` 不会自动切换/加载历史。旧 `default` 用户名的数据保留，可显式传 `user_id="default"` 查询；默认统一为 `default_user`，不会偷偷改写旧数据库。
 
-```powershell
-.\venv\Scripts\python.exe -m lighthermes.cli
-```
+## 配置变化
 
-| 命令 | 作用 |
-|------|------|
-| `/skills` | 列出技能 |
-| `/memory` | 查看记忆概况 |
-| `/stats` | 查看 API、token 和记忆统计 |
-| `/config` | 查看当前配置 |
-| `/compress` | 手动压缩上下文 |
-| `/export` | 导出对话历史 |
-| `/reset` | 重置会话并保留长期记忆 |
-| `/exit` | 结束会话并触发会话收尾 |
+- `memory.retention.short_term_turns`、`working_memory_days` 已在构造时接通。
+- `skills.dirs: []` 真的禁用加载，`skills.disabled` 真的排除指定技能。
+- 不支持的 `plugins.dirs`、`skills.enabled/auto_load`、`episodic_auto_archive`、`evolution.sandbox.max_memory_mb` 会明确报错。
+- `memory.adaptive.enabled: true`、`adapt_interval` 和 `auto_generate_skills: true` 已退出产品路径，旧配置需要移除这些项。
+- `agent.load_config()` 不再只修改部分字段而留下旧模型连接；使用 `LightHermes.from_config()` 创建新实例。
 
-## 模型端点
+完整消费关系与验证见 [PROJECT_STATUS](docs/PROJECT_STATUS.md)。
 
-### OpenAI 兼容端点
+## 实验与历史
 
-在 `.env.local` 填 `LIGHTHERMES_MODEL` / `LIGHTHERMES_API_KEY` / `LIGHTHERMES_BASE_URL`。`base_url` 填到 `/v1`，不要带 `/chat/completions`。
+旧 Active Memory 默认关闭，当前保留代码和回归测试。原 LoCoMo 实验的复现应使用锁定版本、配置和历史结果，不能把当前重构版本冒充原冻结条件。有关数据划分、holdout 与调用预算的纪律仍由 [冻结宣言](docs/FREEZE_COMMITMENT.md) 和 [冻结清单](docs/FREEZE_LOCK.md) 约束。
 
-### Anthropic / MiniMax
+- [当前路线与开发边界](docs/ROADMAP.md)
+- [当前已实现状态](docs/PROJECT_STATUS.md)
+- [离线测试说明](tests/README.md)
+- [历史设计与清理清单](docs/archive/README.md)
+- [版本历史](CHANGELOG.md)
 
-```python
-from lighthermes import LightHermes
-
-agent = LightHermes(
-    name="MyAgent",
-    role="编程助手",
-    model="claude-sonnet-4-6",
-    provider="anthropic",
-    api_key="your_key",
-    base_url="https://api.minimaxi.com/anthropic",
-)
-```
-
-MiniMax 累积式流文本会在 Adapter 层转换为增量文本。
-
-### 独立 embedding 端点
-
-主模型与 embedding 可以使用不同供应商：
-
-```yaml
-embedding:
-  provider: openai
-  model_name: ${LIGHTHERMES_EMBEDDING_MODEL}
-  api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
-  base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
-
-memory:
-  hybrid_retrieval:
-    enabled: true
-    min_candidates: 5
-    fallback_to_all: true
-    semantic_threshold: 0.50
-    score_margin: 0.08
-    full_rerank_max_docs: 200
-    tfidf_candidate_limit: 20
-```
-
-示例中的 `0.50` / `0.08` 是 BGE-M3 合成评测后的建议起点。不同 embedding 模型的分数分布不同，切换模型后应重新评估。
-
-### Active Memory Runtime
-
-Active Memory 当前是默认关闭的实验路径：
-
-```yaml
-memory:
-  active_recall:
-    enabled: false
-    max_rounds: 2
-    persist_traces: true
-    trace_dir: memory/recall_traces
-```
-
-开启后，首次自动召回仍作为 seed context；模型最多执行两次额外的内置 `search_memory`，系统记录候选 ID、分数、来源增益、延迟、错误和停止原因。需要核对原文时，可对 `working:id`、`episodic:name` 或 `semantic:name` 调用 `read_memory`；工作记忆会展开原始对话，并可按 `adjacent_session`、`source_session`、`distilled_from` 展开邻居。读取不计入搜索轮次。达到两轮、连续无新来源、正常回答、流式取消或异常时，trace 会以 JSON 保存。用户自定义的同名工具不受内置预算控制。
-
-P1 运行时还提供 `judge_claim`：模型可把 `support` / `conflict` / `unknown` / `no_evidence` 写回本回合账本。单 claim 时改写文本会落到 seed claim；未检索时 `no_evidence` 会被拒绝。`search_memory` 回包带 `absence` 与 `suggested_query`。系统不把改写强加为最终答句，也不做自然语言蕴含判定。
-
-开发集 A/B（grok-4.6，口径对齐后）里 agentic QA 相对 static +5pp，强制搜很少触发。未过 3.6 的调用/泛化门槛，默认仍关闭。模型级 claim 判定目前是提示驱动的工具回写。
-
-## 架构
-
-```text
-CLI / Python API
-        |
-   LightHermes core
-        |
-        +-- adapters/       模型供应商适配
-        +-- tools.py        工具注册与调用
-        +-- builtin_tools.py 记忆与受控文件工具
-        +-- skills.py       Markdown 技能和失败报告召回
-        +-- memory.py       四级记忆、迁移、蒸馏和跨层召回
-        +-- active_memory.py 证据账本、召回轨迹和两轮预算
-        +-- retrieval.py    TF-IDF、批量 embedding 和混合重排
-        +-- compressor.py   上下文压缩
-        +-- evolution.py    轨迹分析和技能生成
-        +-- evaluation.py   Memory Eval v2.1
-        +-- benchmarks/     长对话与跨场景记忆评测入口
-```
-
-核心边界：
-
-- `LightHermes` 负责对话循环、记忆注入、工具迭代和统一回合收尾。
-- `BaseAdapter` 隔离 OpenAI、Anthropic 和兼容端点差异。
-- `MemoryManager` 统一管理保存、结构化召回、迁移、蒸馏和统计。
-- `ActiveRecallSession` 只管理单回合 evidence ledger、来源增益、轮次预算和 trace，不替代检索器或 Agent 主循环。
-- `ToolDispatcher` 负责 schema、注册、同名覆盖和调用。
-- `SkillLoader` 负责 Markdown 技能匹配以及 `failure_report` 风险提示。
-- `ContextCompressor` 处理长上下文；`EvolutionEngine` 记录轨迹并生成可读技能。
-
-## 记忆系统
-
-| 层级 | 存储 | 典型内容 |
-|------|------|----------|
-| 短期记忆 | 进程内消息 | 当前对话窗口 |
-| 工作记忆 | SQLite | 会话摘要、阶段任务 |
-| 情景记忆 | Markdown | 调试经验、项目决策、任务事件 |
-| 语义记忆 | Markdown + 索引 | 稳定事实、用户偏好、长期知识 |
-
-关键行为：
-
-- 召回内容通过 `<memory-context>` 包装，明确标记为背景信息而非新指令。
-- `SOUL.md` 和 `USER.md` 用于稳定设定与固定用户偏好。
-- hybrid 模式扩大各层候选池，再使用同一个 embedding 统一重排。
-- Active Memory 开启时，seed 与结构化 item 来自同一次召回，不会为 trace 重复调用 embedding。
-- 普通自动上下文默认排除 `historical`、`rejected` 和 `failure_report`；明确询问历史或失败经验时仍可召回。
-- hybrid 工作记忆只保留最相关项，减少最近但无关的摘要占位。
-- embedding 支持批量请求；缓存使用原子替换，缓存写失败不会让本次检索降级。
-- 语义记忆支持容量预算、重复合并、访问统计、归档和蒸馏。
-
-### 关键词还是 hybrid
-
-关键词检索零额外成本，适合小规模记忆和直接词面查询。记忆数量增长，或出现跨语言、近义表达、冲突事实和硬负例时，应启用 hybrid。
-
-同一组扩展合成评测结果：
-
-| 指标 | 关键词 | BGE-M3 hybrid |
-|------|------:|--------------:|
-| 记忆条目 | 64 | 64 |
-| 查询数 | 27 | 27 |
-| 通过率 | 3.7% | **100%** |
-| Recall@K | 55.6% | **100%** |
-| MRR | 44.3% | **98.1%** |
-| Precision@K | 11.0% | **96.3%** |
-| 噪声率 | 89.0% | **3.7%** |
-| 平均延迟 | 105ms | 314ms |
-
-评测覆盖偏好、项目决策、故障经验、跨语言、冲突事实、硬负例、跨层召回和多领域干扰。数据全部为合成内容；这些结果适合做快速回归，不能证明真实长对话或生产场景中的最终质量。
-
-### 长对话真实基线
-
-为了验证合成评测之外的实际表现，项目使用官方 [LoCoMo](https://github.com/snap-research/locomo) 数据做了 40 题分层抽样，覆盖四类可回答问题并暂不计入 adversarial 类别。该实验将每个 session 作为一条记忆，使用 session summary 检索、原始对话回答；静态路径只执行一次 Top-5 BGE-M3 召回，不允许模型继续搜索。
-
-| 指标 | 结果 |
-|------|-----:|
-| Evidence Hit@5 | 59.0% |
-| Evidence Recall@5 | 49.2% |
-| MRR | 47.0% |
-| GPT-5.4-mini + LLM judge QA | 50.0% |
-| Evidence 命中后的 QA | 70% |
-| Evidence 未命中后的 QA | 19% |
-| 模型调用 | 80 次 |
-| token | 478,914 输入 / 1,912 输出 |
-| 官方单价估算 | $0.368 |
-
-这组结果揭示了合成集没有暴露的问题：固定 Top-K 在长对话中的召回覆盖不足，模型在证据命中后仍会遇到信息聚合、计数和时间推理失败。因此，合成集上的 100% 不能外推为真实记忆能力。
-
-同一 40 题、证据预算对齐后的 static / agentic A/B（grok-4.6，与上表 gpt-5.4-mini 不可同比）：
-
-| 指标 | static | agentic |
-|------|------:|--------:|
-| Judge QA | 37.5% | 42.5% |
-| context Hit | 53.8% | 66.7% |
-| 强制搜 | — | 4/40 |
-| 平均模型调用 | 2.0 | 2.48 |
-| 估算成本 | $0.66 | $1.18 |
-
-agentic 有小幅正收益，但未过 3.6（调用 ≤1.6、跨场景泛化）。Active Memory 默认仍关闭。完整结果见 `logs/locomo_ab_dev.json`。
-
-同时需要避免反向过拟合：这 40 题只是已见开发样本，LoCoMo 也只是评测轨道之一。运行时策略不得读取 benchmark 标签、evidence、样本 ID，不能根据失败个例硬编码题型或关键词。v0.4.0 将使用合成回归、长对话、更新/冲突和隐私安全工作流回放组成多轨验证。
-
-运行静态召回评测：
-
-```powershell
-.\venv\Scripts\python.exe benchmarks\locomo_light.py --download --mode retrieval
-```
-
-运行带回答与单次裁判的轻量评测：
-
-```powershell
-.\venv\Scripts\python.exe benchmarks\locomo_light.py --mode qa
-```
-
-同一开发集上的 static / agentic 对比：
-
-```powershell
-.\venv\Scripts\python.exe benchmarks\locomo_light.py --download --mode ab --seed 42 --output logs\locomo_ab_dev.json
-```
-
-benchmark 使用独立持久 embedding 缓存和严格 hybrid 模式。embedding 失败会明确终止并写入 `status=failed`，不会把关键词降级结果计入正式指标。
-
-### Memory Eval v2.1
-
-```python
-from lighthermes import (
-    MemoryQualityEvaluator,
-    build_memory_eval_v2_extended_suite,
-)
-from lighthermes.memory import MemoryManager
-
-suite = build_memory_eval_v2_extended_suite()
-memory = MemoryManager(memory_dir="eval-memory", use_hybrid_retrieval=False)
-evaluator = MemoryQualityEvaluator(memory)
-
-evaluator.seed(suite.seeds)
-report = evaluator.run(suite.cases)
-
-print(report.to_dict())
-print(report.evaluate_quality_gates(suite.quality_gates))
-```
-
-Eval v2.1 提供来源级 Recall@K、MRR、Precision@K、噪声率、延迟、分类汇总和显式质量门槛。若需测试真实 embedding，请按上面的 `embedding` 配置构造启用 hybrid 的 `MemoryManager`。
-
-## 工具与安全边界
-
-默认开启 `search_memory` 和 `read_memory`。文件读、搜索和写入必须显式配置：
-
-```yaml
-tools:
-  builtin:
-    enabled: true
-    memory_search: true
-    memory_read: true
-    file_read: false
-    file_search: false
-    file_write: false
-    roots:
-      - .
-    max_read_chars: 20000
-    max_write_chars: 20000
-    max_search_results: 20
-```
-
-文件工具遵守以下边界：
-
-- 只能访问 `roots` 内路径。
-- 默认排除 `.git`、`.claude`、`venv`、`node_modules` 和 `memory` 等目录。
-- 拒绝 `.env`、密钥、证书及 credentials/secrets 文件。
-- 拒绝二进制文件并限制读写大小。
-- `write_file` 必须单独开启，不会自动创建父目录。
-
-## 自进化
-
-自进化保持轻量，不实现复杂强化学习：
-
-1. 保存消息、工具调用、任务类型和迭代次数。
-2. 计算 `quality_score`、`quality_level` 和 `learning_worthy`。
-3. 只从高质量完成轨迹生成 Markdown 技能。
-4. 失败轨迹生成 `failure_report`，作为非阻断风险提示。
-5. 失败报告先进入情景记忆，稳定后可蒸馏为语义记忆。
-
-当前 `success=True` 表示流程正常完成，不等同于经过外部事实验证的任务成功。更严格的成功信号仍是后续改进项。
-
-## 开发状态
-
-- 发布版本：`v0.3.4`
-- 当前开发基线：`226/226` 测试通过
-- 测试层次：单元、集成、性能、合成记忆质量和长对话抽样评测
-- 真实 smoke：OpenAI 兼容主模型、MiniMax 流式路径、SiliconFlow BGE-M3 合成与 LoCoMo 抽样评测
-
-运行测试：
-
-```powershell
-.\venv\Scripts\python.exe -m pytest tests
-```
-
-当前限制：
-
-- 关键词检索在规模化记忆中质量明显下降，高质量长期记忆建议启用 hybrid。
-- Active Memory 已有 evidence ledger、停答点强制搜、`judge_claim`、query rewrite 和 `read_memory`；开发集 A/B 有 +5pp QA，未过 3.6，默认关闭。
-- Memory Eval v2.1 是合成回归；LoCoMo 40 题开发集 A/B 已跑，仍需冻结验证集、最终 holdout 和结构不同的评测轨道。
-- 远程 embedding 端点可能不可用；产品路径允许降级，但正式 benchmark 必须严格失败并明确记录。
-- 语义/情景记忆当前是本地文件存储，尚未提供多用户命名空间和外部数据库后端。
-- 插件加载、网络 Channel、多模态和 Web UI 尚未进入稳定主线。
-
-近期方向：
-
-1. 冻结策略后运行 holdout、更新/冲突和结构不同的工作流回放，验证跨场景泛化。
-2. 不按开发集 40 题拧参；3.6 过线前 Active Memory 默认关闭。
-3. 在真实任务里验证模型是否会使用 `suggested_query` 与 `judge_claim`。
-
-详细进度和历史版本请看 [ROADMAP](docs/ROADMAP.md)、[PROJECT_STATUS](docs/PROJECT_STATUS.md) 和 [CHANGELOG](CHANGELOG.md)。
-
-## 许可证
-
-Apache 2.0
-
-## 参考
-
-- [总体设计](docs/superpowers/specs/2026-04-25-lighthermes-design.md)
-- [Active Memory Runtime 设计](docs/superpowers/specs/2026-08-09-active-memory-runtime-design.md)
-- [Active Memory 实施计划](docs/superpowers/plans/2026-08-09-active-memory-runtime.md)
-- LightAgent：轻量工具与 Agent 主循环参考
-- Hermes：记忆生命周期与自进化参考
-- nanobot：工具、技能、Hook 和 Channel 边界参考
+Apache 2.0。

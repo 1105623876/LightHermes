@@ -7,9 +7,11 @@ LightHermes 命令行界面
 import sys
 import os
 import yaml
+import uuid
 from pathlib import Path
 
 from lighthermes.core import LightHermes
+from lighthermes.memory import DEFAULT_USER_ID
 
 # 修复 Windows 终端编码问题
 if sys.platform == 'win32':
@@ -37,7 +39,7 @@ class CLI:
     def __init__(self):
         self.agent = None
         self.config = self.load_config()
-        self.session_id = None
+        self.session_id = uuid.uuid4().hex
         self.cli_config = {}
 
     def _use_color(self) -> bool:
@@ -254,17 +256,20 @@ class CLI:
         )
         try:
             self.agent.memory.on_session_end(
-                self.session_id or "cli_session",
-                "default_user",
+                self.session_id,
+                DEFAULT_USER_ID,
                 summary=summary
             )
         except Exception as e:
-            if getattr(self.agent, "debug", False):
-                self._print(f"\n会话结束记忆同步失败: {e}", "red")
+            self._print(f"\n会话保存失败，当前会话尚未重置: {e}", "red")
+            return False
+        return True
 
     def reset_session(self):
         """重置会话但保留记忆"""
-        self.end_session()
+        if self.end_session() is False:
+            return
+        self.session_id = uuid.uuid4().hex
         if self.agent.memory_enabled:
             self.agent.memory.short_term.messages = []
 

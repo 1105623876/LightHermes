@@ -17,6 +17,9 @@ from lighthermes.hooks import call_hook_safely
 from lighthermes.retrieval import tokenize_text
 
 
+DEFAULT_USER_ID = "default_user"
+
+
 class HybridRetrievalError(RuntimeError):
     """Raised when strict hybrid retrieval cannot complete."""
 
@@ -297,6 +300,7 @@ class WorkingMemory:
         except Exception as e:
             logger = setup_logger("lighthermes.memory")
             logger.error(f"添加会话摘要失败: {e}")
+            raise
 
     def get_recent_sessions(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """获取最近的会话摘要"""
@@ -421,6 +425,7 @@ class WorkingMemory:
         except Exception as e:
             logger = setup_logger("lighthermes.memory")
             logger.error(f"保存会话消息失败: {e}")
+            raise
 
     def load_conversation(self, session_id: str) -> List[Dict[str, str]]:
         """加载历史会话消息"""
@@ -1038,7 +1043,7 @@ class MemoryManager:
             self, hook_name, self.logger, "记忆生命周期钩子", *args, **kwargs
         )
 
-    def on_turn_start(self, query: str, user_id: str = "default", session_id: str = "", include_items: bool = False):
+    def on_turn_start(self, query: str, user_id: str = DEFAULT_USER_ID, session_id: str = "", include_items: bool = False):
         """回合开始：一次召回同时提供兼容文本和可选结构化条目。"""
         items = self.recall_items(
             query, user_id=user_id, limit=self.recall_seed_limit, max_chars=self.recall_seed_max_chars
@@ -1052,7 +1057,7 @@ class MemoryManager:
         self,
         user_content: str,
         assistant_content: str,
-        user_id: str = "default",
+        user_id: str = DEFAULT_USER_ID,
         session_id: str = ""
     ):
         """回合结束：同步短期记忆"""
@@ -1061,7 +1066,7 @@ class MemoryManager:
     def on_pre_compress(
         self,
         messages: List[Dict[str, Any]],
-        user_id: str = "default",
+        user_id: str = DEFAULT_USER_ID,
         session_id: str = ""
     ) -> str:
         """压缩前：提取即将丢失的轻量线索"""
@@ -1078,13 +1083,12 @@ class MemoryManager:
     def on_session_end(
         self,
         session_id: str,
-        user_id: str = "default",
+        user_id: str = DEFAULT_USER_ID,
         summary: str = None
     ):
-        """会话结束：保存短期记忆摘要并执行轻量迁移"""
+        """保存会话；不自动归档、提升或复制为长期事实。"""
         if summary:
             self.migrate_short_to_working(session_id, user_id, summary)
-        self.auto_migrate()
 
     def on_memory_write(
         self,
@@ -1227,7 +1231,7 @@ class MemoryManager:
     def recall_items(
         self,
         query: str,
-        user_id: str = "default",
+        user_id: str = DEFAULT_USER_ID,
         layers: List[str] = None,
         limit: int = 8,
         max_chars: int = 2000
@@ -1633,7 +1637,7 @@ class MemoryManager:
 
         return neighbors[:limit]
 
-    def recall(self, query: str, user_id: str = "default") -> str:
+    def recall(self, query: str, user_id: str = DEFAULT_USER_ID) -> str:
         """召回相关记忆 - 保留字符串兼容接口"""
         items = self.recall_items(
             query, user_id=user_id, limit=self.recall_seed_limit, max_chars=self.recall_seed_max_chars
@@ -1762,11 +1766,11 @@ class MemoryManager:
                 except Exception:
                     pass
 
-    def promote_memories(self):
+    def promote_memories(self, user_id: str = DEFAULT_USER_ID):
         """提升高频访问的记忆到更高层级"""
         # 工作记忆 → 情景记忆：高频访问的会话提升为项目记忆
         recent_sessions = self.working.get_recent_sessions(
-            "default",
+            user_id,
             limit=self.working_to_episodic_limit
         )
         for session in recent_sessions:
@@ -1781,7 +1785,7 @@ class MemoryManager:
                 {
                     "promoted_from": "working",
                     "source_session_id": session_id,
-                    "user_id": "default",
+                    "user_id": user_id,
                     "source_timestamp": session.get("timestamp", "")
                 }
             )
@@ -1813,7 +1817,7 @@ class MemoryManager:
             base += 0.1
         return min(base, 0.9)
 
-    def distill_memories(self, user_id: str = "default", limit: int = None):
+    def distill_memories(self, user_id: str = DEFAULT_USER_ID, limit: int = None):
         """从工作/情景记忆中提炼高价值语义记忆"""
         import hashlib
 
@@ -1886,17 +1890,17 @@ class MemoryManager:
 
         self.logger.info(f"迁移短期记忆到工作记忆: session={session_id}")
 
-    def auto_migrate(self):
+    def auto_migrate(self, user_id: str = DEFAULT_USER_ID):
         """自动执行记忆迁移"""
         try:
             # 归档低频记忆
             self.archive_inactive_memories()
 
             # 提升高频记忆
-            self.promote_memories()
+            self.promote_memories(user_id=user_id)
 
             # 提炼稳定语义记忆
-            self.distill_memories()
+            self.distill_memories(user_id=user_id)
 
             self.logger.info("自动记忆迁移完成")
         except Exception as e:

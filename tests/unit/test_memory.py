@@ -479,7 +479,7 @@ class TestMemoryManager:
         )
         mm.save_session("session_1", "default", "完成了记忆系统设计讨论")
 
-        mm.promote_memories()
+        mm.promote_memories(user_id="default")
 
         memory = mm.episodic.load("working_session_1")
         assert memory is not None
@@ -495,12 +495,12 @@ class TestMemoryManager:
         )
         mm.save_session("session_1", "default", "第一次摘要")
 
-        mm.promote_memories()
+        mm.promote_memories(user_id="default")
         path = Path(temp_memory_dir) / "episodic" / "working_session_1.md"
         first_content = path.read_text(encoding="utf-8")
 
         mm.working.add_session("session_1", "default", "第二次摘要")
-        mm.promote_memories()
+        mm.promote_memories(user_id="default")
 
         assert path.read_text(encoding="utf-8") == first_content
 
@@ -720,7 +720,7 @@ class TestMemorySourceRead:
         mm.working.save_conversation("session_1", "default", [
             {"role": "user", "content": "请记住这次设计结论"},
         ])
-        mm.promote_memories()
+        mm.promote_memories(user_id="default")
 
         payload = mm.get_source("episodic:working_session_1", expand_adjacent=True, adjacent_limit=2)
 

@@ -10,20 +10,22 @@ from typing import Any, Dict, List, Optional
 class SkillLoader:
     """技能加载器 - 加载和匹配 Markdown 技能"""
 
-    def __init__(self, skill_dirs: List[str]):
+    def __init__(self, skill_dirs: List[str], disabled: List[str] = None):
+        self.disabled = set(disabled or [])
         self.skill_dirs = skill_dirs
         self.skills: Dict[str, Dict[str, Any]] = {}
         self.load_all()
 
     def load_all(self):
         """加载所有技能"""
+        self.skills.clear()
         for skill_dir in self.skill_dirs:
             if not os.path.exists(skill_dir):
                 continue
 
             for file_path in Path(skill_dir).glob("*.md"):
                 skill = self._parse_skill(file_path)
-                if skill:
+                if skill and skill["name"] not in self.disabled:
                     self.skills[skill["name"]] = skill
 
     def _parse_skill(self, file_path: Path) -> Optional[Dict[str, Any]]:

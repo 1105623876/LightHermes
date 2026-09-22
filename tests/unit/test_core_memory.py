@@ -1307,7 +1307,6 @@ memory:
   enabled: true
   storage_dir: "{memory_dir.replace(chr(92), '/')}"
   adaptive:
-    adapt_interval: 7
     archive_days: 3
   hybrid_retrieval:
     enabled: true
@@ -1320,7 +1319,6 @@ evolution:
     min_failure_count: 6
   sandbox:
     timeout: 9
-    max_memory_mb: 222
 skills:
   dirs: []
 tools:
@@ -1348,9 +1346,8 @@ context_compression:
         agent = LightHermes.from_config(str(config_path))
         return agent, captured
 
-    def test_adaptive_interval_and_archive_days_are_used(self, temp_memory_dir, tmp_path, monkeypatch):
+    def test_explicit_legacy_archive_setting_is_forwarded(self, temp_memory_dir, tmp_path, monkeypatch):
         agent, _ = self._build_agent(tmp_path, monkeypatch, temp_memory_dir)
-        assert agent.adapt_interval == 7
         assert agent.memory.archive_inactive_days == 3
 
     def test_evolution_triggers_and_sandbox_are_used(self, temp_memory_dir, tmp_path, monkeypatch):
@@ -1359,7 +1356,6 @@ context_compression:
         assert agent.evolution.min_success_count == 11
         assert agent.evolution.min_failure_count == 6
         assert agent.evolution.validator.timeout == 9
-        assert agent.evolution.validator.max_memory_mb == 222
 
     def test_strict_hybrid_retrieval_and_score_margin_are_wired(self, temp_memory_dir, tmp_path, monkeypatch):
         agent, captured = self._build_agent(tmp_path, monkeypatch, temp_memory_dir)
