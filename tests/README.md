@@ -12,6 +12,7 @@
 
 - `unit/`：记忆、检索、工具、适配器、压缩、配置、旧进化与 Active Memory。
 - `integration/test_cli.py`：CLI 命令和输入循环。
+- `unit/test_bash.py`、`integration/test_bash_agent.py`：真实本地命令、输出上限、进程组清理、授权、预算、取消与读/改/测闭环。
 - `integration/test_session_lifecycle.py`：真实 SQLite 保存、重置、重启、默认用户一致性、失败保留与自动机制停止。
 - `performance/`：本地存储/检索性能回归。
 - `test_stream_response.py`：供应商流式响应回归。

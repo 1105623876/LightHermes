@@ -60,6 +60,8 @@ def test_failed_save_does_not_clear_or_rotate_session(tmp_path, monkeypatch, cap
     assert cli.session_id == original_id
     assert cli.agent.memory.get_context()[0]["content"] == "Do not lose this message."
     assert "保存失败" in capsys.readouterr().out
+    assert cli.handle_command("/exit") is True
+    assert cli.agent.memory.get_context()[0]["content"] == "Do not lose this message."
 
 
 def test_normal_turn_never_runs_hit_adaptation_or_skill_activation(tmp_path, monkeypatch):

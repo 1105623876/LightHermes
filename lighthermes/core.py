@@ -31,7 +31,8 @@ from lighthermes.builtin_tools import (
     create_file_tools,
     create_memory_tools,
 )
-from lighthermes.tools import ToolDispatcher, tool
+from lighthermes.tools import ToolBudgetExceeded, ToolDispatcher, tool
+from lighthermes.bash import BashExecutor
 
 __all__ = ["LightHermes", "SkillLoader", "ToolDispatcher", "tool"]
 
@@ -61,6 +62,9 @@ class LightHermes:
         plugin_dirs: List[str] = None,
         disabled_skills: List[str] = None,
         tools: List[Callable] = None,
+        bash_authorized: bool = False,
+        bash_cwd: str = None,
+        bash_env: Dict[str, str] = None,
         debug: bool = False,
         log_level: str = "INFO",
         log_file: str = None,
@@ -220,6 +224,10 @@ class LightHermes:
         self.tool_dispatcher = ToolDispatcher()
         builtin_config = config.get("tools", {}).get("builtin", {})
         builtin_enabled = builtin_config.get("enabled", True)
+        self.bash = None
+        if builtin_enabled and self.tool_dispatcher:
+            self.bash = BashExecutor(bash_cwd, authorized=bash_authorized, env=bash_env)
+            self.tool_dispatcher.register_tool(self.bash.run)
         if builtin_enabled and memory_enabled and self.tool_dispatcher:
             memory_tools = create_memory_tools(self.memory, builtin_config)
             if memory_tools:
@@ -1105,6 +1113,8 @@ class LightHermes:
 
         tools = self.tool_dispatcher.get_tool_schemas()
 
+        self.last_turn = {"session_id": session_id, "user_id": user_id,
+                          "status": "running", "messages": messages}
         params = {
             "model": self.model,
             "messages": messages,
@@ -1124,14 +1134,16 @@ class LightHermes:
                 session_id,
                 active_session
             )
-        return self._run_non_stream(
-            params,
-            max_iterations,
-            query,
-            user_id,
-            session_id,
-            active_session
-        )
+        try:
+            return self._run_non_stream(
+                params, max_iterations, query, user_id, session_id, active_session
+            )
+        except KeyboardInterrupt:
+            self._set_turn_status("cancelled")
+            raise
+        except Exception:
+            self._set_turn_status("error")
+            raise
 
     @staticmethod
     def _get_field(value: Any, name: str, default: Any = None) -> Any:
@@ -1159,7 +1171,8 @@ class LightHermes:
         messages: List[Dict[str, Any]],
         tool_calls: List[Dict[str, Any]],
         assistant_content: str = "",
-        active_session=None
+        active_session=None,
+        remaining_tools: int = None,
     ) -> List[Dict[str, Any]]:
         valid_calls = [
             tool_call for tool_call in tool_calls
@@ -1167,6 +1180,10 @@ class LightHermes:
         ]
         if not valid_calls:
             return []
+        if remaining_tools is not None and len(valid_calls) > remaining_tools:
+            self._set_turn_status("budget_exhausted")
+            self._finalize_active_recall(active_session, "budget_exhausted")
+            raise ToolBudgetExceeded("达到工具调用预算，任务未完成")
 
         messages.append({
             "role": "assistant",
@@ -1256,8 +1273,22 @@ class LightHermes:
                 "tool_call_id": tool_call["id"],
                 "content": tool_response,
             })
+            executor = getattr(self, "bash", None)
+            if (executor is not None and tool_name == "bash"
+                    and self.tool_dispatcher.tools.get("bash") == executor.run):
+                try:
+                    cancelled = json.loads(tool_response).get("status") == "cancelled"
+                except (ValueError, AttributeError):
+                    cancelled = False
+                if cancelled:
+                    self._finalize_active_recall(active_session, "cancelled")
+                    raise KeyboardInterrupt
 
         return recorded_calls
+
+    def _set_turn_status(self, status: str):
+        if getattr(self, "last_turn", None) is not None:
+            self.last_turn["status"] = status
 
     def _finish_turn(
         self,
@@ -1269,6 +1300,7 @@ class LightHermes:
         session_id: str,
         active_session=None
     ):
+        self._set_turn_status("completed")
         self._finalize_active_recall(active_session, "sufficient")
         self._run_memory_hook(
             "on_turn_end",
@@ -1329,12 +1361,13 @@ class LightHermes:
                     self._normalize_tool_call(tool_call, index)
                     for index, tool_call in enumerate(message.tool_calls)
                 ]
-                recorded_tool_calls.extend(self._append_tool_exchange(
-                    params["messages"],
-                    normalized_calls,
-                    message.content or "",
-                    active_session
-                ))
+                try:
+                    recorded_tool_calls.extend(self._append_tool_exchange(
+                        params["messages"], normalized_calls, message.content or "",
+                        active_session, remaining_tools=max_iterations - len(recorded_tool_calls),
+                    ))
+                except ToolBudgetExceeded as exc:
+                    return str(exc)
             else:
                 reply = message.content or ""
                 params["messages"].append({"role": "assistant", "content": reply})
@@ -1358,8 +1391,9 @@ class LightHermes:
                 )
                 return reply
 
+        self._set_turn_status("budget_exhausted")
         self._finalize_active_recall(active_session, "budget_exhausted")
-        return "达到最大迭代次数"
+        return "达到最大迭代次数，任务未完成"
 
     def _run_stream(
         self,
@@ -1380,10 +1414,14 @@ class LightHermes:
         )
         try:
             yield from generator
-        except GeneratorExit:
+        except ToolBudgetExceeded as exc:
+            yield str(exc)
+        except (GeneratorExit, KeyboardInterrupt):
+            self._set_turn_status("cancelled")
             self._finalize_active_recall(active_session, "cancelled")
             raise
         except Exception:
+            self._set_turn_status("error")
             if active_session is not None and active_session.trace.stop_reason is None:
                 active_session.mark_error()
             self._finalize_active_recall(active_session, "error")
@@ -1484,7 +1522,8 @@ class LightHermes:
                         params["messages"],
                         normalized_calls,
                         output,
-                        active_session
+                        active_session,
+                        remaining_tools=max_iterations - len(recorded_tool_calls),
                     ))
 
                     continue_next_iteration = True
@@ -1508,7 +1547,8 @@ class LightHermes:
                         params["messages"],
                         normalized_calls,
                         output,
-                        active_session
+                        active_session,
+                        remaining_tools=max_iterations - len(recorded_tool_calls),
                     ))
                     continue
 
@@ -1532,7 +1572,9 @@ class LightHermes:
                 )
                 return
 
+        self._set_turn_status("budget_exhausted")
         self._finalize_active_recall(active_session, "budget_exhausted")
+        yield "达到最大迭代次数，任务未完成"
 
     def load_config(self, config_path: str = "config.yaml"):
         """Reject partial live reloads that left the model adapter out of sync."""

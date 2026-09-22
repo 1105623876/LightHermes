@@ -5,6 +5,10 @@ LightHermes 工具注册与调度边界
 from typing import Any, Callable, Dict, List
 
 
+class ToolBudgetExceeded(RuntimeError):
+    """A model requested more actions than remain in this turn."""
+
+
 def tool(name: str, description: str, params: List[Dict]):
     """
     工具装饰器 - 简化工具注册流程

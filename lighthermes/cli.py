@@ -79,6 +79,19 @@ class CLI:
 
         self.cli_config = cli_config
 
+    def authorize_bash(self):
+        """Authorize local execution once per CLI session, never from model input."""
+        executor = getattr(self.agent, "bash", None)
+        if executor is None:
+            return
+        executor.authorized = False
+        if not sys.stdin.isatty():
+            self._print("bash 未授权：非交互 CLI 不执行本机命令。", "yellow")
+            return
+        self._print(f"bash 工作目录：{executor.cwd}（本机执行，非沙箱）", "yellow")
+        answer = input("允许本会话在当前任务范围内执行 bash？[y/N] ").strip().lower()
+        executor.authorized = answer in {"y", "yes"}
+
     def print_banner(self):
         """打印启动横幅"""
         if not self.cli_config.get("show_banner", True):
@@ -281,6 +294,7 @@ class CLI:
             self.agent.compressor.compression_count = 0
             self.agent.compressor.tokens_saved = 0
 
+        self.authorize_bash()
         self._print("\n✓ 会话已重置", "green")
         print("  短期记忆已清空，长期记忆保留")
         print()
@@ -305,8 +319,7 @@ class CLI:
         }
 
         if cmd == "/exit":
-            self.end_session()
-            return False
+            return self.end_session() is False
 
         handler = commands.get(cmd)
         if handler:
@@ -333,6 +346,10 @@ class CLI:
             return
 
         self.print_banner()
+        try:
+            self.authorize_bash()
+        except (EOFError, KeyboardInterrupt):
+            return
 
         prompt_symbol = self.cli_config.get("prompt_symbol", ">")
         stream_output = self.cli_config.get("stream_output", True)
