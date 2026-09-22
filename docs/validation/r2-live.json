@@ -1,0 +1,367 @@
+{
+  "date": "2026-09-22",
+  "model": "grok-4.6",
+  "baseline_commit": "525d489",
+  "runs": {
+    "initial_10": {
+      "cases": [
+        {
+          "name": "remember",
+          "stream": false,
+          "passed": true,
+          "reply": "已记住：你的默认编程语言是 **Python**。之后写代码或给示例时，我会优先用 Python。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_recall",
+          "stream": false,
+          "passed": true,
+          "reply": "根据已有记忆，你默认使用的编程语言是 **Python**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 196,
+          "tools": []
+        },
+        {
+          "name": "unrelated_zero_seed",
+          "stream": false,
+          "passed": true,
+          "reply": "无法查询实时天气。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 0,
+          "tools": [
+            "search_memory"
+          ]
+        },
+        {
+          "name": "correction",
+          "stream": false,
+          "passed": true,
+          "reply": "已将原记录纠正为「默认编程语言是 Rust」，并替换了原先的 Python 偏好，未新增并存条目。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 258,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_corrected",
+          "stream": false,
+          "passed": true,
+          "reply": "根据已有记录，你的默认编程语言是 **Rust**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 194,
+          "tools": []
+        },
+        {
+          "name": "project_a_write",
+          "stream": false,
+          "passed": true,
+          "reply": "已记住：这个项目的发布代号是 **ORCHID731**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 256,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "project_b_isolation",
+          "stream": false,
+          "passed": true,
+          "reply": "不知道。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 194,
+          "tools": [
+            "bash",
+            "search_memory",
+            "search_memory"
+          ]
+        },
+        {
+          "name": "project_a_restart",
+          "stream": true,
+          "passed": true,
+          "reply": "这个项目的发布代号是 **ORCHID731**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 412,
+          "tools": [
+            "search_memory",
+            "search_memory"
+          ]
+        },
+        {
+          "name": "forget",
+          "stream": false,
+          "passed": true,
+          "reply": "已删除那条默认编程语言偏好（Rust）。之后不会再按 Rust 作为默认语言来处理。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 251,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_forgotten",
+          "stream": false,
+          "passed": true,
+          "reply": "不知道。当前检索到的记忆里没有你默认使用哪种编程语言的记录。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 0,
+          "tools": [
+            "search_memory",
+            "search_memory"
+          ]
+        }
+      ],
+      "api_calls": 19,
+      "usage_tokens": 19277,
+      "limits": {
+        "model_calls": 32,
+        "per_call_output_tokens": 600,
+        "timeout_seconds": 45,
+        "retries": 0
+      },
+      "scope": "Synthetic memory only; no model judge; no real data migration",
+      "model": "grok-4.6",
+      "elapsed_seconds": 157.59,
+      "passed": true,
+      "usage_note": "Only non-stream usage was counted in this initial run; total is a lower bound."
+    },
+    "strict_12": {
+      "cases": [
+        {
+          "name": "remember",
+          "stream": false,
+          "passed": true,
+          "reply": "已记住：你的默认编程语言是 Python。之后写代码时我会优先用 Python。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_recall",
+          "stream": false,
+          "passed": true,
+          "reply": "根据记忆，您的默认编程语言是 **Python**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 208,
+          "tools": []
+        },
+        {
+          "name": "unrelated_zero_seed",
+          "stream": false,
+          "passed": true,
+          "reply": "无法查询实时天气。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 0,
+          "tools": []
+        },
+        {
+          "name": "correction",
+          "stream": false,
+          "passed": true,
+          "reply": "已将原偏好记录替换为：默认编程语言是 Rust（不再与 Python 并存）。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 270,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_corrected",
+          "stream": false,
+          "passed": true,
+          "reply": "根据已有记忆，您的默认编程语言是 **Rust**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 206,
+          "tools": []
+        },
+        {
+          "name": "project_a_write",
+          "stream": false,
+          "passed": true,
+          "reply": "已记住：该项目的发布代号是 **ORCHID731**。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "project_b_isolation",
+          "stream": false,
+          "passed": false,
+          "reply": "达到工具调用预算，任务未完成",
+          "status": "budget_exhausted",
+          "seed_injected": false,
+          "memory_bytes_used": 0,
+          "tools": [
+            "search_memory",
+            "search_memory",
+            "bash"
+          ]
+        },
+        {
+          "name": "project_a_restart",
+          "stream": true,
+          "passed": true,
+          "reply": "这个项目的发布代号是 **ORCHID731**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 220,
+          "tools": []
+        },
+        {
+          "name": "long_record_write",
+          "stream": false,
+          "passed": true,
+          "reply": "已按你的要求保存为一条完整记忆，未做摘要或省略。\n\n记录 ID：`8919e4f0559f4baa9704fc4b128a998a`",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "long_record_tail",
+          "stream": false,
+          "passed": true,
+          "reply": "最终回滚口令是 **MINT928**。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 1033,
+          "tools": [
+            "read_memory"
+          ]
+        },
+        {
+          "name": "forget",
+          "stream": false,
+          "passed": true,
+          "reply": "已删除那条默认编程语言偏好（Rust）。之后不会再把它当作你的默认语言。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 263,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "restart_forgotten",
+          "stream": false,
+          "passed": true,
+          "reply": "不知道。当前记忆检索里没有你默认使用哪种编程语言的记录。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 0,
+          "tools": [
+            "search_memory",
+            "search_memory"
+          ]
+        }
+      ],
+      "api_calls": 20,
+      "usage_tokens": 23398,
+      "limits": {
+        "model_calls": 32,
+        "per_call_output_tokens": 600,
+        "timeout_seconds": 45,
+        "retries": 0
+      },
+      "scope": "Synthetic memory only; no model judge; no real data migration",
+      "model": "grok-4.6",
+      "elapsed_seconds": 143.23,
+      "passed": false
+    },
+    "targeted_recheck": {
+      "cases": [
+        {
+          "name": "remember",
+          "stream": false,
+          "passed": true,
+          "reply": "已经记住了：你的默认编程语言是 **Python**。之后如果没有特别说明，我会优先用 Python 来写代码和示例。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "correction",
+          "stream": false,
+          "passed": true,
+          "reply": "已按原记录 ID `f6f8fc358ecf4a839b9f804aa315d9e8` 纠正并替换，当前偏好为：默认编程语言是 Rust。新记录 ID：`57fc19629cbd4b439c55c41e22be976d`。",
+          "status": "completed",
+          "seed_injected": true,
+          "memory_bytes_used": 261,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "project_a_write",
+          "stream": false,
+          "passed": true,
+          "reply": "已记住：这个项目的发布代号是 **ORCHID731**。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 62,
+          "tools": [
+            "update_memory"
+          ]
+        },
+        {
+          "name": "project_b_isolation",
+          "stream": false,
+          "passed": true,
+          "reply": "不知道。当前记忆里没有这个项目的发布代号。",
+          "status": "completed",
+          "seed_injected": false,
+          "memory_bytes_used": 88,
+          "tools": [
+            "search_memory",
+            "search_memory"
+          ]
+        }
+      ],
+      "api_calls": 8,
+      "usage_tokens": 9116,
+      "limits": {
+        "model_calls": 32,
+        "per_call_output_tokens": 600,
+        "timeout_seconds": 45,
+        "retries": 0
+      },
+      "scope": "Synthetic memory only; no model judge; no real data migration",
+      "model": "grok-4.6",
+      "elapsed_seconds": 36.71,
+      "passed": true
+    }
+  },
+  "total_api_calls": 47,
+  "reported_usage_tokens_lower_bound": 51791,
+  "note": "Runs occurred while developing fixes. The strict run includes a real failure; targeted recheck follows explicit search-status/prompt fixes. This is not a final-code 12/12 single run or a statistical benchmark."
+}

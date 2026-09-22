@@ -173,7 +173,7 @@ def test_seed_search_read_and_skill_share_budget(tmp_path, monkeypatch):
     run(instance, 'zebra', session_id='restart')
     assert instance.memory.remaining >= 1500
     assert token_cost(model.seen[-1][0]['content']) < 3000
-    assert instance.memory.search_memory('zebra') == ''  # already previewed
+    assert json.loads(instance.memory.search_memory('zebra'))['status'] == 'already_in_context'
     output = instance.memory.read_memory(entry['id'])
     assert json.loads(output)['offset'] > 0
     assert instance.memory.remaining >= 0
@@ -276,3 +276,77 @@ def test_tail_search_and_offset_read_through_tools(tmp_path, monkeypatch):
     result = json.loads(instance.memory.read_memory(entry['id'], offset=len(content) - 14))
     assert result['content'] == 'tailconstraint'
     assert not result['more']
+
+
+def test_explicit_resume_restores_reference_without_replaying_tools(tmp_path, monkeypatch):
+    instance, _ = agent(tmp_path, monkeypatch, [('bash', {'command': 'echo once >> effects'})],
+                        bash_cwd=str(tmp_path), bash_authorized=True)
+    assert '任务未完成' in run(instance, 'perform task', max_iterations=1)
+    prior = (instance.last_turn['session_id'], instance.last_turn['turn_id'])
+    instance.memory.store.close()
+    resumed, model = agent(tmp_path, monkeypatch, ['Reviewing previous state'],
+                           bash_cwd=str(tmp_path), bash_authorized=True)
+    run(resumed, 'Resume after checking saved state', resume_from=prior)
+    assert '旧任务审计参考' in model.seen[0][0]['content']
+    assert (tmp_path / 'effects').read_text() == 'once\n'
+    assert resumed.memory.remaining >= 0
+    # Scope cannot be widened by supplying a known turn ID.
+    model.steps = iter(['Should not be called'])
+    with pytest.raises(KeyError):
+        run(resumed, 'Resume', user_id='another-user', resume_from=prior)
+
+
+def test_model_erase_only_previews_and_does_not_delete_sources(tmp_path, monkeypatch):
+    instance, _ = agent(tmp_path, monkeypatch, [
+        ('update_memory', {'action': 'remember', 'content': 'Python'}), 'Saved'])
+    run(instance, 'Remember Python')
+    entry = instance.memory.store.search('Python', instance.memory.scope)[0]
+    preview = json.loads(instance.memory.update_memory('erase', id=entry['id']))
+    assert preview['requires_host_confirmation']
+    assert instance.memory.store.read_entry(entry['id'], instance.memory.scope)
+
+
+def test_stream_usage_trailer_is_counted_before_completion(tmp_path, monkeypatch):
+    instance, model = agent(tmp_path, monkeypatch, [])
+    model.create = lambda **kwargs: iter([
+        NS(choices=[NS(delta=NS(content='Done', tool_calls=[]), finish_reason='stop')]),
+        NS(choices=[], usage=NS(total_tokens=123)),
+    ])
+    assert run(instance, 'hello', stream=True) == 'Done'
+    assert instance.total_tokens_used == 123
+
+
+@pytest.mark.parametrize('stream', [False, True])
+def test_truncated_model_response_is_not_completed(tmp_path, monkeypatch, stream):
+    instance, model = agent(tmp_path, monkeypatch, [])
+    def response(**kwargs):
+        if stream:
+            return iter([NS(choices=[NS(delta=NS(content='partial', tool_calls=[]), finish_reason='length')])])
+        return NS(choices=[NS(message=NS(content='partial', tool_calls=[]), finish_reason='length')], usage=None)
+    model.create = response
+    assert '任务未完成' in run(instance, 'hello', stream=stream)
+    assert instance.last_turn['status'] == 'incomplete'
+    assert instance.query_count == 0
+
+
+def test_empty_search_is_explicit_and_does_not_imply_tool_failure(tmp_path, monkeypatch):
+    instance, _ = agent(tmp_path, monkeypatch, ['hello'])
+    run(instance, 'hello')
+    first = json.loads(instance.memory.search_memory('unrelated'))
+    assert first == {'status': 'no_match', 'remaining_searches': 1}
+    instance.memory.search_memory('unrelated')
+    assert json.loads(instance.memory.search_memory('unrelated'))['status'] == 'budget_exhausted'
+
+
+def test_read_metadata_and_search_do_not_spin_at_low_budget(tmp_path, monkeypatch):
+    from lighthermes.tools import ToolBudgetExceeded
+    instance, _ = agent(tmp_path, monkeypatch, [('update_memory', {'action': 'remember', 'content': 'x' * 500}), 'Saved'])
+    run(instance, 'Remember')
+    entry = instance.memory.store.db.execute('SELECT id FROM entries').fetchone()[0]
+    instance.memory.remaining = 160
+    with pytest.raises(ToolBudgetExceeded):
+        instance.memory.read_memory(entry)
+    instance.memory.remaining = 170
+    instance.memory.offsets.clear()
+    with pytest.raises(ToolBudgetExceeded):
+        instance.memory.search_memory('x' * 500)

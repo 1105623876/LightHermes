@@ -1,4 +1,4 @@
-"""R2 storage foundation. Not yet wired into the agent or legacy data.
+"""Transactional R2 storage used by the agent and explicit legacy import.
 
 All reads require an exact scope; callers combine user/project scopes explicitly.
 Events are immutable source records. Only active entries enter lexical search.
@@ -6,6 +6,8 @@ No model calls, implicit migration, background maintenance or embedding cache.
 """
 
 import json
+import hashlib
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -14,12 +16,27 @@ from pathlib import Path
 from lighthermes.retrieval import tokenize_text
 
 
+def memory_terms(text):
+    """FTS features: shared Latin tokenizer, adjacent CJK pairs instead of lone 的/是.
+
+    This avoids observed single-character contamination without a model call.
+    It remains lexical: synonyms and cross-language matches are not guaranteed.
+    """
+    stop = {'a', 'an', 'the', 'is', 'are', 'was', 'i', 'my', 'you', 'your', 'what',
+            'how', 'of', 'to', 'in', 'for', 'and', 'it', 'this', 'that'}
+    terms = [t for t in tokenize_text(text) if not re.fullmatch('[一-鿿]', t) and t not in stop]
+    for run in re.findall('[一-鿿]+', text):
+        terms.extend(run[i:i+2] for i in range(len(run)-1))
+    return list(dict.fromkeys(terms))
+
+
 class MemoryStore:
-    def __init__(self, path, max_bytes=256 * 1024 * 1024):
+    def __init__(self, path, max_bytes=256 * 1024 * 1024, *, managed_paths=()):
         if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
             raise ValueError("max_bytes must be a positive integer")
         self.path = Path(path)
         self.max_bytes = max_bytes
+        self.managed_paths = [Path(p) for p in managed_paths]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path, isolation_level=None)
         self.db.row_factory = sqlite3.Row
@@ -27,7 +44,7 @@ class MemoryStore:
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.execute("PRAGMA secure_delete=ON")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise ValueError(f"Unsupported memory schema: {version}")
             tables = self.db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if version == 0 and tables:
@@ -77,6 +94,12 @@ class MemoryStore:
             page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
             self.db.execute(f"PRAGMA max_page_count={max(1, max_bytes // page_size)}")
             self._check_capacity()
+            if version < 3:
+                with self._write():
+                    self.db.execute('DELETE FROM entry_fts')
+                    for row in self.db.execute("SELECT id,content,status FROM entries WHERE status='active'"):
+                        self._index(*row)
+                    self.db.execute('PRAGMA user_version=3')
         except BaseException:
             self.db.close()
             raise
@@ -90,16 +113,34 @@ class MemoryStore:
     def __exit__(self, *args):
         self.close()
 
+    def _disk_bytes(self):
+        files = set()
+        for path in [self.path, Path(str(self.path) + '-journal'),
+                     Path(str(self.path) + '-wal'), Path(str(self.path) + '-shm'), *self.managed_paths]:
+            if path.is_dir():
+                files.update(p for p in path.rglob('*') if p.is_file() and not p.is_symlink())
+            elif path.is_file():
+                files.add(path)
+        return sum(p.stat().st_size for p in {p.resolve() for p in files})
+
     def _check_capacity(self):
-        # Application guard, not an OS quota. Include SQLite's temporary journal.
-        total = sum(p.stat().st_size for p in
-                    (self.path, Path(str(self.path) + '-journal'),
-                     Path(str(self.path) + '-wal'), Path(str(self.path) + '-shm'))
-                    if p.exists())
+        # Application guard, not an OS quota. Include journals, managed logs and snapshots.
+        total = self._disk_bytes()
         pages = self.db.execute("PRAGMA page_count").fetchone()[0]
         page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
-        if max(total, pages * page_size) > self.max_bytes:
+        projected = total - self.path.stat().st_size + pages * page_size
+        if max(total, projected) > self.max_bytes:
             raise sqlite3.OperationalError("Memory storage capacity exceeded")
+
+    def usage(self):
+        """Physical managed total and separately labelled logical payload sizes."""
+        groups = {row[0]: {'count': row[1], 'logical_bytes': row[2]} for row in self.db.execute(
+            'SELECT status,count(*),coalesce(sum(length(cast(content AS BLOB))),0) FROM entries GROUP BY status')}
+        count, size = self.db.execute('SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) FROM events').fetchone()
+        return {'managed_bytes': self._disk_bytes(), 'max_bytes': self.max_bytes,
+                'events': {'count': count, 'logical_bytes': size}, 'entries': groups,
+                'embedding_cache_bytes': 0,
+                'note': 'Logical payload sizes exclude SQLite overhead; archive does not release physical space'}
 
     @contextmanager
     def _write(self):
@@ -146,6 +187,33 @@ class MemoryStore:
             (row['scope'], row['session_id'], row['turn_id'])).fetchone() is not None
         return result
 
+    def task_state(self, scope, session_id, turn_id):
+        """Bounded audit context for an explicit resume, never executable messages."""
+        first = self.db.execute('SELECT id FROM events WHERE scope=? AND session_id=? AND turn_id=? ORDER BY rowid LIMIT 1',
+                                (scope, session_id, turn_id)).fetchone()
+        if first is None or self.read_event(first[0], scope)['excluded']:
+            raise KeyError('Task not found in this scope or excluded by forgetting')
+        recent = self.db.execute('SELECT id FROM events WHERE scope=? AND session_id=? AND turn_id=? ORDER BY rowid DESC LIMIT 12',
+                                 (scope, session_id, turn_id)).fetchall()
+        status = 'interrupted_or_running'
+        for row in recent:
+            payload = self.read_event(row[0], scope)['payload']
+            try:
+                decoded = json.loads(payload.get('text', '{}'))
+            except (ValueError, TypeError):
+                continue
+            if isinstance(decoded, dict) and decoded.get('type') == 'turn_status':
+                status = decoded['status']
+                break
+        def excerpt(identifier):
+            payload = self.read_event(identifier, scope)['payload']
+            text = json.dumps(payload, ensure_ascii=False)
+            return text.encode('utf-8')[:240].decode('utf-8', errors='ignore')
+        return {'status': status, 'session_id': session_id, 'turn_id': turn_id,
+                'goal_source': first[0], 'goal_excerpt': excerpt(first[0]),
+                'latest_source': recent[0][0], 'latest_excerpt': excerpt(recent[0][0]),
+                'truncated': True, 'note': 'Bounded audit reference; inspect sources before action, never replay commands automatically.'}
+
     def _entry(self, entry_id, scope):
         row = self.db.execute("SELECT * FROM entries WHERE id=? AND scope=?", (entry_id, scope)).fetchone()
         if row is None:
@@ -165,7 +233,7 @@ class MemoryStore:
         self.db.execute("DELETE FROM entry_fts WHERE id=?", (entry_id,))
         if status == 'active':
             self.db.execute("INSERT INTO entry_fts(id,tokens) VALUES(?,?)",
-                            (entry_id, ' '.join(tokenize_text(content))))
+                            (entry_id, ' '.join(memory_terms(content))))
 
     def remember(self, scope, kind, content, source_refs, *, status='candidate', supersedes=None):
         """Create an entry or exact-ID correction, atomically invalidating old search.
@@ -176,6 +244,8 @@ class MemoryStore:
         self._required(scope=scope, kind=kind, content=content)
         if status not in ('candidate', 'active'):
             raise ValueError("New entries must be candidate or active")
+        if status == 'candidate' and self._disk_bytes() >= self.max_bytes * 0.9:
+            raise ValueError('Candidate extraction paused near storage capacity')
         refs = list(dict.fromkeys(source_refs))
         if not refs:
             raise ValueError("At least one source event is required")
@@ -185,6 +255,12 @@ class MemoryStore:
                 event = self.read_event(ref, scope)
                 if event['excluded']:
                     raise ValueError("Forgotten source cannot be extracted again")
+            if supersedes is None:
+                duplicate = self.db.execute(
+                    'SELECT id FROM entries WHERE scope=? AND kind=? AND content=? AND status=? LIMIT 1',
+                    (scope, kind, content, status)).fetchone()
+                if duplicate:
+                    return duplicate[0]
             if supersedes:
                 previous = self._entry(supersedes, scope)
                 if previous['status'] not in ('active', 'candidate'):
@@ -216,7 +292,7 @@ class MemoryStore:
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
             raise ValueError("Search limit must be between 1 and 50")
         # Quoted tokens are data, never FTS syntax. Bound query work as well as results.
-        terms = list(dict.fromkeys(tokenize_text(query)))[:64]
+        terms = memory_terms(query)[:64]
         if not terms:
             return []
         match = ' OR '.join('"' + t.replace('"', '""') + '"' for t in terms)
@@ -268,3 +344,43 @@ class MemoryStore:
             self.db.execute("DELETE FROM entry_fts")
             for row in self.db.execute("SELECT id,content,status FROM entries WHERE status='active'"):
                 self._index(*row)
+
+    def plan_erasure(self, entry_id, scope):
+        """Preview exact source-turn deletion. Does not include other turns or backups."""
+        self._entry(entry_id, scope)
+        ids = [r[0] for r in self.db.execute("""
+            WITH RECURSIVE chain(id) AS (
+                SELECT ? UNION SELECT e.supersedes FROM entries e JOIN chain c ON e.id=c.id WHERE e.supersedes IS NOT NULL
+                UNION SELECT e.id FROM entries e JOIN chain c ON e.supersedes=c.id
+            ) SELECT e.id FROM entries e JOIN chain c ON e.id=c.id WHERE e.scope=? ORDER BY e.id
+        """, (entry_id, scope))]
+        turns = {tuple(row) for item in ids for row in self.db.execute('''
+            SELECT e.session_id,e.turn_id FROM events e JOIN sources s ON s.event_id=e.id WHERE s.entry_id=?
+        ''', (item,))}
+        events = sorted({r[0] for session, turn in turns for r in self.db.execute(
+            'SELECT id FROM events WHERE scope=? AND session_id=? AND turn_id=?', (scope, session, turn))})
+        blockers = sorted({r[0] for event in events for r in self.db.execute(
+            'SELECT entry_id FROM sources WHERE event_id=?', (event,))} - set(ids))
+        plan = {'entry_id': entry_id, 'scope': scope, 'entries': ids, 'events': events,
+                'source_turns': sorted(turns), 'blocked_by_entries': blockers,
+                'boundary': 'Only this correction chain and its source turns; other turns, external logs, exports and backups excluded'}
+        plan['fingerprint'] = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+        return plan
+
+    def erase(self, entry_id, scope, *, approved_fingerprint):
+        """Host-only execution of an exact reviewed plan; never called by a model tool."""
+        with self._write():
+            plan = self.plan_erasure(entry_id, scope)
+            if plan['fingerprint'] != approved_fingerprint:
+                raise ValueError('Erasure plan changed; review a new preview')
+            if plan['blocked_by_entries']:
+                raise ValueError('Source turns also support other entries; wider deletion was not authorized')
+            for identifier in plan['entries']:
+                self._index(identifier, '', 'deleted')
+                self.db.execute('DELETE FROM entries WHERE id=?', (identifier,))
+            for session, turn in plan['source_turns']:
+                self.db.execute('INSERT OR IGNORE INTO excluded_turns VALUES(?,?,?)', (scope, session, turn))
+            for identifier in plan['events']:
+                self.db.execute('INSERT OR IGNORE INTO excluded_sources VALUES(?)', (identifier,))
+                self.db.execute('DELETE FROM events WHERE id=? AND scope=?', (identifier, scope))
+        return {'erased_entries': len(plan['entries']), 'erased_events': len(plan['events'])}

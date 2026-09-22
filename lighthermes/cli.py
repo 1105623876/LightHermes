@@ -146,10 +146,12 @@ class CLI:
         print("\n记忆系统统计:")
         print(f"  短期记忆: {len(self.agent.memory.short_term.messages)} 条消息")
 
-        counts = self.agent.memory.store.db.execute(
-            "SELECT status, count(*) FROM entries GROUP BY status").fetchall()
-        for status, count in counts:
-            print(f"  {status}: {count} 条")
+        usage = self.agent.memory.store.usage()
+        print(f"  受管理磁盘: {usage['managed_bytes']} / {usage['max_bytes']} bytes")
+        print(f"  事件: {usage['events']['count']} 条，正文 {usage['events']['logical_bytes']} bytes")
+        for status, item in usage['entries'].items():
+            print(f"  {status}: {item['count']} 条，正文 {item['logical_bytes']} bytes")
+        print('  正文字节不含数据库开销；归档不会自动释放磁盘。')
         print()
 
     def show_config(self):

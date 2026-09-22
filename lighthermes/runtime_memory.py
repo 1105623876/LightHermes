@@ -35,7 +35,7 @@ def protect(payload):
 
 
 class RuntimeMemory:
-    def __init__(self, memory_dir, *, max_bytes=256 * 1024 * 1024, project_id=None):
+    def __init__(self, memory_dir, *, max_bytes=256 * 1024 * 1024, project_id=None, log_files=()):
         self.memory_dir = Path(memory_dir)
         legacy = list(self.memory_dir.glob('*.db')) + list(self.memory_dir.glob('*.sqlite*'))
         legacy = [p for p in legacy if p.name != 'lighthermes.sqlite3' and not p.name.startswith('lighthermes.sqlite3-')]
@@ -46,7 +46,8 @@ class RuntimeMemory:
         if project_id is not None and (not isinstance(project_id, str) or not project_id.strip()):
             raise ValueError('project_id must be a stable nonempty identifier')
         self.project_id = project_id
-        self.store = MemoryStore(self.memory_dir / 'lighthermes.sqlite3', max_bytes)
+        self.store = MemoryStore(self.memory_dir / 'lighthermes.sqlite3', max_bytes,
+                                 managed_paths=[self.memory_dir, *log_files])
         self.short_term = SimpleNamespace(messages=[])
         self.identity = None
         self.turn_id = None
@@ -141,10 +142,19 @@ class RuntimeMemory:
     @tool('search_memory', 'Search current project and user active memory, at most twice per turn. Empty is not proof of absence.', [
         {'name': 'query', 'type': 'string', 'description': 'Lexical search query', 'required': True}])
     def search_memory(self, query):
+        if self.remaining < 160:
+            raise ToolBudgetExceeded('记忆上下文预算耗尽，任务未完成')
         if self.searches >= 2:
-            return self.spend('Memory search budget exhausted.')
+            return self.spend(serialized({'status': 'budget_exhausted', 'instruction': 'No more memory searches this turn; report uncertainty.'}))
         self.searches += 1
-        return self.spend(self._preview(self._results(query, 50), self.remaining))
+        rows = self._results(query, 50)
+        preview = self._preview(rows, self.remaining)
+        if preview:
+            return self.spend(preview)
+        if rows and any(row['id'] not in self.offsets for row in rows):
+            raise ToolBudgetExceeded('记忆上下文预算耗尽，任务未完成')
+        return self.spend(serialized({'status': 'already_in_context' if rows else 'no_match',
+                                     'remaining_searches': 2 - self.searches}))
 
     @tool('read_memory', 'Read active memory or source event by exact ID. Repeated reads continue from previous offset.', [
         {'name': 'id', 'type': 'string', 'description': 'Entry or source event ID', 'required': True},
@@ -160,9 +170,12 @@ class RuntimeMemory:
             raise ValueError('offset must be a nonnegative integer')
         excerpt = clip(text[offset:], max(0, self.remaining // 2 - 200))
         # JSON escaping can expand code/control characters; shrink to the exact budget.
+        metadata = {'id': id, 'offset': offset, 'status': row.get('status', 'source_event'),
+                    'updated_at': row.get('updated_at', row.get('created_at')), 'source_refs': row.get('source_refs', [])}
+        if token_cost(serialized({**metadata, 'content': '', 'more': True})) > self.remaining:
+            raise ToolBudgetExceeded('记忆读取元数据预算不足，任务未完成')
         while True:
-            result = serialized({'id': id, 'content': excerpt, 'offset': offset,
-                                 'more': offset + len(excerpt) < len(text)})
+            result = serialized({**metadata, 'content': excerpt, 'more': offset + len(excerpt) < len(text)})
             if token_cost(result) <= self.remaining:
                 break
             excerpt = excerpt[:len(excerpt) // 2]
@@ -170,7 +183,7 @@ class RuntimeMemory:
         return self.spend(result)
 
     @tool('update_memory', 'Only on explicit user request: remember, correct, archive or forget in current scope. Experience/skill remain candidates. Never claim saved after an error.', [
-        {'name': 'action', 'type': 'string', 'description': 'remember/correct/archive/forget/erase', 'required': True},
+        {'name': 'action', 'type': 'string', 'description': 'remember/correct/archive/forget; erase returns a host-review preview only', 'required': True},
         {'name': 'content', 'type': 'string', 'description': 'Fact or preference content', 'required': False},
         {'name': 'id', 'type': 'string', 'description': 'Exact current-scope ID for correction/removal', 'required': False},
         {'name': 'kind', 'type': 'string', 'description': 'fact/preference/decision/experience/skill', 'required': False}])
@@ -191,8 +204,13 @@ class RuntimeMemory:
             return self.spend(serialized({'saved': result, 'status': 'candidate' if kind in ('experience', 'skill') else 'active'}))
         if action == 'archive':
             self.store.set_status(id, self.scope, 'archived')
-        elif action in ('forget', 'erase'):
-            self.store.forget(id, self.scope, erase_sources=action == 'erase')
+        elif action == 'forget':
+            self.store.forget(id, self.scope)
+        elif action == 'erase':
+            plan = self.store.plan_erasure(id, self.scope)
+            return self.spend(serialized({'requires_host_confirmation': True,
+                'fingerprint': plan['fingerprint'], 'events': len(plan['events']),
+                'entries': len(plan['entries']), 'blocked': bool(plan['blocked_by_entries'])}))
         else:
             raise ValueError('Unknown memory action')
         self.offsets.pop(id, None)

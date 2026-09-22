@@ -166,8 +166,76 @@ def test_owned_v1_upgrade_preserves_data_and_exclusions(tmp_path):
         store.db.execute('DROP TABLE excluded_turns')
         store.db.execute('PRAGMA user_version=1')
     with MemoryStore(path) as store:
-        assert store.db.execute('PRAGMA user_version').fetchone()[0] == 2
+        assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
         assert store.read_event(source, 'user:u')['excluded']
         later = store.append_event('user:u', 'session-1', 'turn-1', {'content': 'Python repeated'})
         with pytest.raises(ValueError, match='Forgotten'):
             store.remember('user:u', 'fact', 'Python', [later], status='active')
+
+
+def test_common_chinese_characters_do_not_inject_unrelated_facts(tmp_path):
+    with MemoryStore(tmp_path / 'memory.db') as store:
+        save(store, '我的默认编程语言是 Python', status='active')
+        assert store.search('今天的天气怎么样', 'user:u') == []
+        assert store.search('这个项目的发布代号是什么', 'user:u') == []
+        assert store.search('我默认使用哪种编程语言', 'user:u')
+        assert store.search('what is the project name', 'user:u') == []
+
+
+def test_exact_duplicate_write_does_not_inflate_evidence(tmp_path):
+    with MemoryStore(tmp_path / 'memory.db') as store:
+        first_source, first = save(store, 'Python', status='active')
+        second_source, second = save(store, 'Python', status='active')
+        assert first == second
+        assert store.read_entry(first, 'user:u')['source_refs'] == [first_source]
+        assert first_source != second_source  # event history remains separate
+
+
+def test_managed_logs_and_cache_count_toward_capacity(tmp_path):
+    root = tmp_path / 'managed'
+    root.mkdir()
+    log = tmp_path / 'run.log'
+    with MemoryStore(root / 'memory.db', max_bytes=300_000, managed_paths=[root, log]) as store:
+        ref, entry = save(store, 'Python', status='active')
+        usage = store.usage()
+        assert usage['events']['count'] == 1
+        assert usage['entries']['active']['count'] == 1
+        (root / 'cache.bin').write_bytes(b'x' * 100_000)
+        log.write_bytes(b'x' * 220_000)
+        with pytest.raises(sqlite3.OperationalError, match='capacity'):
+            store.append_event('user:u', 's', 't', {})
+        assert store.read_entry(entry, 'user:u')
+        assert store.usage()['managed_bytes'] > 300_000
+
+
+def test_source_turn_erasure_requires_unchanged_host_preview(tmp_path):
+    with MemoryStore(tmp_path / 'memory.db') as store:
+        ref, entry = save(store, 'Python', status='active')
+        repeated = store.append_event('user:u', 'session-1', 'turn-1', {'tool_output': 'Python'})
+        plan = store.plan_erasure(entry, 'user:u')
+        assert set(plan['events']) == {ref, repeated}
+        late = store.append_event('user:u', 'session-1', 'turn-1', {'assistant': 'Python'})
+        with pytest.raises(ValueError, match='changed'):
+            store.erase(entry, 'user:u', approved_fingerprint=plan['fingerprint'])
+        plan = store.plan_erasure(entry, 'user:u')
+        result = store.erase(entry, 'user:u', approved_fingerprint=plan['fingerprint'])
+        assert result == {'erased_entries': 1, 'erased_events': 3}
+        assert store.search('Python', 'user:u') == []
+        for event in (ref, repeated, late):
+            with pytest.raises(KeyError):
+                store.read_event(event, 'user:u')
+        future = store.append_event('user:u', 'session-1', 'turn-1', {'copy': 'Python'})
+        with pytest.raises(ValueError, match='Forgotten'):
+            store.remember('user:u', 'fact', 'Python', [future], status='active')
+
+
+def test_source_turn_erasure_refuses_unapproved_other_facts(tmp_path):
+    with MemoryStore(tmp_path / 'memory.db') as store:
+        ref, entry = save(store, 'Python', status='active')
+        other = store.remember('user:u', 'fact', 'Rust', [ref], status='active')
+        plan = store.plan_erasure(entry, 'user:u')
+        assert other in plan['blocked_by_entries']
+        with pytest.raises(ValueError, match='other entries'):
+            store.erase(entry, 'user:u', approved_fingerprint=plan['fingerprint'])
+        assert store.read_entry(entry, 'user:u')
+        assert store.read_entry(other, 'user:u')

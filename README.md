@@ -2,7 +2,7 @@
 
 本地优先的轻量记忆 Agent，正在按 [ROADMAP](docs/ROADMAP.md) 收敛为“行动、跨会话记忆、可验证自进化”一个闭环。
 
-发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具；旧数据迁移和验证式自进化尚未完成。**
+发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具；迁移工具已验证，真实库切换与验证式自进化尚未完成。**
 
 ## 当前可用能力
 
@@ -26,7 +26,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。新运行路径不需要 embedding。
+复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。新运行路径不需要 embedding；中文使用相邻双字，英文使用词法特征，单汉字/近义/跨语言查询可能漏检。
 
 ```python
 from lighthermes import LightHermes
@@ -40,7 +40,7 @@ print(agent.run("解释这个项目的设计"))
 .venv/bin/python -m pytest tests
 ```
 
-**有旧记忆时先不要直接启动默认目录。** 检测到旧 SQLite / episodic / semantic 文件会明确报错，不自动忽略或转换。迁移工具尚待下一切片；试用新路径可显式指定新的空目录：
+**有旧记忆时先不要直接启动默认目录。** 检测到旧 SQLite / episodic / semantic 文件会明确报错，不自动忽略或转换。迁移工具可先执行 `python -m lighthermes.migration memory --preview --user default_user` 预览；完整流程见 [R2 验收记录](docs/validation/R2_ACCEPTANCE.md)。试用新路径可显式指定新的空目录：
 
 ```python
 agent = LightHermes.from_config("config.yaml", memory_dir="memory-r2", project_id="my-project")
@@ -51,9 +51,9 @@ CLI 使用 `config.yaml` 的 `memory.storage_dir`。`/reset` 创建新会话并�
 
 每回合 seed 最多 4 条、1500 估算 tokens；记忆结果、人工设定和自动技能共享 4000 总预算。主动搜索最多两次，候选最多 50 条。读长记录支持字符 offset；默认接续上次读取位置。使用保守 UTF-8 字节估算，不等于供应商计费 tokens。
 
-遗忘会删除纠正链和索引，并将来源回合排除出再次提取；保留的原始事件不再通过模型记忆工具读取。`erase` 目前只额外删除条目直接引用的来源事件；同回合其他观察、外部日志和备份并非完整物理清除范围，全面删除预览仍待后续实现。共享来源会明确拒绝扩大删除。
+遗忘会删除纠正链和索引，并将来源回合排除出再次提取；保留的原始事件不再通过模型记忆工具读取。模型的 `erase` 只返回删除预览。宿主按 `plan_erasure()` 的指纹执行 `store.erase()`，可删除纠正链及来源回合全部事件；共享来源或预览变化会拒绝。其他回合、外部日志和备份不在计划内。
 
-事件保存包含常见 Bearer / `sk-` 脱敏及 32,000 字节文本上限，截断有标记；不是通用秘密检测。默认数据库容量保护 256 MiB，含 SQLite sidecar；尚非整个运行目录的硬配额。未完成任务的自动恢复、旧数据迁移和规模评测仍未交付。
+事件保存包含常见 Bearer / `sk-` 脱敏及 32,000 字节文本上限，截断有标记；不是通用秘密检测。默认受管理存储容量保护 256 MiB，含记忆目录、SQLite sidecar 和实际日志文件；是应用检查，不是 OS 硬配额。可显式通过 `run(..., resume_from=(session_id, turn_id))` 恢复有界审计参考，不直接重放命令。真实库切换和规模评测尚未执行。
 
 ## bash 行动
 
