@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Callable, List
 
 from lighthermes.tools import tool
-from lighthermes.active_memory import clamp_confidence, normalize_verdict
 
 
 EXCLUDED_DIRS = {".git", ".hg", ".svn", ".claude", "venv", ".venv", "node_modules", "__pycache__", "memory"}
@@ -62,118 +61,6 @@ def _is_binary(path: Path) -> bool:
         return b"\0" in path.read_bytes()[:1024]
     except OSError:
         return True
-
-
-def create_memory_tools(memory_manager, config: dict = None) -> List[Callable]:
-    config = config or {}
-    tools: List[Callable] = []
-
-    if config.get("memory_search", True):
-        @tool(
-            "search_memory",
-            "搜索 LightHermes 持久记忆",
-            [
-                {"name": "query", "type": "string", "description": "搜索关键词，可为空以列出指定层级记忆", "required": True},
-                {"name": "layer", "type": "string", "description": "记忆层级：all、working、episodic、semantic", "required": False},
-                {"name": "limit", "type": "integer", "description": "返回数量上限，最大 10", "required": False},
-            ]
-        )
-        def search_memory(query: str, layer: str = "all", limit: int = 5) -> str:
-            safe_limit = max(1, min(int(limit or 5), 10))
-            safe_layer = layer if layer in {"all", "working", "episodic", "semantic"} else "all"
-            item_max_chars = getattr(memory_manager, "recall_item_max_chars", 500)
-            results = memory_manager.search_memory(
-                query or "",
-                layer=safe_layer,
-                limit=safe_limit,
-                include_metadata=True
-            )
-            payload = {
-                "query": query or "",
-                "layer": safe_layer,
-                "limit": safe_limit,
-                "results": [
-                    {
-                        "layer": item.get("layer", ""),
-                        "name": item.get("name", ""),
-                        "content": item.get("content", "") if item_max_chars == 0 else item.get("content", "")[:item_max_chars],
-                        "score": item.get("score", 0),
-                        "source": item.get("source", ""),
-                        "metadata": item.get("metadata", {}),
-                    }
-                    for item in results
-                ]
-            }
-            return json.dumps(payload, ensure_ascii=False)
-
-        tools.append(search_memory)
-
-    if config.get("memory_read", True):
-        @tool(
-            "read_memory",
-            "按 source 读取完整记忆，并可展开邻接来源",
-            [
-                {"name": "source", "type": "string", "description": "来源标识，格式为 working:id、episodic:name 或 semantic:name", "required": True},
-                {"name": "expand_adjacent", "type": "boolean", "description": "是否展开邻接或来源关联记忆", "required": False},
-                {"name": "adjacent_limit", "type": "integer", "description": "邻接来源数量上限，最大 6", "required": False},
-            ]
-        )
-        def read_memory(
-            source: str,
-            expand_adjacent: bool = False,
-            adjacent_limit: int = 2
-        ) -> str:
-            try:
-                safe_limit = max(1, min(int(adjacent_limit or 2), 6))
-            except (TypeError, ValueError):
-                safe_limit = 2
-            payload = memory_manager.get_source(
-                source or "",
-                include_raw=True,
-                expand_adjacent=bool(expand_adjacent),
-                adjacent_limit=safe_limit,
-            )
-            return json.dumps(payload, ensure_ascii=False)
-
-        tools.append(read_memory)
-
-    return tools
-
-
-def create_claim_tool() -> Callable:
-    """注册 judge_claim 工具，供 Active Memory 开启时模型显式写回 claim 判定。
-
-    该工具的 schema 与工具体只有一层作用：作为 judge_claim 的可见契约。真正把
-    判定写入本回合证据账本的逻辑在 LightHermes._append_tool_exchange 中拦截
-    ActiveRecallSession 后执行（工具体无法访问 run-local 的 session）。因此当
-    Active Memory 会话存在时 core 不会调用工具体；仅当 Active Memory 关闭或调用时
-    无会话（理论上不该发生，因为开启时才注册）才落到工具体，返回明确的降级提示。
-    """
-    @tool(
-        "judge_claim",
-        "对当前问题的某个 claim 给出显式证据判定，并记录到本回合证据账本。"
-        "verdict 只允许 support / conflict / unknown / no_evidence。"
-        "support=候选来源支持该 claim；conflict=候选来源与其冲突；"
-        "unknown=已有证据不足、无法判定；no_evidence=已检索但没有找到相关证据"
-        "（区别于尚未检索）。source_ids 填写你依据的来源标识。",
-        [
-            {"name": "claim", "type": "string", "description": "要判定的 claim 文本", "required": True},
-            {"name": "verdict", "type": "string", "description": "support、conflict、unknown 或 no_evidence", "required": True},
-            {"name": "source_ids", "type": "array", "description": "判定依据的来源标识列表", "required": False},
-            {"name": "confidence", "type": "number", "description": "判定置信度 0-1", "required": False},
-        ]
-    )
-    def judge_claim(claim: str, verdict: str, source_ids=None, confidence=None) -> str:
-        return json.dumps({
-            "claim": str(claim or ""),
-            "verdict": normalize_verdict(verdict),
-            "source_ids": [str(s) for s in (source_ids or []) if str(s)],
-            "confidence": clamp_confidence(confidence),
-            "accepted": False,
-            "reason": "active_memory_session_required",
-        }, ensure_ascii=False)
-
-    return judge_claim
 
 
 def create_file_tools(config: dict = None) -> List[Callable]:

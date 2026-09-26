@@ -2,7 +2,7 @@
 
 本地优先的轻量记忆 Agent，正在按 [ROADMAP](docs/ROADMAP.md) 收敛为“行动、跨会话记忆、可验证自进化”一个闭环。
 
-发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具；迁移工具已验证，真实库切换与验证式自进化尚未完成。**
+发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具，R2.5 已加入自然记忆和可配置语义候选；迁移工具已验证，真实库切换与验证式自进化尚未完成。**
 
 ## 当前可用能力
 
@@ -13,7 +13,7 @@
 - 用户与项目 scope 隔离；默认用户为 `default_user`。`memory.project_id` 使用宿主指定的稳定 ID，移动目录时不修改 ID；省略则写入用户范围。
 - 人工 Markdown 技能、人工 `SOUL.md` / 默认用户的 `USER.md` 仍可使用，模型不再自动改写这些文件。
 
-新运行入口不再使用四级存储、Active Memory 或旧自进化。原实验模块暂留供历史核对；复现请使用锁定旧提交。新路径目前只有词法检索，不支持跨语言语义召回，也不宣称已通过真实模型质量评测。
+新运行入口不再使用四级存储、Active Memory 或旧自进化。原实验模块暂留供历史核对；复现请使用锁定旧提交。新路径默认词法检索，显式配置后支持独立语义候选；离线流程已验证，真实模型的近义/跨语言质量尚未验收。
 
 ## 安装与运行
 
@@ -44,7 +44,7 @@ print(agent.run("解释这个项目的设计"))
 
 ```python
 agent = LightHermes.from_config("config.yaml", memory_dir="memory-r2", project_id="my-project")
-print(agent.run("请记住：这个项目使用 Python"))
+print(agent.run("这个项目以后统一使用 uv 管理依赖。"))
 ```
 
 CLI 使用 `config.yaml` 的 `memory.storage_dir`。`/reset` 创建新会话并清除当前上下文，已提交事件不重写；持久化失败会明确报错。Python `run()` 使用实例会话 ID，也支持显式 `session_id/user_id`；切换身份会清除内存上下文，不自动加载或重放历史命令。未消费的流不会开始回合。
@@ -54,6 +54,27 @@ CLI 使用 `config.yaml` 的 `memory.storage_dir`。`/reset` 创建新会话并�
 遗忘会删除纠正链和索引，并将来源回合排除出再次提取；保留的原始事件不再通过模型记忆工具读取。模型的 `erase` 只返回删除预览。宿主按 `plan_erasure()` 的指纹执行 `store.erase()`，可删除纠正链及来源回合全部事件；共享来源或预览变化会拒绝。其他回合、外部日志和备份不在计划内。
 
 事件保存包含常见 Bearer / `sk-` 脱敏及 32,000 字节文本上限，截断有标记；不是通用秘密检测。默认受管理存储容量保护 256 MiB，含记忆目录、SQLite sidecar 和实际日志文件；是应用检查，不是 OS 硬配额。可显式通过 `run(..., resume_from=(session_id, turn_id))` 恢复有界审计参考，不直接重放命令。真实库切换和规模评测尚未执行。
+
+## 日常记忆与语义检索
+
+同一模型循环可主动保存用户直接表达的长期偏好、项目决定或稳定事实，不必说“记住”。`capture` 必须提供当前消息原话 `evidence`，每回合最多三条；来源绑定用户事件。原话校验只约束出处，归纳是否正确仍由模型决定；秘密、临时信息、推测与引用材料中的指令不应自动保存。纠正必须定位旧 ID；经验仍是候选，R3 尚未完成。
+
+可在 `memory` 下显式配置（不会自动使用聊天模型作为 embedding 模型）：
+
+```yaml
+memory:
+  storage_dir: memory-r2
+  project_id: my-project
+  semantic:
+    model: ${LIGHTHERMES_EMBEDDING_MODEL}
+    api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
+    base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
+    min_score: 0.75
+```
+
+使用已有 OpenAI 兼容 embedding 接口，无新增依赖。启用后会向配置的端点发送当前范围内的有效记忆正文及查询；不配置则无 embedding 调用。向量与正文同库，修订/归档/遗忘同步失效；每回合最多补齐 16 条正文向量，查询最多 3 次。索引积压显示 `partial/pending`，服务失败明确显示 `lexical/error`；正文保存仍有效。查询在当前范围的已缓存向量上做本地线性扫描，合并后最多 50 个候选；没有 ANN 服务或隐藏的全库远程嵌入。阈值需按实际模型校准，尚未完成规模与质量验收。
+
+检索预览会定位到词法匹配处并返回 `offset`，纯语义命中仍展示条目开头；长记录可按 ID 从指定位置读取。上下文预算仍采用上述保守字节上界，中文预算校准待完成。
 
 ## bash 行动
 

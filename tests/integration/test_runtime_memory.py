@@ -350,3 +350,34 @@ def test_read_metadata_and_search_do_not_spin_at_low_budget(tmp_path, monkeypatc
     instance.memory.offsets.clear()
     with pytest.raises(ToolBudgetExceeded):
         instance.memory.search_memory('x' * 500)
+
+
+@pytest.mark.parametrize('stream', [False, True])
+def test_natural_decision_semantic_recall_across_sessions(tmp_path, monkeypatch, stream):
+    """Scripted model and vectors verify wiring, not autonomous extraction quality."""
+    embedded = []
+    def embed(texts):
+        embedded.extend(texts)
+        return [[1, 0] if text in ('统一使用 uv', '怎样装依赖') else [0, 1] for text in texts]
+    config = {'context_compression': {'enabled': False},
+              'memory': {'semantic': {'model': 'fixture', 'embed': embed}}}
+    first_model = Model([('update_memory', {'action': 'capture', 'kind': 'decision',
+        'content': '统一使用 uv', 'evidence': '统一使用 uv'}), '已保存项目决定'])
+    monkeypatch.setattr('lighthermes.core.get_adapter', lambda **kw: first_model)
+    first = LightHermes(api_key='test', memory_dir=str(tmp_path / 'memory'),
+                       config=config, project_id='project-a', skill_dirs=[])
+    run(first, '这个项目统一使用 uv。', stream)
+    assert 'capture' in first_model.seen[0][0]['content']
+    assert embedded == ['统一使用 uv']
+    first.memory.store.close()
+    second_model = Model(['使用 uv', '没有相关记忆'])
+    monkeypatch.setattr('lighthermes.core.get_adapter', lambda **kw: second_model)
+    second = LightHermes(api_key='test', memory_dir=str(tmp_path / 'memory'),
+                        config=config, project_id='project-a', skill_dirs=[])
+    assert not second.memory.store.search('怎样装依赖', serialized(['project', 'default_user', 'project-a']))
+    run(second, '怎样装依赖', stream)
+    assert '统一使用 uv' in second_model.seen[0][0]['content']
+    assert embedded == ['统一使用 uv', '怎样装依赖']
+    run(second, '天气', stream, session_id='irrelevant')
+    assert '统一使用 uv' not in second_model.seen[-1][0]['content']
+    second.memory.store.close()

@@ -2,7 +2,7 @@
 
 All reads require an exact scope; callers combine user/project scopes explicitly.
 Events are immutable source records. Only active entries enter lexical search.
-No model calls, implicit migration, background maintenance or embedding cache.
+No model calls, implicit legacy import or background maintenance.
 """
 
 import json
@@ -44,7 +44,7 @@ class MemoryStore:
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.execute("PRAGMA secure_delete=ON")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise ValueError(f"Unsupported memory schema: {version}")
             tables = self.db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if version == 0 and tables:
@@ -100,6 +100,12 @@ class MemoryStore:
                     for row in self.db.execute("SELECT id,content,status FROM entries WHERE status='active'"):
                         self._index(*row)
                     self.db.execute('PRAGMA user_version=3')
+            if version < 4:
+                with self._write():
+                    self.db.execute("""CREATE TABLE entry_vectors (
+                        entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                        model TEXT NOT NULL, vector TEXT NOT NULL)""")
+                    self.db.execute('PRAGMA user_version=4')
         except BaseException:
             self.db.close()
             raise
@@ -139,7 +145,8 @@ class MemoryStore:
         count, size = self.db.execute('SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) FROM events').fetchone()
         return {'managed_bytes': self._disk_bytes(), 'max_bytes': self.max_bytes,
                 'events': {'count': count, 'logical_bytes': size}, 'entries': groups,
-                'embedding_cache_bytes': 0,
+                'embedding_cache_bytes': self.db.execute(
+                    'SELECT coalesce(sum(length(cast(vector AS BLOB))),0) FROM entry_vectors').fetchone()[0],
                 'note': 'Logical payload sizes exclude SQLite overhead; archive does not release physical space'}
 
     @contextmanager
@@ -231,6 +238,8 @@ class MemoryStore:
 
     def _index(self, entry_id, content, status):
         self.db.execute("DELETE FROM entry_fts WHERE id=?", (entry_id,))
+        if status != 'active':
+            self.db.execute("DELETE FROM entry_vectors WHERE entry_id=?", (entry_id,))
         if status == 'active':
             self.db.execute("INSERT INTO entry_fts(id,tokens) VALUES(?,?)",
                             (entry_id, ' '.join(memory_terms(content))))
@@ -296,12 +305,16 @@ class MemoryStore:
         if not terms:
             return []
         match = ' OR '.join('"' + t.replace('"', '""') + '"' for t in terms)
-        rows = self.db.execute("""
-            SELECT e.id FROM entry_fts f JOIN entries e ON e.id=f.id
-            WHERE entry_fts MATCH ? AND e.scope=? AND e.status='active'
+        scopes = [scope] if isinstance(scope, str) else list(scope)
+        if not scopes:
+            return []
+        placeholders = ','.join('?' for _ in scopes)
+        rows = self.db.execute(f"""
+            SELECT e.id,e.scope FROM entry_fts f JOIN entries e ON e.id=f.id
+            WHERE entry_fts MATCH ? AND e.scope IN ({placeholders}) AND e.status='active'
             ORDER BY bm25(entry_fts),e.id LIMIT ?
-        """, (match, scope, limit)).fetchall()
-        return [self.read_entry(r[0], scope) for r in rows]
+        """, (match, *scopes, limit)).fetchall()
+        return [self.read_entry(r[0], r[1]) for r in rows]
 
     def forget(self, entry_id, scope, *, erase_sources=False):
         """Delete a correction chain and exclude its sources from re-extraction.

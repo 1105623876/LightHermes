@@ -23,3 +23,7 @@
 ## R2 主循环整理
 
 `6d0918d` 保存完整的切换前代码和测试。移除 `tests/unit/test_core_active_memory.py`，并从 `test_core_memory.py` 移除自动提炼、固定设定写入、四级配置转发与旧轨迹评分等已退役行为；合计 43 项。没有复制一套可误执行的旧测试目录。保留模型配置、fallback、文件工具、工具覆盖和供应商响应测试，新行为由 `integration/test_runtime_memory.py` 覆盖。旧独立存储/实验模块尚未整体删除，其独立测试继续保留。实际旧实验复现仍使用 `f470f11`。
+
+## R2.5 入口整理
+
+`89c45b4` 保留本次整理前状态。删除 `builtin_tools.py` 中无人调用的 `create_memory_tools/create_claim_tool`，以及 `test_builtin_tools.py` 中四项旧记忆工具测试、两项旧 claim 工具测试；当前模型记忆工具由 RuntimeMemory 提供，覆盖见 `integration/test_runtime_memory.py`。文件工具及其测试保留。CLI 不再为默认用户常量导入旧 MemoryManager。旧独立存储/进化实验尚未完全替代，暂不批量删除其测试。

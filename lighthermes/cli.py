@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 from lighthermes.core import LightHermes
-from lighthermes.memory import DEFAULT_USER_ID
+from lighthermes.runtime_memory import DEFAULT_USER_ID
 
 # 修复 Windows 终端编码问题
 if sys.platform == 'win32':

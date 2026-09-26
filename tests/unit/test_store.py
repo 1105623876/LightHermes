@@ -164,9 +164,10 @@ def test_owned_v1_upgrade_preserves_data_and_exclusions(tmp_path):
         source, old = save(store, 'Python', status='active')
         store.forget(old, 'user:u')
         store.db.execute('DROP TABLE excluded_turns')
+        store.db.execute('DROP TABLE entry_vectors')
         store.db.execute('PRAGMA user_version=1')
     with MemoryStore(path) as store:
-        assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
+        assert store.db.execute('PRAGMA user_version').fetchone()[0] == 4
         assert store.read_event(source, 'user:u')['excluded']
         later = store.append_event('user:u', 'session-1', 'turn-1', {'content': 'Python repeated'})
         with pytest.raises(ValueError, match='Forgotten'):

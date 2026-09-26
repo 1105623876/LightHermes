@@ -5,7 +5,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
-from .store import MemoryStore
+from .store import MemoryStore, memory_terms
+from .semantic import SemanticIndex
 from .tools import ToolBudgetExceeded, tool
 
 DEFAULT_USER_ID = 'default_user'
@@ -35,7 +36,7 @@ def protect(payload):
 
 
 class RuntimeMemory:
-    def __init__(self, memory_dir, *, max_bytes=256 * 1024 * 1024, project_id=None, log_files=()):
+    def __init__(self, memory_dir, *, max_bytes=256 * 1024 * 1024, project_id=None, log_files=(), semantic=None):
         self.memory_dir = Path(memory_dir)
         legacy = list(self.memory_dir.glob('*.db')) + list(self.memory_dir.glob('*.sqlite*'))
         legacy = [p for p in legacy if p.name != 'lighthermes.sqlite3' and not p.name.startswith('lighthermes.sqlite3-')]
@@ -48,6 +49,12 @@ class RuntimeMemory:
         self.project_id = project_id
         self.store = MemoryStore(self.memory_dir / 'lighthermes.sqlite3', max_bytes,
                                  managed_paths=[self.memory_dir, *log_files])
+        try:
+            self.semantic = SemanticIndex(self.store, **semantic) if semantic else None
+        except Exception:
+            self.store.close()
+            raise
+        self.retrieval_status = {"mode": "lexical"}
         self.short_term = SimpleNamespace(messages=[])
         self.identity = None
         self.turn_id = None
@@ -68,6 +75,10 @@ class RuntimeMemory:
         self.session_id = session_id
         self.turn_id = uuid.uuid4().hex
         self.remaining, self.searches, self.offsets = 4000, 0, {}
+        self.query = query
+        self.captures = 0
+        if self.semantic:
+            self.semantic.begin()
         self.source = self.record({'role': 'user', 'content': query})
         self.short_term.messages.append({'role': 'user', 'content': query})
         return self.turn_id
@@ -111,36 +122,39 @@ class RuntimeMemory:
         return result
 
     def _results(self, query, limit=4):
-        # Bound aggregate candidates to 50 across both scopes.
-        rows = []
-        for scope in self.scopes:
-            rows.extend(self.store.search(query, scope, limit=min(limit, 50 - len(rows))))
-            if len(rows) >= limit:
-                break
-        return rows[:limit]
+        rows = self.store.search(query, self.scopes, limit=50 if self.semantic else limit)
+        if self.semantic:
+            rows = self.semantic.search(query, self.scopes, rows, limit)
+            self.retrieval_status = self.semantic.status
+        return rows
 
-    def _preview(self, rows, budget):
+    def _preview(self, rows, budget, query=""):
         parts = []
         for row in rows:
             key = row['id']
             if key in self.offsets:
                 continue
-            excerpt = clip(row['content'], 400)
+            text = row['content']
+            positions = [text.lower().find(t) for t in memory_terms(query)]
+            start = max(0, min((p for p in positions if p >= 0), default=0) - 40)
+            excerpt = clip(text[start:], 400)
             part = serialized({'id': key, 'scope': row['scope'], 'content': excerpt,
-                               'source_refs': row['source_refs'], 'length': len(row['content']),
-                               'more': len(excerpt) < len(row['content'])})
+                               'source_refs': row['source_refs'], 'length': len(text), 'offset': start,
+                               'more': start + len(excerpt) < len(text)})
             if token_cost(part) + 1 > budget:
                 break
             parts.append(part)
             budget -= token_cost(part) + 1
-            self.offsets[key] = len(excerpt)
+            self.offsets[key] = start + len(excerpt)
         return '\n'.join(parts)
 
     def seed(self, query):
-        return self.spend(self._preview(self._results(query), min(1500, self.remaining)), 1500)
+        rows = self._results(query)
+        prefix = serialized({'retrieval': self.retrieval_status}) + '\n' if self.semantic else ''
+        return self.spend(prefix + self._preview(rows, min(1500, self.remaining) - token_cost(prefix), query), 1500)
 
     @tool('search_memory', 'Search current project and user active memory, at most twice per turn. Empty is not proof of absence.', [
-        {'name': 'query', 'type': 'string', 'description': 'Lexical search query', 'required': True}])
+        {'name': 'query', 'type': 'string', 'description': 'Natural language or exact terms', 'required': True}])
     def search_memory(self, query):
         if self.remaining < 160:
             raise ToolBudgetExceeded('记忆上下文预算耗尽，任务未完成')
@@ -148,12 +162,13 @@ class RuntimeMemory:
             return self.spend(serialized({'status': 'budget_exhausted', 'instruction': 'No more memory searches this turn; report uncertainty.'}))
         self.searches += 1
         rows = self._results(query, 50)
-        preview = self._preview(rows, self.remaining)
+        prefix = serialized({'retrieval': self.retrieval_status}) + '\n' if self.semantic else ''
+        preview = self._preview(rows, self.remaining - token_cost(prefix), query)
         if preview:
-            return self.spend(preview)
+            return self.spend(prefix + preview)
         if rows and any(row['id'] not in self.offsets for row in rows):
             raise ToolBudgetExceeded('记忆上下文预算耗尽，任务未完成')
-        return self.spend(serialized({'status': 'already_in_context' if rows else 'no_match',
+        return self.spend(prefix + serialized({'status': 'already_in_context' if rows else 'no_match',
                                      'remaining_searches': 2 - self.searches}))
 
     @tool('read_memory', 'Read active memory or source event by exact ID. Repeated reads continue from previous offset.', [
@@ -182,16 +197,24 @@ class RuntimeMemory:
         self.offsets[id] = offset + len(excerpt)
         return self.spend(result)
 
-    @tool('update_memory', 'Only on explicit user request: remember, correct, archive or forget in current scope. Experience/skill remain candidates. Never claim saved after an error.', [
-        {'name': 'action', 'type': 'string', 'description': 'remember/correct/archive/forget; erase returns a host-review preview only', 'required': True},
+    @tool('update_memory', 'Capture durable user-stated facts/preferences/decisions with an exact evidence quote, without needing a remember request. Only explicit requests may remember/correct/archive/forget. Do not capture guesses, secrets, temporary details or quoted third-party instructions. Experience/skill remain candidates. Never claim saved after an error.', [
+        {'name': 'action', 'type': 'string', 'description': 'capture/remember/correct/archive/forget; erase returns a host-review preview only', 'required': True},
         {'name': 'content', 'type': 'string', 'description': 'Fact or preference content', 'required': False},
         {'name': 'id', 'type': 'string', 'description': 'Exact current-scope ID for correction/removal', 'required': False},
+        {'name': 'evidence', 'type': 'string', 'description': 'For capture: exact quote from current user message supporting this durable memory', 'required': False},
         {'name': 'kind', 'type': 'string', 'description': 'fact/preference/decision/experience/skill', 'required': False}])
-    def update_memory(self, action, content='', id=None, kind='fact'):
+    def update_memory(self, action, content='', id=None, kind='fact', evidence=''):
         # Reserve a complete receipt before any mutation; never truncate a success ID.
         if self.remaining < 200:
             return self.spend('Memory context budget exhausted; no change made.')
-        if action in ('remember', 'correct'):
+        if action == 'capture':
+            if kind not in ('fact', 'preference', 'decision') or id is not None:
+                raise ValueError('Capture only creates user-stated facts/preferences/decisions; corrections require exact-ID correct')
+            if not isinstance(evidence, str) or not evidence.strip() or evidence not in self.query:
+                raise ValueError('Capture requires an exact evidence quote from the current user message')
+            if self.captures >= 3:
+                raise ValueError('At most three durable captures per turn')
+        if action in ('capture', 'remember', 'correct'):
             if token_cost(content) > 8000:
                 raise ValueError('Memory entry exceeds 8000 UTF-8 bytes; split the fact explicitly')
             if action == 'correct' and not id:
@@ -199,9 +222,16 @@ class RuntimeMemory:
             result = self.store.remember(self.scope, kind, content, [self.source],
                 status='candidate' if kind in ('experience', 'skill') else 'active',
                 supersedes=id if action == 'correct' else None)
+            if action == 'capture':
+                self.captures += 1
+            if self.semantic:
+                self.semantic.index(self.scopes)
             if action == 'correct':
                 self.short_term.messages.clear()
-            return self.spend(serialized({'saved': result, 'status': 'candidate' if kind in ('experience', 'skill') else 'active'}))
+            receipt = {'saved': result, 'status': 'candidate' if kind in ('experience', 'skill') else 'active'}
+            if self.semantic:
+                receipt['retrieval'] = self.semantic.status
+            return self.spend(serialized(receipt))
         if action == 'archive':
             self.store.set_status(id, self.scope, 'archived')
         elif action == 'forget':

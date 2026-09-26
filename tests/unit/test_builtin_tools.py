@@ -6,72 +6,8 @@ import pytest
 
 from pathlib import Path
 
-from lighthermes.builtin_tools import (
-    create_claim_tool,
-    create_file_tools,
-    create_memory_tools,
-)
-from lighthermes.memory import MemoryManager
+from lighthermes.builtin_tools import create_file_tools
 from lighthermes.tools import ToolDispatcher
-
-
-@pytest.mark.unit
-class TestBuiltinMemoryTools:
-    def test_search_memory_tool_returns_json_results(self, temp_memory_dir):
-        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
-        memory.save_semantic("pref", "用户偏好中文回复", {"type": "user_preference"})
-        dispatcher = ToolDispatcher()
-        dispatcher.register_tools(create_memory_tools(memory))
-
-        result = json.loads(dispatcher.call_tool("search_memory", {
-            "query": "中文",
-            "layer": "semantic",
-            "limit": 20,
-        }))
-
-        assert result["query"] == "中文"
-        assert result["layer"] == "semantic"
-        assert len(result["results"]) == 1
-        assert result["results"][0]["name"] == "pref"
-        assert "metadata" in result["results"][0]
-
-    def test_search_memory_tool_clamps_limit(self, temp_memory_dir):
-        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
-        captured = {}
-
-        def fake_search_memory(query, layer="all", limit=5, include_metadata=False):
-            captured["limit"] = limit
-            return []
-
-        memory.search_memory = fake_search_memory
-        dispatcher = ToolDispatcher()
-        dispatcher.register_tools(create_memory_tools(memory))
-
-        dispatcher.call_tool("search_memory", {"query": "x", "limit": 99})
-
-        assert captured["limit"] == 10
-
-    def test_read_memory_tool_returns_full_source(self, temp_memory_dir):
-        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
-        memory.save_semantic("pref", "用户偏好中文回复并且不要省略细节")
-        dispatcher = ToolDispatcher()
-        dispatcher.register_tools(create_memory_tools(memory))
-
-        result = json.loads(dispatcher.call_tool("read_memory", {
-            "source": "semantic:pref",
-        }))
-
-        assert result["found"] is True
-        assert result["source"] == "semantic:pref"
-        assert "不要省略细节" in result["content"]
-
-    def test_read_memory_can_be_disabled(self, temp_memory_dir):
-        memory = MemoryManager(memory_dir=temp_memory_dir, use_hybrid_retrieval=False)
-        dispatcher = ToolDispatcher()
-        dispatcher.register_tools(create_memory_tools(memory, {"memory_search": True, "memory_read": False}))
-        names = [schema["function"]["name"] for schema in dispatcher.get_tool_schemas()]
-        assert "search_memory" in names
-        assert "read_memory" not in names
 
 
 @pytest.mark.unit
@@ -211,37 +147,3 @@ class TestBuiltinFileTools:
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": ".env", "content": "x", "mode": "create"})
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": "big.txt", "content": "toolong", "mode": "create"})
         assert "拒绝" in dispatcher.call_tool("write_file", {"path": "nested/new.txt", "content": "x", "mode": "create"})
-
-
-@pytest.mark.unit
-class TestClaimTool:
-    def test_claim_tool_registers_schema_and_returns_ack(self):
-        dispatcher = ToolDispatcher()
-        judge_tool = create_claim_tool()
-        assert dispatcher.register_tool(judge_tool) is True
-        names = [s["function"]["name"] for s in dispatcher.get_tool_schemas()]
-        assert names == ["judge_claim"]
-        schema = dispatcher.get_tool_schemas()[0]["function"]
-        assert set(schema["parameters"]["properties"]) == {
-            "claim", "verdict", "source_ids", "confidence",
-        }
-        assert schema["parameters"]["required"] == ["claim", "verdict"]
-
-    def test_claim_tool_validates_verdict_and_clamps_confidence(self):
-        dispatcher = ToolDispatcher()
-        dispatcher.register_tool(create_claim_tool())
-
-        valid = json.loads(dispatcher.call_tool(
-            "judge_claim",
-            {"claim": "服务", "verdict": "support", "source_ids": ["s1"], "confidence": 1.7},
-        ))
-        assert valid["verdict"] == "support"
-        assert valid["confidence"] == 1.0
-        # 工具体只负责降级提示，不负责写入 ledger（由 core 拦截完成）
-        assert valid["accepted"] is False
-        assert valid["reason"] == "active_memory_session_required"
-
-        invalid = json.loads(dispatcher.call_tool("judge_claim", {"claim": "x", "verdict": "bogus"}))
-        # invalid verdict 被 normalize 为空串
-        assert invalid["verdict"] == ""
-        assert invalid["reason"] == "active_memory_session_required"

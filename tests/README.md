@@ -12,6 +12,7 @@
 
 - `unit/`：记忆、检索、工具、适配器、压缩、配置、旧进化与 Active Memory。
 - `unit/test_migration.py`：临时新目录转换、源快照不变、幂等、失败不发布、未知字段/表/BLOB 保留。
+- `unit/test_semantic.py`：固定向量验证独立语义候选、增量缓存、模型切换、失效、无关不召回、错误与积压；不代表真实 embedding 质量。
 - `unit/test_store.py`：R2 新存储的保存/重开、scope 隔离、候选、纠正、遗忘、索引重建与事务故障；另有主循环端到端回放。
 - `integration/test_runtime_memory.py`：真实 Agent + SQLite 的保存/重启/纠正/遗忘、用户/项目隔离、流式取消、故障中止、预算、长记录尾部读取和旧库保护。
 - `integration/test_cli.py`：CLI 命令和输入循环。
