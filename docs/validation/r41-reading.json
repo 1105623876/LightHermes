@@ -1,0 +1,1558 @@
+{
+  "protocol": "R41_PROTOCOL.md",
+  "cases": [
+    {
+      "group": "development",
+      "name": "dev-fact",
+      "arm": "snippet",
+      "expected_key": "fact",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"17\",\"evidence_ids\":[\"2bba3ac2e9484eb2b62f61258e778882\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "2bba3ac2e9484eb2b62f61258e778882",
+        "3367cfe6da1846889d33c59c3b39aee5"
+      ],
+      "read_ids": [],
+      "seed_bytes": 835,
+      "operations": [],
+      "memory_bytes": 835,
+      "tokens": 3678,
+      "tool_calls": [],
+      "elapsed_seconds": 28.54,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 96
+    },
+    {
+      "group": "development",
+      "name": "dev-fact",
+      "arm": "clue",
+      "expected_key": "fact",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"17\",\"evidence_ids\":[\"2bba3ac2e9484eb2b62f61258e778882\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "2bba3ac2e9484eb2b62f61258e778882",
+        "3367cfe6da1846889d33c59c3b39aee5"
+      ],
+      "read_ids": [],
+      "seed_bytes": 585,
+      "operations": [],
+      "memory_bytes": 585,
+      "tokens": 3871,
+      "tool_calls": [],
+      "elapsed_seconds": 28.29,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 96
+    },
+    {
+      "group": "development",
+      "name": "dev-fact",
+      "arm": "demand",
+      "expected_key": "fact",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"17\",\"evidence_ids\":[\"2bba3ac2e9484eb2b62f61258e778882\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "2bba3ac2e9484eb2b62f61258e778882",
+        "3367cfe6da1846889d33c59c3b39aee5"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 835,
+      "tokens": 3979,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目审计记录保留多少天\"}"
+        }
+      ],
+      "elapsed_seconds": 16.343,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 9
+    },
+    {
+      "group": "development",
+      "name": "dev-action",
+      "arm": "clue",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "3367cfe6da1846889d33c59c3b39aee5",
+        "2bba3ac2e9484eb2b62f61258e778882"
+      ],
+      "read_ids": [
+        "3367cfe6da1846889d33c59c3b39aee5"
+      ],
+      "seed_bytes": 585,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "3367cfe6da1846889d33c59c3b39aee5"
+        }
+      ],
+      "memory_bytes": 1107,
+      "tokens": 6555,
+      "tool_calls": [
+        {
+          "name": "read_memory",
+          "arguments": "{\"id\":\"3367cfe6da1846889d33c59c3b39aee5\"}"
+        },
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"3367cfe6da1846889d33c59c3b39aee5\"}"
+        }
+      ],
+      "elapsed_seconds": 45.963,
+      "chat_calls": 3,
+      "embedding_calls": 1,
+      "embedding_tokens": 115
+    },
+    {
+      "group": "development",
+      "name": "dev-action",
+      "arm": "demand",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[\"3367cfe6da1846889d33c59c3b39aee5\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "3367cfe6da1846889d33c59c3b39aee5"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "3367cfe6da1846889d33c59c3b39aee5"
+        }
+      ],
+      "memory_bytes": 578,
+      "tokens": 4595,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"legacy-v0 接收器 行结束格式\"}"
+        },
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"3367cfe6da1846889d33c59c3b39aee5\"}"
+        }
+      ],
+      "elapsed_seconds": 19.637,
+      "chat_calls": 3,
+      "embedding_calls": 1,
+      "embedding_tokens": 15
+    },
+    {
+      "group": "development",
+      "name": "dev-action",
+      "arm": "snippet",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[\"3367cfe6da1846889d33c59c3b39aee5\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "3367cfe6da1846889d33c59c3b39aee5",
+        "2bba3ac2e9484eb2b62f61258e778882"
+      ],
+      "read_ids": [],
+      "seed_bytes": 835,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "3367cfe6da1846889d33c59c3b39aee5"
+        }
+      ],
+      "memory_bytes": 835,
+      "tokens": 5379,
+      "tool_calls": [
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"3367cfe6da1846889d33c59c3b39aee5\"}"
+        }
+      ],
+      "elapsed_seconds": 30.02,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 115
+    },
+    {
+      "group": "evaluation",
+      "name": "approvals",
+      "arm": "snippet",
+      "expected_key": "approval",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"5\",\"evidence_ids\":[\"d3560b9bb7bb44bc8464b7cf06210394\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1380,
+      "operations": [],
+      "memory_bytes": 1380,
+      "tokens": 3302,
+      "tool_calls": [],
+      "elapsed_seconds": 16.64,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 102
+    },
+    {
+      "group": "evaluation",
+      "name": "approvals",
+      "arm": "clue",
+      "expected_key": "approval",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"5\",\"evidence_ids\":[\"d3560b9bb7bb44bc8464b7cf06210394\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1131,
+      "operations": [],
+      "memory_bytes": 1131,
+      "tokens": 3218,
+      "tool_calls": [],
+      "elapsed_seconds": 21.508,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 102
+    },
+    {
+      "group": "evaluation",
+      "name": "approvals",
+      "arm": "demand",
+      "expected_key": "approval",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"5\",\"evidence_ids\":[\"d3560b9bb7bb44bc8464b7cf06210394\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 1423,
+      "tokens": 3297,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"How many reviewers must approve this project release\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"reviewers approve project release number required\"}"
+        }
+      ],
+      "elapsed_seconds": 15.802,
+      "chat_calls": 2,
+      "embedding_calls": 2,
+      "embedding_tokens": 22
+    },
+    {
+      "group": "evaluation",
+      "name": "retention",
+      "arm": "clue",
+      "expected_key": "retention",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"42\",\"evidence_ids\":[\"e8587bc1c7ab4063807244feba7d96f8\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "37dd34a610c943e198b38c60261476f9",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1110,
+      "operations": [],
+      "memory_bytes": 1110,
+      "tokens": 3020,
+      "tool_calls": [],
+      "elapsed_seconds": 17.052,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 104
+    },
+    {
+      "group": "evaluation",
+      "name": "retention",
+      "arm": "demand",
+      "expected_key": "retention",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"42\",\"evidence_ids\":[\"e8587bc1c7ab4063807244feba7d96f8\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "37dd34a610c943e198b38c60261476f9",
+        "47dc7820ce404516b61e044527a71ea5",
+        "d3560b9bb7bb44bc8464b7cf06210394"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 1098,
+      "tokens": 3725,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"backup copies retained days retention period project\"}"
+        }
+      ],
+      "elapsed_seconds": 11.235,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 12
+    },
+    {
+      "group": "evaluation",
+      "name": "retention",
+      "arm": "snippet",
+      "expected_key": "retention",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"42\",\"evidence_ids\":[\"e8587bc1c7ab4063807244feba7d96f8\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "37dd34a610c943e198b38c60261476f9",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1110,
+      "operations": [],
+      "memory_bytes": 1110,
+      "tokens": 3167,
+      "tool_calls": [],
+      "elapsed_seconds": 28.563,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 104
+    },
+    {
+      "group": "evaluation",
+      "name": "cipher",
+      "arm": "demand",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "37dd34a610c943e198b38c60261476f9",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 675,
+      "tokens": 4165,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"encryption algorithm for backups\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"备份加密算法 OR encryption algorithm backup\"}"
+        }
+      ],
+      "elapsed_seconds": 18.495,
+      "chat_calls": 3,
+      "embedding_calls": 2,
+      "embedding_tokens": 22
+    },
+    {
+      "group": "evaluation",
+      "name": "cipher",
+      "arm": "snippet",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1379,
+      "operations": [],
+      "memory_bytes": 1785,
+      "tokens": 3905,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"backup encryption algorithm 备份 加密算法\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"backups encryption\"}"
+        }
+      ],
+      "elapsed_seconds": 18.61,
+      "chat_calls": 2,
+      "embedding_calls": 3,
+      "embedding_tokens": 117
+    },
+    {
+      "group": "evaluation",
+      "name": "cipher",
+      "arm": "clue",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "seed_bytes": 1130,
+      "operations": [],
+      "memory_bytes": 2058,
+      "tokens": 9268,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"backup encryption algorithm 备份 加密算法\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"加密 备份 encryption algorithm AES\"}"
+        },
+        {
+          "name": "read_memory",
+          "arguments": "{\"id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        }
+      ],
+      "elapsed_seconds": 62.179,
+      "chat_calls": 4,
+      "embedding_calls": 3,
+      "embedding_tokens": 123
+    },
+    {
+      "group": "evaluation",
+      "name": "version",
+      "arm": "snippet",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "47dc7820ce404516b61e044527a71ea5",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1379,
+      "operations": [],
+      "memory_bytes": 2055,
+      "tokens": 7045,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"current release version number of this project\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目版本号 release version number\"}"
+        }
+      ],
+      "elapsed_seconds": 18.014,
+      "chat_calls": 3,
+      "embedding_calls": 3,
+      "embedding_tokens": 112
+    },
+    {
+      "group": "evaluation",
+      "name": "version",
+      "arm": "clue",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "47dc7820ce404516b61e044527a71ea5",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1130,
+      "operations": [],
+      "memory_bytes": 1806,
+      "tokens": 7363,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"current release version number of this project\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目当前发布版本 版本号 release version\"}"
+        }
+      ],
+      "elapsed_seconds": 29.58,
+      "chat_calls": 3,
+      "embedding_calls": 3,
+      "embedding_tokens": 115
+    },
+    {
+      "group": "evaluation",
+      "name": "version",
+      "arm": "demand",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 1957,
+      "tokens": 6257,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"current release version number of this project\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"release version number 发布版本号\"}"
+        }
+      ],
+      "elapsed_seconds": 18.422,
+      "chat_calls": 3,
+      "embedding_calls": 2,
+      "embedding_tokens": 18
+    },
+    {
+      "group": "evaluation",
+      "name": "correction",
+      "arm": "clue",
+      "expected_key": "port",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"9447\",\"evidence_ids\":[\"4b00cf8711e4407cba0b01f1e4da7695\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9"
+      ],
+      "read_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "seed_bytes": 1145,
+      "operations": [],
+      "memory_bytes": 2230,
+      "tokens": 8676,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目当前批准的服务端口\"}"
+        },
+        {
+          "name": "read_memory",
+          "arguments": "{\"id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        }
+      ],
+      "elapsed_seconds": 76.956,
+      "chat_calls": 3,
+      "embedding_calls": 2,
+      "embedding_tokens": 111
+    },
+    {
+      "group": "evaluation",
+      "name": "correction",
+      "arm": "demand",
+      "expected_key": "port",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"9447\",\"evidence_ids\":[\"4b00cf8711e4407cba0b01f1e4da7695\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "47dc7820ce404516b61e044527a71ea5",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "37dd34a610c943e198b38c60261476f9",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 1914,
+      "tokens": 4392,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目当前批准的服务端口\"}"
+        }
+      ],
+      "elapsed_seconds": 15.387,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 9
+    },
+    {
+      "group": "evaluation",
+      "name": "correction",
+      "arm": "snippet",
+      "expected_key": "port",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"9447\",\"evidence_ids\":[\"4b00cf8711e4407cba0b01f1e4da7695\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1394,
+      "operations": [],
+      "memory_bytes": 1394,
+      "tokens": 3331,
+      "tool_calls": [],
+      "elapsed_seconds": 20.774,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 102
+    },
+    {
+      "group": "evaluation",
+      "name": "forgotten",
+      "arm": "demand",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 1914,
+      "tokens": 4878,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目部署地区\"}"
+        }
+      ],
+      "elapsed_seconds": 21.609,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 6
+    },
+    {
+      "group": "evaluation",
+      "name": "forgotten",
+      "arm": "snippet",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1379,
+      "operations": [],
+      "memory_bytes": 2055,
+      "tokens": 7917,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目部署地区 region location\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"部署在 地区 区域 机房 数据中心\"}"
+        }
+      ],
+      "elapsed_seconds": 25.243,
+      "chat_calls": 3,
+      "embedding_calls": 3,
+      "embedding_tokens": 123
+    },
+    {
+      "group": "evaluation",
+      "name": "forgotten",
+      "arm": "clue",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "47dc7820ce404516b61e044527a71ea5",
+        "37dd34a610c943e198b38c60261476f9",
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "d3560b9bb7bb44bc8464b7cf06210394",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1130,
+      "operations": [],
+      "memory_bytes": 1806,
+      "tokens": 6434,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"项目部署地区 region location 部署在哪个地区\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"部署 地区 区域 机房 数据中心 region location datacenter\"}"
+        }
+      ],
+      "elapsed_seconds": 33.46,
+      "chat_calls": 3,
+      "embedding_calls": 3,
+      "embedding_tokens": 131
+    },
+    {
+      "group": "evaluation",
+      "name": "apply",
+      "arm": "snippet",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "47dc7820ce404516b61e044527a71ea5"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1375,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "36b43a4e9a564e9d80fa152f3fde949d"
+        }
+      ],
+      "memory_bytes": 1375,
+      "tokens": 5965,
+      "tool_calls": [
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        }
+      ],
+      "elapsed_seconds": 33.169,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 122
+    },
+    {
+      "group": "evaluation",
+      "name": "apply",
+      "arm": "clue",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "e8587bc1c7ab4063807244feba7d96f8",
+        "47dc7820ce404516b61e044527a71ea5"
+      ],
+      "read_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d"
+      ],
+      "seed_bytes": 1126,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "36b43a4e9a564e9d80fa152f3fde949d"
+        }
+      ],
+      "memory_bytes": 1648,
+      "tokens": 7958,
+      "tool_calls": [
+        {
+          "name": "read_memory",
+          "arguments": "{\"id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        },
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        }
+      ],
+      "elapsed_seconds": 32.879,
+      "chat_calls": 3,
+      "embedding_calls": 1,
+      "embedding_tokens": 122
+    },
+    {
+      "group": "evaluation",
+      "name": "apply",
+      "arm": "demand",
+      "expected_key": "procedure",
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": true,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[\"36b43a4e9a564e9d80fa152f3fde949d\"]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [
+        {
+          "mode": "crlf",
+          "experience_id": "36b43a4e9a564e9d80fa152f3fde949d"
+        }
+      ],
+      "memory_bytes": 859,
+      "tokens": 4151,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"legacy-v1 接收器 行结束格式\"}"
+        },
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"crlf\",\"experience_id\":\"36b43a4e9a564e9d80fa152f3fde949d\"}"
+        }
+      ],
+      "elapsed_seconds": 13.958,
+      "chat_calls": 3,
+      "embedding_calls": 1,
+      "embedding_tokens": 15
+    },
+    {
+      "group": "evaluation",
+      "name": "copy",
+      "arm": "clue",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "47dc7820ce404516b61e044527a71ea5",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1130,
+      "operations": [
+        {
+          "mode": "copy",
+          "experience_id": null
+        }
+      ],
+      "memory_bytes": 1130,
+      "tokens": 5623,
+      "tool_calls": [
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"copy\"}"
+        }
+      ],
+      "elapsed_seconds": 34.208,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 117
+    },
+    {
+      "group": "evaluation",
+      "name": "copy",
+      "arm": "demand",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9"
+      ],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [
+        {
+          "mode": "copy",
+          "experience_id": null
+        }
+      ],
+      "memory_bytes": 835,
+      "tokens": 6889,
+      "tool_calls": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"固定输入 原样复制 产物 write_artifact copy\"}"
+        },
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"copy\"}"
+        }
+      ],
+      "elapsed_seconds": 35.228,
+      "chat_calls": 3,
+      "embedding_calls": 1,
+      "embedding_tokens": 17
+    },
+    {
+      "group": "evaluation",
+      "name": "copy",
+      "arm": "snippet",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":null,\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "47dc7820ce404516b61e044527a71ea5",
+        "4b00cf8711e4407cba0b01f1e4da7695"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1379,
+      "operations": [
+        {
+          "mode": "copy",
+          "experience_id": null
+        }
+      ],
+      "memory_bytes": 1379,
+      "tokens": 5957,
+      "tool_calls": [
+        {
+          "name": "write_artifact",
+          "arguments": "{\"mode\":\"copy\"}"
+        }
+      ],
+      "elapsed_seconds": 32.614,
+      "chat_calls": 2,
+      "embedding_calls": 1,
+      "embedding_tokens": 117
+    },
+    {
+      "group": "evaluation",
+      "name": "unrelated",
+      "arm": "demand",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\": \"42\", \"evidence_ids\": []}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "lexical"
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [],
+      "read_ids": [],
+      "seed_bytes": 0,
+      "operations": [],
+      "memory_bytes": 0,
+      "tokens": 2577,
+      "tool_calls": [],
+      "elapsed_seconds": 17.475,
+      "chat_calls": 1,
+      "embedding_calls": 0,
+      "embedding_tokens": 0
+    },
+    {
+      "group": "evaluation",
+      "name": "unrelated",
+      "arm": "snippet",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"42\",\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1393,
+      "operations": [],
+      "memory_bytes": 1393,
+      "tokens": 3214,
+      "tool_calls": [],
+      "elapsed_seconds": 20.575,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 105
+    },
+    {
+      "group": "evaluation",
+      "name": "unrelated",
+      "arm": "clue",
+      "expected_key": null,
+      "format_valid": true,
+      "correct": true,
+      "grounded": true,
+      "unsupported_positive": false,
+      "missing_memory": false,
+      "adopted": false,
+      "wrong_experience": false,
+      "unknown_without_search": false,
+      "reply": "{\"answer\":\"42\",\"evidence_ids\":[]}",
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "input_unchanged": true,
+      "passed": true,
+      "shown_ids": [
+        "36b43a4e9a564e9d80fa152f3fde949d",
+        "37dd34a610c943e198b38c60261476f9",
+        "4b00cf8711e4407cba0b01f1e4da7695",
+        "e8587bc1c7ab4063807244feba7d96f8"
+      ],
+      "read_ids": [],
+      "seed_bytes": 1144,
+      "operations": [],
+      "memory_bytes": 1144,
+      "tokens": 3029,
+      "tool_calls": [],
+      "elapsed_seconds": 30.514,
+      "chat_calls": 1,
+      "embedding_calls": 1,
+      "embedding_tokens": 105
+    }
+  ],
+  "chat_calls": 70,
+  "chat_tokens": 166780,
+  "embedding_calls": 50,
+  "embedding_tokens": 2872,
+  "preparation": {
+    "development": {
+      "embedding_calls": 1,
+      "embedding_tokens": 104,
+      "active_entries": 2
+    },
+    "evaluation": {
+      "embedding_calls": 1,
+      "embedding_tokens": 167,
+      "active_entries": 6
+    }
+  },
+  "complete": true,
+  "embedding_model": "BAAI/bge-m3",
+  "model": "grok-4.6",
+  "elapsed_seconds": 890.11,
+  "summary": {
+    "snippet": {
+      "attempted": 9,
+      "passed": 9,
+      "correct": 9,
+      "grounded": 9,
+      "unsupported_positive": 0,
+      "missing_memory": 0,
+      "wrong_experience": 0,
+      "adopted": 1,
+      "tokens": 43803,
+      "chat_calls": 16,
+      "embedding_calls": 15,
+      "embedding_tokens": 1004,
+      "memory_bytes": 13926,
+      "elapsed_seconds": 214.202,
+      "tool_calls": 8
+    },
+    "clue": {
+      "attempted": 9,
+      "passed": 9,
+      "correct": 9,
+      "grounded": 9,
+      "unsupported_positive": 0,
+      "missing_memory": 0,
+      "wrong_experience": 0,
+      "adopted": 1,
+      "tokens": 54589,
+      "chat_calls": 21,
+      "embedding_calls": 16,
+      "embedding_tokens": 1030,
+      "memory_bytes": 14063,
+      "elapsed_seconds": 338.336,
+      "tool_calls": 12
+    },
+    "demand": {
+      "attempted": 9,
+      "passed": 9,
+      "correct": 9,
+      "grounded": 9,
+      "unsupported_positive": 0,
+      "missing_memory": 0,
+      "wrong_experience": 0,
+      "adopted": 1,
+      "tokens": 40331,
+      "chat_calls": 21,
+      "embedding_calls": 11,
+      "embedding_tokens": 121,
+      "memory_bytes": 10675,
+      "elapsed_seconds": 167.61100000000002,
+      "tool_calls": 13
+    }
+  }
+}

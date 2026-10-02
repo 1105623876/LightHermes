@@ -1,0 +1,69 @@
+{
+  "development": [
+    {
+      "id": "2bba3ac2e9484eb2b62f61258e778882",
+      "kind": "fact",
+      "content": "开发项目的审计记录保留17天。",
+      "status": "active",
+      "fixture_key": "fact"
+    },
+    {
+      "id": "3367cfe6da1846889d33c59c3b39aee5",
+      "kind": "experience",
+      "content": "{\"applicable_when\":\"向项目 legacy-v0 接收器发送两行纯文本记录；不适用于原样复制或其他接收器。\",\"procedure\":\"输出使用CRLF行结束符，每行包括最后一行均以CRLF结束；输入保持原样。\",\"verification\":\"逐字节检查输出为两行CRLF，输入不变。\"}",
+      "status": "active",
+      "fixture_key": "procedure"
+    }
+  ],
+  "evaluation": [
+    {
+      "id": "d3560b9bb7bb44bc8464b7cf06210394",
+      "kind": "fact",
+      "content": "此项目发布前必须获得5位审核人的同意。",
+      "status": "active",
+      "fixture_key": "approval"
+    },
+    {
+      "id": "e8587bc1c7ab4063807244feba7d96f8",
+      "kind": "fact",
+      "content": "此项目备份副本保留42天，到期删除。",
+      "status": "active",
+      "fixture_key": "retention"
+    },
+    {
+      "id": "37dd34a610c943e198b38c60261476f9",
+      "kind": "fact",
+      "content": "此项目备份在每个工作日凌晨四点运行。",
+      "status": "active",
+      "fixture_key": "schedule"
+    },
+    {
+      "id": "47dc7820ce404516b61e044527a71ea5",
+      "kind": "fact",
+      "content": "此项目界面使用深色主题。",
+      "status": "active",
+      "fixture_key": "theme"
+    },
+    {
+      "id": "da80e8da448f4bc0bd53b9c8a009c284",
+      "kind": "fact",
+      "content": "此项目服务端口使用8123。",
+      "status": "superseded",
+      "fixture_key": "old-port"
+    },
+    {
+      "id": "4b00cf8711e4407cba0b01f1e4da7695",
+      "kind": "fact",
+      "content": "项目当前服务端口改为9447，替代以前的端口决定。",
+      "status": "active",
+      "fixture_key": "port"
+    },
+    {
+      "id": "36b43a4e9a564e9d80fa152f3fde949d",
+      "kind": "experience",
+      "content": "{\"applicable_when\":\"向项目 legacy-v1 接收器发送两行纯文本记录；不适用于原样复制或其他接收器。\",\"procedure\":\"输出使用CRLF行结束符，每行包括最后一行均以CRLF结束；输入保持原样。\",\"verification\":\"逐字节检查输出为两行CRLF，输入不变。\"}",
+      "status": "active",
+      "fixture_key": "procedure"
+    }
+  ]
+}
