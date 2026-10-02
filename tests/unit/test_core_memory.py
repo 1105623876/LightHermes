@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from lighthermes.core import LightHermes, SkillLoader
-from lighthermes.memory import MemoryManager
 
 class FakeAdapter:
     def create(self, **kwargs):
@@ -22,7 +21,7 @@ class FakeResponse:
 
 @pytest.mark.unit
 class TestSkillLoaderFailureReports:
-    """测试失败报告召回"""
+    """旧失败报告不得当作人工技能"""
 
     def test_failure_report_is_not_matched_as_skill(self):
         loader = SkillLoader([])
@@ -39,46 +38,6 @@ class TestSkillLoaderFailureReports:
 
         assert loader.match_skill("配置错误") is None
         assert loader.match_skill("/bad_config") is None
-
-    def test_recall_failure_reports_by_task_type_and_query(self):
-        loader = SkillLoader([])
-        loader.skills = {
-            "bad_config": {
-                "name": "bad_config",
-                "description": "配置失败报告",
-                "type": "failure_report",
-                "trigger": "auto",
-                "content": "不要忽略 API key 配置错误，先验证配置",
-                "metadata": {"type": "failure_report", "task_type": "配置"}
-            },
-            "bad_debug": {
-                "name": "bad_debug",
-                "description": "调试失败报告",
-                "type": "failure_report",
-                "trigger": "auto",
-                "content": "不要盲目修复报错",
-                "metadata": {"type": "failure_report", "task_type": "调试"}
-            }
-        }
-
-        reports = loader.recall_failure_reports("配置 API key 报错", "配置")
-
-        assert reports[0]["name"] == "bad_config"
-
-    def test_unrelated_failure_report_is_not_recalled(self):
-        loader = SkillLoader([])
-        loader.skills = {
-            "bad_config": {
-                "name": "bad_config",
-                "description": "配置失败报告",
-                "type": "failure_report",
-                "trigger": "auto",
-                "content": "不要忽略 API key 配置错误",
-                "metadata": {"type": "failure_report", "task_type": "配置"}
-            }
-        }
-
-        assert loader.recall_failure_reports("解释 Python 生成器", "解释") == []
 
 @pytest.mark.unit
 class TestCoreMemoryIntegration:
@@ -206,7 +165,6 @@ context_compression:
         monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: FakeAdapter())
         monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: type("SkillLoader", (), {
             "match_skill": lambda self, query: None,
-            "recall_failure_reports": lambda self, query, task_type, limit=2: []
         })())
 
         agent = LightHermes(
@@ -510,7 +468,6 @@ def test_adapter_create_is_single_model_call_exit(temp_memory_dir, monkeypatch):
     monkeypatch.setattr("lighthermes.core.get_adapter", lambda **kwargs: tracker)
     monkeypatch.setattr("lighthermes.core.SkillLoader", lambda *args, **kwargs: type("SkillLoader", (), {
         "match_skill": lambda self, query: None,
-        "recall_failure_reports": lambda self, query, task_type, limit=2: []
     })())
 
     agent = LightHermes(

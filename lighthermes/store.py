@@ -13,7 +13,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from lighthermes.retrieval import tokenize_text
+from .text import tokenize_text
 
 
 def memory_terms(text):

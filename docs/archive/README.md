@@ -31,3 +31,9 @@
 ## R3 进化实现替换（2026-10-02）
 
 `9e5ec58` 保存替换前的 `lighthermes/evolution.py`（513 行）和 `tests/unit/test_evolution.py`（16 项旧测试）。确认无运行时或 benchmark 消费者后删除；历史质量评分、独立轨迹库和自动技能生成不再维护。新 `experience.py` 复用同一 SQLite 的 entries/events/sources，验证式闭环由 `integration/test_experience.py` 覆盖。冻结的 Active Memory/LoCoMo 实验仍从原锁定提交复现，本轮没有运行或修改其评测。
+
+## R4 产品路径收敛（2026-10-02）
+
+从 `6bc4d14` 可恢复本轮删除的 `lighthermes/channels.py`（26 行，无消费者的消息包装）、`SkillLoader` 的旧失败报告检索（46 行）与两项仅覆盖该退役路径的测试。失败报告不能当作人工技能执行的测试继续保留。产品存储的共用分词移到 `lighthermes/text.py`，旧 retrieval 仍重导出同一函数，避免冻结实验改变分词行为；没有复制两份规则。
+
+`memory.py`、`active_memory.py`、`retrieval.py`、`evaluation.py` 及其独立测试仍有冻结 benchmark 或已导出的 API 消费者，继续保留；不再从产品存储导入旧检索引擎。本轮没有删除真实记忆、运行原 LoCoMo/holdout 或改变存储格式。无新增运行依赖。

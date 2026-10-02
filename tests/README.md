@@ -29,3 +29,5 @@
 真实模型验收脚本为 `scripts/r2_acceptance.py --live --output <路径>`，不属于 pytest；只有当用户明确授权真实调用时运行。2026-09-22 的调用次数、失败和定向复验见 [R2 验收记录](../docs/validation/R2_ACCEPTANCE.md)。
 
 R2.5 / R3 受限真实验收分别使用 `scripts/r25_acceptance.py`、`scripts/r3_acceptance.py`，均显式要求 `--live --output <路径>`。R3 只使用预定义、无路径参数的临时 CSV 工具，禁用任意 shell/代码执行；冻结的 LoCoMo 实验未运行。
+
+R4 的固定协议、原始结果与边界见 [R4 验收](../docs/validation/R4_ACCEPTANCE.md)。`scripts/r4_scale.py --output <路径>` 仅在临时目录运行标准库规模/精确 VP-tree 对照，包含 200 回合注入检查。`scripts/r4_replay.py` 与 `scripts/r4_semantic.py` 需要 `--live --output <路径>`，只有得到真实模型调用授权后运行；前者只提供固定临时数据工具，不执行任意命令或模型代码。`unit/test_r4_validation.py` 离线核对固定产物判据与树搜索精确性。脚本属于验收工具，不进入产品循环或默认安装依赖。

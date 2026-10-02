@@ -1,0 +1,638 @@
+{
+  "protocol": "R4_PROTOCOL.md",
+  "preparation": [
+    {
+      "name": "dev0",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 **dev0**：按列名 `name`、用 `utf-8-sig` 从 CSV 提取为 JSON 数组；输入未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "name",
+          "method": "utf-8-sig",
+          "experience_id": "5632770e4c0b44cbb2c8c56fa3db67a1",
+          "ok": false,
+          "error": "ValueError"
+        },
+        {
+          "operation": "extract",
+          "field": "name",
+          "method": "utf-8-sig",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 1,
+      "learning": {
+        "status": "candidate",
+        "entry_id": "044deb2860ef4b749c97f4eb424210e7",
+        "verification": "392d1502c1cd446baef423882552cff9"
+      },
+      "candidate_content": "{\"applicable_when\":\"CSV列提取（family=csv）输入以UTF-8 BOM开头（first_bytes=[239,187,191]），需按field/映射取指定列成JSON数组且保持输入字节不变\",\"procedure\":\"以utf-8-sig解码剥离BOM后解析CSV，按变量化列名/field提取该列值输出为JSON数组，不改动原始输入\",\"verification\":\"宿主确认输出JSON数组精确符合该任务列提取预期（参数化、不固化本次样本值）；原始输入字节完全不变；BOM处理后表头与指定field匹配\"}",
+      "chat_calls": 5,
+      "tokens": 13784,
+      "tool_calls": 3,
+      "elapsed_seconds": 33.07
+    },
+    {
+      "name": "dev1",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 **dev1** 的 CSV 列提取。\n\n- 列映射：`dev1` → `city`\n- 输入带 UTF-8 BOM（`first_bytes=[239,187,191]`），已用 `utf-8-sig` 剥离后按列 `city` 提取\n- 输出为 JSON 数组，原始输入字节未改动",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "city",
+          "method": "utf-8-sig",
+          "experience_id": "044deb2860ef4b749c97f4eb424210e7",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "learning": {
+        "status": "trial_reviewed",
+        "entry_id": "044deb2860ef4b749c97f4eb424210e7",
+        "verification": "c82781f188364189b3d0abbd1b058b62"
+      },
+      "review": {
+        "entry_id": "044deb2860ef4b749c97f4eb424210e7",
+        "status": "active",
+        "review": "0febb460450e46d9913756061234d80b"
+      },
+      "chat_calls": 3,
+      "tokens": 6411,
+      "tool_calls": 3,
+      "elapsed_seconds": 32.442
+    },
+    {
+      "name": "dev2",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 **dev2**：金额字符串已转为整数分并写入 JSON 数组；输入未改动。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "learning": {
+        "status": "candidate",
+        "entry_id": "53f494c706ff4f6fb6ac50ae534c2704",
+        "verification": "f3e808cb44b44b0bb050304c7a52f63b"
+      },
+      "candidate_content": "{\"applicable_when\":\"任务需将金额字符串JSON数组（含千分位逗号与小数点，如family=money、target_unit=integer cents）转为整数分并写出JSON数组，且输入原始字节必须保持不变\",\"procedure\":\"解析输入JSON字符串数组；对各金额串去掉千分位逗号后用Decimal精确乘100再取整为分；将整数结果写成JSON数组。勿用float。\",\"verification\":\"宿主独立核对输出为精确整数分数组、输入字节未改；确认采用decimal而非浮点。不保存具体样本值。\"}",
+      "chat_calls": 4,
+      "tokens": 12374,
+      "tool_calls": 3,
+      "elapsed_seconds": 27.277
+    },
+    {
+      "name": "dev3",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 dev3：金额字符串已按整数分转换并写入 JSON 数组（decimal，去掉千分位后精确乘 100），输入字节未改。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": "53f494c706ff4f6fb6ac50ae534c2704",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "learning": {
+        "status": "trial_reviewed",
+        "entry_id": "53f494c706ff4f6fb6ac50ae534c2704",
+        "verification": "0184a847b30b45aca5f8f41b6e7da53b"
+      },
+      "review": {
+        "entry_id": "53f494c706ff4f6fb6ac50ae534c2704",
+        "status": "active",
+        "review": "cb8d2d6751634863b6e8c6e3feb69e2d"
+      },
+      "chat_calls": 3,
+      "tokens": 8024,
+      "tool_calls": 4,
+      "elapsed_seconds": 20.189
+    }
+  ],
+  "evaluation": [
+    {
+      "name": "eval0-none",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已按任务说明提取 `product` 列（含 BOM，使用 utf-8-sig），输入未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "product",
+          "method": "utf-8-sig",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 4,
+      "tokens": 7899,
+      "tool_calls": 4,
+      "elapsed_seconds": 9.141,
+      "arm": "none"
+    },
+    {
+      "name": "eval0-facts",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 eval0：从带 BOM 的 CSV 中提取 `product` 列到 JSON 数组，输入未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "product",
+          "method": "utf-8-sig",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 5258,
+      "tool_calls": 3,
+      "elapsed_seconds": 42.624,
+      "arm": "facts"
+    },
+    {
+      "name": "eval0-experience",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 eval0：按项目映射提取 `product` 列。输入以 UTF-8 BOM 开头，已用 utf-8-sig 解析并输出 JSON 数组，原始输入未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "product",
+          "method": "utf-8-sig",
+          "experience_id": "044deb2860ef4b749c97f4eb424210e7",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 7476,
+      "tool_calls": 3,
+      "elapsed_seconds": 11.415,
+      "arm": "experience"
+    },
+    {
+      "name": "eval1-facts",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval1 已完成：按项目映射从 CSV 提取 `team` 列（输入含 BOM，用 utf-8-sig），输出为 JSON 数组，输入未改。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "team",
+          "method": "utf-8-sig",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 5193,
+      "tool_calls": 3,
+      "elapsed_seconds": 13.624,
+      "arm": "facts"
+    },
+    {
+      "name": "eval1-experience",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 **eval1** 的 CSV 列提取：按项目映射取 `team` 列，用 `utf-8-sig` 处理 UTF-8 BOM，输出 JSON 数组，输入字节未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "team",
+          "method": "utf-8-sig",
+          "experience_id": "044deb2860ef4b749c97f4eb424210e7",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 7636,
+      "tool_calls": 3,
+      "elapsed_seconds": 12.503,
+      "arm": "experience"
+    },
+    {
+      "name": "eval1-none",
+      "family": "csv",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 eval1：按 inspect_task 从 CSV 提取 `team` 列（BOM，utf-8-sig）为 JSON 数组，输入未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "field": "team",
+          "method": "utf-8-sig",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 4,
+      "tokens": 6082,
+      "tool_calls": 4,
+      "elapsed_seconds": 13.76,
+      "arm": "none"
+    },
+    {
+      "name": "eval2-experience",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "已完成 eval2：金额字符串已用 Decimal 精确转为整数分并写入 JSON 数组，输入字节未改。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": "53f494c706ff4f6fb6ac50ae534c2704",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 8004,
+      "tool_calls": 3,
+      "elapsed_seconds": 15.421,
+      "arm": "experience"
+    },
+    {
+      "name": "eval2-none",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "已按任务将金额字符串转为整数分并写入 JSON 数组（`decimal`，去掉千分位）：`[\"3,456.78\", \"0.57\"]` → `[345678, 57]`。输入未改动。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 6111,
+      "tool_calls": 3,
+      "elapsed_seconds": 12.371,
+      "arm": "none"
+    },
+    {
+      "name": "eval2-facts",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval2 已完成：金额字符串已按 decimal 转为整数分并写入 JSON 数组，输入保持不变。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": "5632770e4c0b44cbb2c8c56fa3db67a1",
+          "ok": false,
+          "error": "ValueError"
+        },
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 1,
+      "chat_calls": 4,
+      "tokens": 7664,
+      "tool_calls": 4,
+      "elapsed_seconds": 27.734,
+      "arm": "facts"
+    },
+    {
+      "name": "eval3-none",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "金额字符串已按 decimal 方法转为整数分并写入 JSON 数组，输入未改动。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 5941,
+      "tool_calls": 3,
+      "elapsed_seconds": 24.127,
+      "arm": "none"
+    },
+    {
+      "name": "eval3-facts",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval3 已用 decimal 完成：金额字符串转为整数分并写入 JSON 数组，输入未改动。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": "5632770e4c0b44cbb2c8c56fa3db67a1",
+          "ok": false,
+          "error": "ValueError"
+        },
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 1,
+      "chat_calls": 4,
+      "tokens": 9518,
+      "tool_calls": 4,
+      "elapsed_seconds": 27.004,
+      "arm": "facts"
+    },
+    {
+      "name": "eval3-experience",
+      "family": "money",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval3 已完成：金额字符串已按 Decimal 转为整数分并写出 JSON 数组，输入原始字节未改。",
+      "operations": [
+        {
+          "operation": "money",
+          "field": null,
+          "method": "decimal",
+          "experience_id": "53f494c706ff4f6fb6ac50ae534c2704",
+          "ok": true
+        }
+      ],
+      "adopted": true,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 8848,
+      "tool_calls": 3,
+      "elapsed_seconds": 26.683,
+      "arm": "experience"
+    },
+    {
+      "name": "eval4-facts",
+      "family": "copy",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval4 已按逐字节原样复制处理：`copy` + `literal`，未做 CSV 解析或编码转换，输入保持不变。",
+      "operations": [
+        {
+          "operation": "copy",
+          "field": null,
+          "method": "literal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 5135,
+      "tool_calls": 3,
+      "elapsed_seconds": 13.512,
+      "arm": "facts"
+    },
+    {
+      "name": "eval4-experience",
+      "family": "copy",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval4 已按 copy/literal 处理：输入已原样逐字节写出，未做 CSV 解析或编码转换。",
+      "operations": [
+        {
+          "operation": "copy",
+          "field": null,
+          "method": "literal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 7659,
+      "tool_calls": 2,
+      "elapsed_seconds": 14.856,
+      "arm": "experience"
+    },
+    {
+      "name": "eval4-none",
+      "family": "copy",
+      "passed": true,
+      "status": "completed",
+      "reply": "已按任务要求用 copy/literal 原样写出输入，输入未改动。",
+      "operations": [
+        {
+          "operation": "copy",
+          "field": null,
+          "method": "literal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 4,
+      "tokens": 6123,
+      "tool_calls": 4,
+      "elapsed_seconds": 14.312,
+      "arm": "none"
+    },
+    {
+      "name": "eval5-experience",
+      "family": "integer",
+      "passed": true,
+      "status": "completed",
+      "reply": "eval5 已按整数原样返回处理：`family=integer`，输入 `[29, 58]` 保持不变写出，未乘 100，也未套用金额换算经验。",
+      "operations": [
+        {
+          "operation": "passthrough",
+          "field": null,
+          "method": "literal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 3,
+      "tokens": 7206,
+      "tool_calls": 4,
+      "elapsed_seconds": 23.383,
+      "arm": "experience"
+    },
+    {
+      "name": "eval5-none",
+      "family": "integer",
+      "passed": true,
+      "status": "completed",
+      "reply": "[29, 58]",
+      "operations": [
+        {
+          "operation": "passthrough",
+          "field": null,
+          "method": "literal",
+          "experience_id": null,
+          "ok": true
+        }
+      ],
+      "adopted": false,
+      "false_adoption": false,
+      "tool_errors": 0,
+      "chat_calls": 4,
+      "tokens": 8015,
+      "tool_calls": 3,
+      "elapsed_seconds": 15.346,
+      "arm": "none"
+    },
+    {
+      "name": "eval5-facts",
+      "family": "integer",
+      "passed": false,
+      "status": "budget_exhausted",
+      "reply": "达到工具调用预算，任务未完成",
+      "operations": [
+        {
+          "operation": "passthrough",
+          "field": null,
+          "method": "literal",
+          "experience_id": "5632770e4c0b44cbb2c8c56fa3db67a1",
+          "ok": false,
+          "error": "ValueError"
+        }
+      ],
+      "adopted": false,
+      "false_adoption": true,
+      "tool_errors": 1,
+      "chat_calls": 4,
+      "tokens": 7864,
+      "tool_calls": 4,
+      "elapsed_seconds": 29.255,
+      "arm": "facts"
+    }
+  ],
+  "chat_calls": 76,
+  "tokens": 168225,
+  "limits": {
+    "chat_calls": 110,
+    "max_output_tokens": 900,
+    "timeout": 45,
+    "retries": 0,
+    "iterations": 4
+  },
+  "automatic_activation": false,
+  "model": "grok-4.6",
+  "approved_families": [
+    "csv",
+    "money"
+  ],
+  "summary": {
+    "none": {
+      "passed": 6,
+      "tokens": 40171,
+      "chat_calls": 22,
+      "tool_calls": 21,
+      "tool_errors": 0,
+      "adopted": 0,
+      "false_adoption": 0,
+      "elapsed_seconds": 89.057
+    },
+    "facts": {
+      "passed": 5,
+      "tokens": 40632,
+      "chat_calls": 21,
+      "tool_calls": 21,
+      "tool_errors": 3,
+      "adopted": 0,
+      "false_adoption": 1,
+      "elapsed_seconds": 153.75300000000001
+    },
+    "experience": {
+      "passed": 6,
+      "tokens": 46829,
+      "chat_calls": 18,
+      "tool_calls": 18,
+      "tool_errors": 0,
+      "adopted": 4,
+      "false_adoption": 0,
+      "elapsed_seconds": 104.261
+    }
+  },
+  "benefit_gate": false,
+  "complete": true,
+  "elapsed_seconds": 460.27
+}
