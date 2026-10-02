@@ -19,7 +19,7 @@ memory:
   project_id: null
   max_bytes: 268435456
 
-# R0 暂停旧自动进化；R3 将接入可验证的经验闭环
+# R3 显式学习检查点：启用后可用 /learn、/trial、/approve；不会每回合自动调用模型
 # 不再支持 auto_generate_skills: true
 evolution:
   enabled: false

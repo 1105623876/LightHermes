@@ -1,0 +1,27 @@
+{
+  "cases": [
+    {
+      "name": "origin_task",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "已从指定 CSV 提取 `name` 列并写入输出 JSON 数组。\n\n检查结果：\n- 文件带 UTF-8 BOM（首字节 `EF BB BF`），表头实际为 `name,amount`\n- 使用 `utf-8-sig` 解码，避免把 BOM 算进列名\n- 未改动输入文件，仅做提取输出",
+      "operations": [
+        {
+          "operation": "extract",
+          "encoding": "utf-8-sig"
+        }
+      ]
+    }
+  ],
+  "chat_calls": 3,
+  "tokens": 0,
+  "limits": {
+    "chat_calls": 24,
+    "max_output_tokens": 1000,
+    "timeout": 45,
+    "retries": 0
+  },
+  "scope": "Fixed tools on temporary synthetic CSV only; no shell/code execution; no causal improvement claim",
+  "model": "grok-4.6"
+}

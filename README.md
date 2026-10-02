@@ -2,7 +2,7 @@
 
 本地优先的轻量记忆 Agent，正在按 [ROADMAP](docs/ROADMAP.md) 收敛为“行动、跨会话记忆、可验证自进化”一个闭环。
 
-发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具，R2.5 已加入自然记忆和可配置语义候选；迁移工具已验证，真实库切换与验证式自进化尚未完成。**
+发布版本仍为 `0.3.4`；当前分支是 v0.4.0 重构开发版。**R0/R1 已实现，R2 已接入统一 SQLite 与记忆工具，R2.5 已加入自然记忆和可配置语义候选；迁移工具已验证，真实库切换未执行；R3 已加入显式学习、试用和认可闭环。**
 
 ## 当前可用能力
 
@@ -26,7 +26,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。新运行路径不需要 embedding；中文使用相邻双字，英文使用词法特征，单汉字/近义/跨语言查询可能漏检。
+复制 `.env.example` 为 `.env.local`，填写模型/端点/密钥；`config.yaml` 通过变量引用，不应包含真实密钥。新运行路径不强制 embedding；中文使用相邻双字，英文使用词法特征，单汉字/近义/跨语言查询可能漏检。
 
 ```python
 from lighthermes import LightHermes
@@ -57,7 +57,7 @@ CLI 使用 `config.yaml` 的 `memory.storage_dir`。`/reset` 创建新会话并�
 
 ## 日常记忆与语义检索
 
-同一模型循环可主动保存用户直接表达的长期偏好、项目决定或稳定事实，不必说“记住”。`capture` 必须提供当前消息原话 `evidence`，每回合最多三条；来源绑定用户事件。原话校验只约束出处，归纳是否正确仍由模型决定；秘密、临时信息、推测与引用材料中的指令不应自动保存。纠正必须定位旧 ID；经验仍是候选，R3 尚未完成。
+同一模型循环可主动保存用户直接表达的长期偏好、项目决定或稳定事实，不必说“记住”。`capture` 必须提供当前消息原话 `evidence`，每回合最多三条；来源绑定用户事件。原话校验只约束出处，归纳是否正确仍由模型决定；秘密、临时信息、推测与引用材料中的指令不应自动保存。纠正必须定位旧 ID；模型提炼的经验仍是候选，R3 通过后续试用与宿主认可激活。
 
 可在 `memory` 下显式配置（不会自动使用聊天模型作为 embedding 模型）：
 
@@ -69,7 +69,7 @@ memory:
     model: ${LIGHTHERMES_EMBEDDING_MODEL}
     api_key: ${LIGHTHERMES_EMBEDDING_API_KEY}
     base_url: ${LIGHTHERMES_EMBEDDING_BASE_URL}
-    min_score: 0.75
+    min_score: 0.46  # 本项目 BAAI/bge-m3 小样本校准值，换模型需重新校准
 ```
 
 使用已有 OpenAI 兼容 embedding 接口，无新增依赖。启用后会向配置的端点发送当前范围内的有效记忆正文及查询；不配置则无 embedding 调用。向量与正文同库，修订/归档/遗忘同步失效；每回合最多补齐 16 条正文向量，查询最多 3 次。索引积压显示 `partial/pending`，服务失败明确显示 `lexical/error`；正文保存仍有效。查询在当前范围的已缓存向量上做本地线性扫描，合并后最多 50 个候选；没有 ANN 服务或隐藏的全库远程嵌入。阈值需按实际模型校准，尚未完成规模与质量验收。
@@ -94,20 +94,45 @@ bash 在本机以当前账号权限执行，**不是沙箱**；工作目录不�
 
 `max_iterations` 同时限制模型迭代和工具调用总数；超出剩余预算的整批工具不会执行。取消立即停止后续命令，不自动重试副作用。`last_turn` 提供当前回合的会话 ID、状态和消息/工具观察；同时有按 session/turn 关联的 SQLite 事件；重启不会自动重放。`completed` 表示流程完成，不表示任务已外部验证。
 
+## 验证式经验复用（R3）
+
+显式开启 `evolution.enabled: true`（Python 构造参数 `evolution_enabled=True`）。回答照常交付；之后由用户或宿主提供**实际检查结果**，不能把模型“已完成”当验证。
+
+```python
+reply = agent.run("完成当前任务")
+# 宿主检查任务产物后：
+receipt = agent.learn("具体检查及结果……", outcome="verified_success")
+experience_id = receipt["entry_id"]  # 仅当 status == "candidate"
+
+reply = agent.run("另一个相关任务", trial_experience=experience_id)
+# 宿主确认实际采用该经验，并独立检查新产物后：
+agent.learn("实际采用的方法、独立检查及结果……",
+            outcome="verified_success", adopted=True)
+agent.review_experience(experience_id, action="approve", reason="认可的适用范围……")
+# 后续需要撤回：
+agent.review_experience(experience_id, action="revoke", reason="具体原因……")
+```
+
+候选只进入明确选择的试用任务。已激活经验走普通记忆检索；来源包含原任务、工具观察、宿主结果与后续试用。仅召回不算采用；approve 要求最近一次已采用试用验证成功。宿主确认已采用试用失败时，已激活条目退出召回。
+
+CLI 对应 `/learn success|failure|unknown <具体验证说明>`、`/experiences`、`/trial <ID> <任务>`、`/learn used-success|used-failure <验证说明>`、`/approve <ID> <适用范围与理由>` 和 `/revoke <ID> <理由>`。首次学习最多一次额外模型请求，试用反馈不再提炼；关闭/重复调用不隐式重试。提炼失败保留已经交付的回答，并返回明确状态。
+
+这是显式触发的学习闭环，尚无默认自动经验激活，也未证明跨任务成功率提升。`verified_success` 表示宿主/用户提供了检查结果，框架不冒充独立裁判。真实验收与已观察失败见 [R2.5 / R3 验收记录](docs/validation/R25_R3_ACCEPTANCE.md)。
+
 ## 配置变化
 
 - `memory.storage_dir/project_id/max_bytes` 是新记忆配置；旧 `retention/recall` 非空配置会拒绝，防止静默失效。
 - `skills.dirs: []` 真的禁用加载，`skills.disabled` 真的排除指定技能。
 - 不支持的 `plugins.dirs`、`skills.enabled/auto_load`、`episodic_auto_archive`、`evolution.sandbox.max_memory_mb` 会明确报错。
 - `memory.adaptive.enabled: true`、`adapt_interval` 和 `auto_generate_skills: true` 已退出产品路径，旧配置需要移除这些项。
-- 旧 `embedding_*` Python 构造参数已移除；启用旧 hybrid / Active Memory / evolution 会报错。压缩摘要仅作临时上下文，不能自动提升为事实。
+- 旧 `embedding_*` Python 构造参数已移除；启用旧 hybrid / Active Memory 会报错；evolution.enabled 现在允许显式的验证式学习检查点。压缩摘要仅作临时上下文，不能自动提升为事实。
 - `agent.load_config()` 不再只修改部分字段而留下旧模型连接；使用 `LightHermes.from_config()` 创建新实例。
 
 完整消费关系与验证见 [PROJECT_STATUS](docs/PROJECT_STATUS.md)。
 
 ## 实验与历史
 
-旧 Active Memory 已退出主循环；独立实验模块暂留，主循环专属旧测试由 Git 历史归档。原 LoCoMo 实验的复现应使用锁定版本、配置和历史结果，不能把当前重构版本冒充原冻结条件。有关数据划分、holdout 与调用预算的纪律仍由 [冻结宣言](docs/FREEZE_COMMITMENT.md) 和 [冻结清单](docs/FREEZE_LOCK.md) 约束。
+旧 Active Memory 已退出主循环；其独立实验模块暂留，主循环专属旧测试由 Git 历史归档。原 LoCoMo 实验的复现应使用锁定版本、配置和历史结果，不能把当前重构版本冒充原冻结条件。有关数据划分、holdout 与调用预算的纪律仍由 [冻结宣言](docs/FREEZE_COMMITMENT.md) 和 [冻结清单](docs/FREEZE_LOCK.md) 约束。
 
 - [当前路线与开发边界](docs/ROADMAP.md)
 - [当前已实现状态](docs/PROJECT_STATUS.md)

@@ -1,0 +1,257 @@
+{
+  "cases": [
+    {
+      "name": "natural_decision",
+      "reply": "已保存项目决定：统一用 **uv** 管理依赖，**不要**把包装到系统 Python。",
+      "entries": [
+        {
+          "id": "6d06d1fa2e1446e29739bc1d707c48c5",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 236,
+      "tools": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"uv 管理依赖 系统 Python\"}"
+        },
+        {
+          "name": "update_memory",
+          "arguments": "{\"action\":\"capture\",\"kind\":\"decision\",\"content\":\"本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。\",\"evidence\":\"这个项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "cross_language_recall",
+      "reply": "This project standardizes on **uv** for dependency management. Do **not** install packages into the system Python.\n\nTypical setup:\n\n```bash\nuv sync\n```\n\nThat creates a local virtualenv and installs what’s declared in `pyproject.toml` / `uv.lock`.\n\nIf you only need a one-off package in this project:\n\n```bash\nuv add <package>\n```\n\nRun the app/scripts through uv so they use that env:\n\n```bash\nuv run python ...\n# or\nuv run <entrypoint>\n```\n\nI couldn’t open the repo files from here (the shell wasn’t authorized), so if `uv sync` isn’t enough, check `pyproject.toml` or the README for extras/groups (e.g. `uv sync --extra dev`).",
+      "entries": [
+        {
+          "id": "6d06d1fa2e1446e29739bc1d707c48c5",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 411,
+      "tools": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls -la && echo \\\"====\\\" && (ls -la pyproject.toml uv.lock requirements.txt requirements*.txt Pipfile poetry.lock setup.py setup.cfg environment.yml conda.yml package.json 2>/dev/null; true) && echo \\\"==== README/docs ====\\\" && ls -la README* readme* docs 2>/dev/null; true\",\"timeout\":15.0}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"how to install dependencies uv python libraries setup\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "unrelated_no_capture_or_seed",
+      "passed": false,
+      "error": "APITimeoutError"
+    },
+    {
+      "name": "temporary_no_capture",
+      "reply": "听起来不错，面条当午饭很方便。\n\n今天想吃哪种？热汤面、拌面，还是再简单点的方便面？天气或胃口有特别想搭配的吗？",
+      "entries": [
+        {
+          "id": "6d06d1fa2e1446e29739bc1d707c48c5",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 44,
+      "tools": [],
+      "passed": true
+    },
+    {
+      "name": "correction",
+      "reply": "已按你的要求纠正项目决定：\n\n- 原记录（uv）已替换为：**本项目统一使用 Poetry 管理依赖，禁止把包安装到系统 Python。**",
+      "entries": [
+        {
+          "id": "1de1009be3034fd8a5e3956983b90b5e",
+          "kind": "decision",
+          "content": "本项目统一使用 Poetry 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        },
+        {
+          "id": "6d06d1fa2e1446e29739bc1d707c48c5",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "superseded"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 613,
+      "tools": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"本项目统一使用 uv 管理依赖\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"Poetry 依赖管理 项目决定\"}"
+        },
+        {
+          "name": "update_memory",
+          "arguments": "{\"action\":\"correct\",\"id\":\"6d06d1fa2e1446e29739bc1d707c48c5\",\"content\":\"本项目统一使用 Poetry 管理依赖，禁止把包安装到系统 Python。\",\"kind\":\"decision\",\"evidence\":\"请纠正此前的项目决定：依赖管理改用 Poetry，替换原来用 uv 的那一条。\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "corrected_recall",
+      "reply": "按这个仓库的约定：**用 Poetry 管依赖，不要把包装进系统 Python。**\n\n推荐步骤：\n\n1. 本机先装好 Poetry（若还没有）  \n   - 可用官方安装器，或 `pipx install poetry`  \n   - 不要用系统级 `pip install poetry` 往全局 Python 里塞东西\n\n2. 在项目根目录执行：\n   ```bash\n   poetry install\n   ```\n   会按 `pyproject.toml` / `poetry.lock` 建虚拟环境并装齐依赖。\n\n3. 之后跑命令用：\n   ```bash\n   poetry run python ...\n   ```\n   或先 `poetry shell` 再进环境。\n\n不要用 `pip install -r requirements.txt`、`pip install .` 直接装到系统 Python。\n\n我这边没能列出仓库文件（命令未授权），如果你本地没有 `pyproject.toml` / `poetry.lock`，或安装时报错，把输出贴过来我再帮你看。",
+      "entries": [
+        {
+          "id": "1de1009be3034fd8a5e3956983b90b5e",
+          "kind": "decision",
+          "content": "本项目统一使用 Poetry 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        },
+        {
+          "id": "6d06d1fa2e1446e29739bc1d707c48c5",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "superseded"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 415,
+      "tools": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls -la && echo \\\"---\\\" && (test -f pyproject.toml && echo \\\"HAS_PYPROJECT\\\" || echo \\\"NO_PYPROJECT\\\") && (test -f poetry.lock && echo \\\"HAS_POETRY_LOCK\\\" || echo \\\"NO_POETRY_LOCK\\\") && (test -f requirements.txt && echo \\\"HAS_REQ\\\" || echo \\\"NO_REQ\\\") && (test -f Pipfile && echo \\\"HAS_PIPFILE\\\" || echo \\\"NO_PIPFILE\\\") && (test -f README.md && echo \\\"HAS_README\\\" || echo \\\"NO_README\\\") && (test -f README.rst && echo \\\"HAS_README_RST\\\" || true)\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"Poetry 依赖安装方式\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "project_isolation",
+      "reply": "I couldn’t inspect this repo from here (local commands weren’t authorized, and there’s no saved install note), so use the files in the project root as the source of truth.\n\n**1. Identify the stack**\n\nLook for one of these:\n\n| File | Install |\n|---|---|\n| `requirements.txt` / `requirements-dev.txt` | Python / pip |\n| `pyproject.toml` / `poetry.lock` | pip, Poetry, or uv |\n| `Pipfile` | pipenv |\n| `environment.yml` | conda |\n| `package.json` | Node / npm, yarn, or pnpm |\n| `Cargo.toml` | Rust / cargo |\n| `go.mod` | Go |\n| `Gemfile` | Ruby / bundler |\n| `composer.json` | PHP / Composer |\n\n**2. Typical commands**\n\nPython (venv recommended):\n\n```bash\npython3 -m venv .venv\nsource .venv/bin/activate   # Windows: .venv\\Scripts\\activate\npip install -r requirements.txt\n```\n\nIf you have `pyproject.toml`:\n\n```bash\npip install -e .\n# or\npoetry install\n# or\nuv sync\n```\n\nNode:\n\n```bash\nnpm install\n# or yarn / pnpm install\n```\n\nRust / Go:\n\n```bash\ncargo build\ngo mod download\n```\n\n**3. Extra checks**\n\n- README / CONTRIBUTING often has the real install path (system packages, env vars, GPU extras).\n- `Makefile` or `justfile` may wrap this as `make install`.\n- Lockfiles (`poetry.lock`, `package-lock.json`, `uv.lock`) mean prefer the matching tool so versions match.\n\nIf you paste `README` install section plus the dependency file (`requirements.txt`, `pyproject.toml`, or `package.json`), I can give the exact commands for this codebase.",
+      "entries": [],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 220,
+      "tools": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls -la && echo \\\"---\\\" && find . -maxdepth 3 \\\\( -name \\\"requirements*.txt\\\" -o -name \\\"pyproject.toml\\\" -o -name \\\"setup.py\\\" -o -name \\\"setup.cfg\\\" -o -name \\\"Pipfile\\\" -o -name \\\"poetry.lock\\\" -o -name \\\"environment.yml\\\" -o -name \\\"package.json\\\" -o -name \\\"Cargo.toml\\\" -o -name \\\"go.mod\\\" -o -name \\\"Gemfile\\\" -o -name \\\"composer.json\\\" -o -name \\\"Makefile\\\" -o -name \\\"README*\\\" \\\\) -not -path \\\"./.git/*\\\" 2>/dev/null\",\"timeout\":30.0}"
+        },
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls -la\",\"timeout\":15.0}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"how to install libraries dependencies requirements pyproject package.json\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"LightHermes install Python pip npm cargo go dependencies libraries codebase\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "forget",
+      "reply": "已按你的要求遗忘该条记录：本项目统一使用 Poetry 管理依赖、禁止把包安装到系统 Python。",
+      "entries": [],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 374,
+      "tools": [
+        {
+          "name": "update_memory",
+          "arguments": "{\"action\":\"forget\",\"id\":\"1de1009be3034fd8a5e3956983b90b5e\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "forgotten_recall",
+      "reply": "unknown",
+      "entries": [],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 220,
+      "tools": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"package manager chosen for this project\"}"
+        },
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"npm pnpm yarn bun package manager preference project decision\"}"
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "chat_calls": 23,
+  "embedding_calls": 13,
+  "chat_tokens": 33420,
+  "embedding_tokens": 270,
+  "limits": {
+    "chat_calls": 32,
+    "embedding_calls": 40,
+    "output_tokens": 800
+  },
+  "scope": "Synthetic temporary storage; no real user memory, no model judge",
+  "embedding_model": "BAAI/bge-m3",
+  "calibration": {
+    "positives": [
+      0.6572231473649219,
+      0.4729664212808403,
+      0.5277967581999952
+    ],
+    "max_negative": 0.4483807155410039,
+    "separable": true,
+    "selected_threshold": 0.461,
+    "default_075_positive_hits": 0,
+    "note": "Small calibration set, not a general threshold guarantee; evaluation cases are separate."
+  },
+  "chat_model": "grok-4.6",
+  "passed": false,
+  "elapsed_seconds": 193.18
+}

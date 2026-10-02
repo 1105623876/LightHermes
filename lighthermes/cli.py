@@ -8,6 +8,7 @@ import sys
 import os
 import yaml
 import uuid
+import json
 from pathlib import Path
 
 from lighthermes.core import LightHermes
@@ -110,6 +111,11 @@ class CLI:
             ("/help", "显示帮助信息"),
             ("/skills", "列出所有可用技能"),
             ("/memory", "显示记忆系统统计"),
+            ("/experiences", "查看当前范围候选/已激活经验（需 evolution.enabled）"),
+            ("/learn <success|failure|unknown|used-success|used-failure> <验证说明>", "回答后记录真实验证；首次最多一次提炼请求"),
+            ("/trial <ID> <任务>", "只在这个任务试用指定经验"),
+            ("/approve <ID> <理由>", "确认已验证复用的经验适用范围"),
+            ("/revoke <ID> <理由>", "撤回经验并退出召回"),
             ("/stats", "显示详细统计信息"),
             ("/config", "显示当前配置"),
             ("/compress", "压缩当前对话上下文"),
@@ -302,6 +308,30 @@ class CLI:
 
     def handle_command(self, cmd: str) -> bool:
         """处理命令,返回是否继续"""
+        if cmd.split(maxsplit=1) and cmd.split(maxsplit=1)[0] in {'/learn', '/trial', '/approve', '/revoke', '/experiences'}:
+            try:
+                parts = cmd.split(maxsplit=2)
+                action = parts[0]
+                if action == '/experiences':
+                    result = self.agent.experiences()
+                else:
+                    if len(parts) != 3:
+                        raise ValueError('请提供状态或 ID，以及具体验证说明/任务/理由；见 /help')
+                    if action == '/learn':
+                        outcomes = {'success': 'verified_success', 'failure': 'verified_failure',
+                                    'unknown': 'unknown', 'used-success': 'verified_success', 'used-failure': 'verified_failure'}
+                        if parts[1] not in outcomes:
+                            raise ValueError('未知验证状态；见 /help')
+                        self._print('记录宿主/用户验证；首次学习最多请求一次模型提炼，不重试。', 'yellow')
+                        result = self.agent.learn(parts[2], outcome=outcomes[parts[1]], adopted=parts[1].startswith('used-'))
+                    elif action == '/trial':
+                        result = self.agent.run(parts[2], session_id=self.session_id, trial_experience=parts[1])
+                    else:
+                        result = self.agent.review_experience(parts[1], action=action[1:], reason=parts[2])
+                self._print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
+            except (ValueError, KeyError) as exc:
+                self._print(str(exc), 'red')
+            return True
         commands = {
             "/help": self.print_help,
             "/skills": self.show_skills,

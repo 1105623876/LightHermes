@@ -1,0 +1,86 @@
+{
+  "cases": [
+    {
+      "name": "natural_decision",
+      "reply": "已记下这条项目决定：\n\n- **统一用 uv 管理依赖**\n- **禁止把包装到系统 Python**\n\n之后在这个项目里装依赖会按这个约定来。",
+      "entries": [
+        {
+          "id": "3ed4648c5390436c902c2f280429a943",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 236,
+      "memory_context": "\n{\"retrieval\":{\"mode\":\"hybrid\",\"pending\":0}}\n\n",
+      "tools": [
+        {
+          "name": "search_memory",
+          "arguments": "{\"query\":\"uv 管理依赖 系统 Python 包安装\"}"
+        },
+        {
+          "name": "update_memory",
+          "arguments": "{\"action\":\"capture\",\"kind\":\"decision\",\"content\":\"本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。\",\"evidence\":\"这个项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "unrelated_no_capture_or_seed",
+      "reply": "月光如练洒窗前，\n夜色温柔入梦眠。\n一轮玉盘挂天际，\n照亮人间万千年。",
+      "entries": [
+        {
+          "id": "3ed4648c5390436c902c2f280429a943",
+          "kind": "decision",
+          "content": "本项目统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 44,
+      "memory_context": "\n{\"retrieval\":{\"mode\":\"hybrid\",\"pending\":0}}\n\n",
+      "tools": [],
+      "passed": true
+    },
+    {
+      "name": "quoted_instruction_no_capture",
+      "passed": false,
+      "error": "APIConnectionError"
+    }
+  ],
+  "chat_calls": 5,
+  "embedding_calls": 4,
+  "chat_tokens": 5777,
+  "embedding_tokens": 159,
+  "limits": {
+    "chat_calls": 32,
+    "embedding_calls": 40,
+    "output_tokens": 800
+  },
+  "scope": "Synthetic temporary storage; no real user memory, no model judge",
+  "embedding_model": "BAAI/bge-m3",
+  "calibration": {
+    "positives": [
+      0.6558260674708466,
+      0.4716429909103218,
+      0.5277860919982367
+    ],
+    "max_negative": 0.44868426638563896,
+    "separable": true,
+    "selected_threshold": 0.46,
+    "default_075_positive_hits": 0,
+    "note": "Small calibration set, not a general threshold guarantee; evaluation cases are separate."
+  },
+  "chat_model": "grok-4.6",
+  "passed": false,
+  "elapsed_seconds": 44.55
+}

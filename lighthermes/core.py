@@ -38,7 +38,7 @@ class LightHermes:
         memory_enabled: bool = True,
         memory_dir: str = "memory",
         project_id: str = None,
-        evolution_enabled: bool = False,
+        evolution_enabled: bool = None,
         auto_generate_skills: bool = False,
         skill_dirs: List[str] = None,
         plugin_dirs: List[str] = None,
@@ -93,8 +93,10 @@ class LightHermes:
             raise ValueError("Active Memory is frozen; use the pinned legacy revision")
         if memory_config.get("hybrid_retrieval", {}).get("enabled"):
             raise ValueError("Legacy hybrid retrieval is retired from the runtime; R2 uses FTS5")
-        if evolution_enabled or config.get("evolution", {}).get("enabled"):
-            raise ValueError("Legacy evolution is retired; verified experience awaits R3")
+        if evolution_enabled is None:
+            evolution_enabled = config.get("evolution", {}).get("enabled", False)
+        if evolution_enabled and not memory_enabled:
+            raise ValueError("Verified experience requires memory")
 
         # 应用配置（参数优先级高于配置文件）
         if not fallback_models and config.get("model", {}).get("fallback_models"):
@@ -398,20 +400,22 @@ class LightHermes:
         raise last_error
 
     def run(self, query: str, *, stream=False, user_id=DEFAULT_USER_ID,
-            session_id=None, history=None, max_iterations=10, resume_from=None):
+            session_id=None, history=None, max_iterations=10, resume_from=None, trial_experience=None):
         if stream:
             def generate():
                 yield from self._run_turn(query, stream=True, user_id=user_id,
-                    session_id=session_id, history=history, max_iterations=max_iterations, resume_from=resume_from)
+                    session_id=session_id, history=history, max_iterations=max_iterations, resume_from=resume_from, trial_experience=trial_experience)
             return generate()
         return self._run_turn(query, user_id=user_id, session_id=session_id,
-                              history=history, max_iterations=max_iterations, resume_from=resume_from)
+                              history=history, max_iterations=max_iterations, resume_from=resume_from, trial_experience=trial_experience)
 
     def _run_turn(self, query: str, *, stream=False, user_id=DEFAULT_USER_ID,
-            session_id=None, history=None, max_iterations=10, resume_from=None):
+            session_id=None, history=None, max_iterations=10, resume_from=None, trial_experience=None):
         """Run one host-scoped turn. Source writes precede model/tool side effects."""
         if not isinstance(max_iterations, int) or max_iterations < 1:
             raise ValueError("max_iterations must be positive")
+        if trial_experience is not None and not self.evolution_enabled:
+            raise ValueError('Experience trial requires evolution.enabled')
         if resume_from is not None and not self.memory:
             raise ValueError('Explicit resume requires memory')
         session_id = session_id or self.session_id
@@ -435,6 +439,10 @@ class LightHermes:
                     "retrieval 中的 lexical/partial 状态表示语义索引未完整可用，不可宣称完整语义召回。最多主动搜索两次；无依据或预算耗尽时明确说当前记录不足，不要继续反复搜索。"
                     "用户未要求读文件时，不要转用 bash 搜记忆目录或其他项目来绕过记忆范围。"
                     "当前写入范围由宿主指定，不能更改。")
+                if trial_experience:
+                    from .experience import Experience
+                    trial = Experience(self).trial(trial_experience)
+                    prompt += '\n明确选择的候选经验试用；先检查适用条件，不适用则不用，不能将候选当成已验证事实：\n' + trial
                 seed = self.memory.seed(query)
                 if seed:
                     prompt += "\n<memory-context>\n" + seed + "\n</memory-context>"
@@ -478,6 +486,26 @@ class LightHermes:
         except Exception:
             self._set_turn_status("error")
             raise
+
+    def _experience(self):
+        if not self.evolution_enabled or not self.memory or not self.memory.turn_id:
+            raise ValueError('Experience checkpoint requires evolution.enabled and a current task')
+        from .experience import Experience
+        return Experience(self)
+
+    def learn(self, verification, *, outcome='unknown', adopted=False):
+        """Host-only checkpoint AFTER delivering a task reply; at most one extraction call.
+
+        Verification must describe actual checks/feedback, not model self-report.
+        For a selected trial, adopted is the host's confirmation of actual use.
+        """
+        return self._experience().learn(verification, outcome=outcome, adopted=adopted)
+
+    def review_experience(self, identifier, *, action, reason):
+        return self._experience().review(identifier, action=action, reason=reason)
+
+    def experiences(self):
+        return self._experience().entries()
 
     @staticmethod
     def _get_field(value: Any, name: str, default: Any = None) -> Any:

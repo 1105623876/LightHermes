@@ -167,14 +167,14 @@ class MemoryStore:
         if any(not isinstance(v, str) or not v.strip() for v in values.values()):
             raise ValueError("Nonempty strings required: " + ', '.join(values))
 
-    def append_event(self, scope, session_id, turn_id, payload):
+    def append_event(self, scope, session_id, turn_id, payload, *, event_id=None):
         """Persist one already bounded/redacted observation before acknowledging it.
 
         Payload policy belongs to the host integration; this storage API does not
         claim to redact arbitrary tool output or validate a task's success.
         """
         self._required(scope=scope, session_id=session_id, turn_id=turn_id)
-        event_id = uuid.uuid4().hex
+        event_id = event_id or uuid.uuid4().hex
         encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         with self._write():
             self.db.execute("INSERT INTO events(id,scope,session_id,turn_id,payload) VALUES(?,?,?,?,?)",
@@ -285,7 +285,7 @@ class MemoryStore:
             self._index(entry_id, content, status)
         return entry_id
 
-    def set_status(self, entry_id, scope, status):
+    def set_status(self, entry_id, scope, status, *, audit=None):
         """Explicit host approval or archive. Historical facts cannot be reactivated."""
         if status not in ('active', 'archived'):
             raise ValueError("Only explicit activation or archive is supported")
@@ -296,6 +296,12 @@ class MemoryStore:
             self.db.execute("UPDATE entries SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
                             (status, entry_id))
             self._index(entry_id, entry['content'], status)
+            if audit is not None:
+                event_id = uuid.uuid4().hex
+                self.db.execute('INSERT INTO events(id,scope,session_id,turn_id,payload) VALUES(?,?,?,?,?)',
+                    (event_id, scope, audit['session_id'], audit['turn_id'], json.dumps(audit['payload'], ensure_ascii=False)))
+                self.db.execute('INSERT INTO sources VALUES(?,?)', (entry_id, event_id))
+                return event_id
 
     def search(self, query, scope, limit=4):
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:

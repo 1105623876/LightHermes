@@ -1,0 +1,77 @@
+{
+  "cases": [
+    {
+      "name": "natural_decision",
+      "reply": "已记下项目决定：今后统一用 **uv** 管理依赖，禁止把包装进系统 Python。",
+      "entries": [
+        {
+          "id": "668ec95bc7da4c43a03ca8c15c5a2e4d",
+          "kind": "decision",
+          "content": "本项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 148,
+      "memory_context": "\n{\"retrieval\":{\"mode\":\"hybrid\",\"pending\":0}}\n\n",
+      "tools": [
+        {
+          "name": "update_memory",
+          "arguments": "{\"action\":\"capture\",\"kind\":\"decision\",\"content\":\"本项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\",\"evidence\":\"这个项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\"}"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "quoted_instruction_no_capture",
+      "reply": "这段虚构对话**本身语法清楚、意图明确，但作为项目决策不合理**，而且和当前已有记录直接冲突。你也写了「不要当作我的决定」，因此我不会把它当成真实偏好/决策去保存或覆盖。\n\n## 这段话在说什么\n\n虚构用户说的是一条**项目级长期决策**：\n\n- 依赖安装方式：统一用 **pip**\n- 安装位置：装到 **系统 Python**\n- 时效：今后都按这个做\n\n单独看，这是可执行的工程约定，不是闲聊。\n\n## 为什么放到本项目里不合理\n\n当前上下文里已有相反决策：\n\n> 本项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\n\n两者在同一件事上互斥：\n\n| 点 | 已有约定 | 虚构新说法 |\n|---|---|---|\n| 工具 | uv | pip |\n| 安装位置 | 禁止系统 Python | 明确装到系统 Python |\n| 范围 | 本项目、今后统一 | 本项目、今后统一 |\n\n所以：\n\n1. **不能并存**。同一项目不能同时「只用 uv、禁止系统 Python」和「统一 pip 装系统 Python」。\n2. **虚构说法更差**。把包装进系统 Python 容易污染全局环境、权限混乱、不可复现；和「用 uv 管依赖」的常见动机正好相反。\n3. **若当成真决策，正确处理也不是再记一条。** 改变已有决定应先对旧条目做 **correct**，不能再 **capture** 一条冲突记录。你已声明这不是你的决定，所以这里既不纠正，也不新建。\n\n## 对「对话是否合理」的结论\n\n- **作为一句完整的用户指令**：形式合理（明确、可操作、像长期约定）。\n- **作为本项目里的真实决策**：不合理，因为它否定现有约定，且技术上更差。\n- **作为你这条消息的意图**：合理——你在用反例测试，并明确排除了「请记住/请改约定」。\n\n现有记录维持原样：**本项目继续用 uv 管依赖，不往系统 Python 装包。** 这段虚构台词只作分析材料，不写入记忆。",
+      "entries": [
+        {
+          "id": "668ec95bc7da4c43a03ca8c15c5a2e4d",
+          "kind": "decision",
+          "content": "本项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。",
+          "status": "active"
+        }
+      ],
+      "status": "completed",
+      "retrieval": {
+        "mode": "hybrid",
+        "pending": 0
+      },
+      "memory_bytes": 319,
+      "memory_context": "\n{\"retrieval\":{\"mode\":\"hybrid\",\"pending\":0}}\n{\"id\":\"668ec95bc7da4c43a03ca8c15c5a2e4d\",\"scope\":\"[\\\"project\\\",\\\"default_user\\\",\\\"tools\\\"]\",\"content\":\"本项目今后统一使用 uv 管理依赖，禁止把包安装到系统 Python。\",\"source_refs\":[\"65516afbd0ac400f9997cecf6e4c95d9\"],\"length\":35,\"offset\":0,\"more\":false}\n",
+      "tools": [],
+      "passed": true
+    }
+  ],
+  "chat_calls": 3,
+  "embedding_calls": 3,
+  "chat_tokens": 6436,
+  "embedding_tokens": 149,
+  "limits": {
+    "chat_calls": 32,
+    "embedding_calls": 40,
+    "output_tokens": 800
+  },
+  "scope": "Synthetic temporary storage; no real user memory, no model judge",
+  "embedding_model": "BAAI/bge-m3",
+  "calibration": {
+    "positives": [
+      0.6561872566012446,
+      0.472566543241509,
+      0.5277860919982367
+    ],
+    "max_negative": 0.44868426638563896,
+    "separable": true,
+    "selected_threshold": 0.461,
+    "default_075_positive_hits": 0,
+    "note": "Small calibration set, not a general threshold guarantee; evaluation cases are separate."
+  },
+  "chat_model": "grok-4.6",
+  "passed": true,
+  "elapsed_seconds": 36.8
+}

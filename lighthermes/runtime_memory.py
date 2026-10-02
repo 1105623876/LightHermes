@@ -58,6 +58,7 @@ class RuntimeMemory:
         self.short_term = SimpleNamespace(messages=[])
         self.identity = None
         self.turn_id = None
+        self.trial_experience = None
         self.remaining = 4000
         self.searches = 0
         self.offsets = {}
@@ -75,6 +76,7 @@ class RuntimeMemory:
         self.session_id = session_id
         self.turn_id = uuid.uuid4().hex
         self.remaining, self.searches, self.offsets = 4000, 0, {}
+        self.trial_experience = None
         self.query = query
         self.captures = 0
         if self.semantic:
@@ -111,6 +113,11 @@ class RuntimeMemory:
                     if row['excluded']:
                         raise KeyError(identifier)
                     return row
+                if identifier == self.trial_experience and scope == self.scope:
+                    entry = self.store.read_entry(identifier, scope, include_history=True)
+                    if entry['kind'] == 'experience' and entry['status'] in ('candidate', 'active'):
+                        return entry
+                    raise KeyError(identifier)
                 return self.store.read_entry(identifier, scope)
             except KeyError:
                 pass
@@ -139,7 +146,7 @@ class RuntimeMemory:
             start = max(0, min((p for p in positions if p >= 0), default=0) - 40)
             excerpt = clip(text[start:], 400)
             part = serialized({'id': key, 'scope': row['scope'], 'content': excerpt,
-                               'source_refs': row['source_refs'], 'length': len(text), 'offset': start,
+                               'source_refs': row['source_refs'][:8], 'source_count': len(row['source_refs']), 'length': len(text), 'offset': start,
                                'more': start + len(excerpt) < len(text)})
             if token_cost(part) + 1 > budget:
                 break
@@ -186,7 +193,7 @@ class RuntimeMemory:
         excerpt = clip(text[offset:], max(0, self.remaining // 2 - 200))
         # JSON escaping can expand code/control characters; shrink to the exact budget.
         metadata = {'id': id, 'offset': offset, 'status': row.get('status', 'source_event'),
-                    'updated_at': row.get('updated_at', row.get('created_at')), 'source_refs': row.get('source_refs', [])}
+                    'updated_at': row.get('updated_at', row.get('created_at')), 'source_refs': row.get('source_refs', [])[:8], 'source_count': len(row.get('source_refs', []))}
         if token_cost(serialized({**metadata, 'content': '', 'more': True})) > self.remaining:
             raise ToolBudgetExceeded('记忆读取元数据预算不足，任务未完成')
         while True:
@@ -219,6 +226,10 @@ class RuntimeMemory:
                 raise ValueError('Memory entry exceeds 8000 UTF-8 bytes; split the fact explicitly')
             if action == 'correct' and not id:
                 raise ValueError('Correction requires an exact ID')
+            if action == 'correct':
+                previous = self.store.read_entry(id, self.scope, include_history=True)
+                if previous['kind'] in ('experience', 'skill') and kind != previous['kind']:
+                    raise ValueError('Experience/skill corrections cannot be relabelled as active facts')
             result = self.store.remember(self.scope, kind, content, [self.source],
                 status='candidate' if kind in ('experience', 'skill') else 'active',
                 supersedes=id if action == 'correct' else None)

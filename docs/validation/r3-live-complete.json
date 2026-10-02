@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "name": "origin_task",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "已用 `utf-8-sig` 从带 BOM 的 CSV 中提取 `name` 列，并写入输出 JSON 数组。输入文件未改动。",
+      "operations": [
+        {
+          "operation": "extract",
+          "encoding": "utf-8-sig"
+        }
+      ]
+    },
+    {
+      "name": "independent_trial",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "候选经验**不适用**（条件要求 header 为 `﻿name,amount` 并提取 `name` 列；当前为 `﻿city,units`，需提取 `city`）。\n\n已检查：前字节含 BOM `[239, 187, 191]`，header 为 `﻿city,units`。已用 `utf-8-sig` 执行 extract，将 `city` 列写入 JSON 数组，未改输入。",
+      "operations": [
+        {
+          "operation": "extract",
+          "encoding": "utf-8-sig"
+        }
+      ]
+    },
+    {
+      "name": "inapplicable_trial",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "已用现有工具处理：先检查 CSV 前字节为 `[110, 97, 109, 101, 44, 118, 97, 108]`、表头为 `name,value`，确认无 BOM。候选经验要求 BOM 且提取 name 列，此处不适用，因此未套用，只执行了原样复制（逐字节一致，未解析重写）。",
+      "operations": [
+        {
+          "operation": "copy",
+          "encoding": "utf-8"
+        }
+      ]
+    }
+  ],
+  "chat_calls": 10,
+  "tokens": 19188,
+  "limits": {
+    "chat_calls": 24,
+    "max_output_tokens": 1000,
+    "timeout": 45,
+    "retries": 0
+  },
+  "scope": "Fixed tools on temporary synthetic CSV only; no shell/code execution; no causal improvement claim",
+  "model": "grok-4.6",
+  "learning": {
+    "status": "candidate",
+    "entry_id": "b9d87ea145c8496988566c4d1e5db84b",
+    "verification": "26e0f2dc5c614fe5bd52fde3d0b55d0a"
+  },
+  "candidate": {
+    "id": "b9d87ea145c8496988566c4d1e5db84b",
+    "content": "{\"applicable_when\":\"CSV前字节为BOM[239,187,191]且header显示﻿name,amount，需提取name列成JSON数组且不改输入\",\"procedure\":\"确认BOM后以utf-8-sig读取，正确解析列名并提取name值\",\"verification\":\"输出JSON等于[\\\"林\\\",\\\"陈\\\"]且输入字节未变\"}",
+    "source_count": 4
+  },
+  "adoption_checked": true,
+  "trial_feedback": {
+    "status": "trial_reviewed",
+    "entry_id": "b9d87ea145c8496988566c4d1e5db84b",
+    "verification": "0b3f46c77a3049afa3f797d7a9a898c5"
+  },
+  "negative_feedback": {
+    "status": "trial_reviewed",
+    "entry_id": "b9d87ea145c8496988566c4d1e5db84b",
+    "verification": "994cd39a440c41aca277d616eabb2a99"
+  },
+  "approval": {
+    "entry_id": "b9d87ea145c8496988566c4d1e5db84b",
+    "status": "active",
+    "review": "9f774c047397401e9fe6ba7ce7daecc0"
+  },
+  "active_recall": true,
+  "revocation": {
+    "entry_id": "b9d87ea145c8496988566c4d1e5db84b",
+    "status": "archived",
+    "review": "88b30d3633834f65a5f1fdeb6c7b6936"
+  },
+  "revoked_recall_empty": true,
+  "passed": false,
+  "elapsed_seconds": 102.39,
+  "original_harness_passed": true,
+  "audit": {
+    "finding": "False adoption positive: the second reply explicitly rejected the candidate conditions. Matching encoding arguments alone did not prove adoption.",
+    "required_fix": "Separate reusable conditions from sample-specific columns; require explicit candidate ID attached to the successful operation."
+  }
+}

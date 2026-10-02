@@ -1,0 +1,91 @@
+{
+  "cases": [
+    {
+      "name": "origin_task",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "已用 `utf-8-sig` 处理带 BOM 的表头，并将 `name` 列提取为输出 JSON 数组（未改动输入）。",
+      "operations": [
+        {
+          "operation": "extract",
+          "encoding": "utf-8-sig",
+          "experience_id": null
+        }
+      ]
+    },
+    {
+      "name": "independent_trial",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "已用 `inspect_csv` 确认输入以 UTF-8 BOM（239,187,191）开头，表头显示为 `﻿city,units`。候选经验适用，已按该经验用 `utf-8-sig` 提取 `city` 列并写入输出 JSON 数组；输入未被修改。",
+      "operations": [
+        {
+          "operation": "extract",
+          "encoding": "utf-8-sig",
+          "experience_id": "9ab3ce0e0d704e5880ae68183210a380"
+        }
+      ]
+    },
+    {
+      "name": "inapplicable_trial",
+      "passed": true,
+      "host_checks": true,
+      "status": "completed",
+      "reply": "候选经验不适用：适用条件是「可能含 UTF-8 BOM 的 CSV」，而本次输入明确无 BOM，且任务是逐字节原样复制、禁止解析重写。`inspect_csv` 也印证起始字节为 `110,97,109,101,...`（`name,...`），不是 BOM `239,187,191`。\n\n已用现有工具按 `copy` 原样写出，未套用该经验。",
+      "operations": [
+        {
+          "operation": "copy",
+          "encoding": "utf-8",
+          "experience_id": null
+        }
+      ]
+    }
+  ],
+  "chat_calls": 10,
+  "tokens": 18246,
+  "limits": {
+    "chat_calls": 24,
+    "max_output_tokens": 1000,
+    "timeout": 45,
+    "retries": 0
+  },
+  "scope": "Fixed tools on temporary synthetic CSV only; no shell/code execution; no causal improvement claim",
+  "model": "grok-4.6",
+  "learning": {
+    "status": "candidate",
+    "entry_id": "9ab3ce0e0d704e5880ae68183210a380",
+    "verification": "c9fc676b134e4d06b466bfeca48f9b67"
+  },
+  "candidate": {
+    "id": "9ab3ce0e0d704e5880ae68183210a380",
+    "content": "{\"applicable_when\":\"处理可能含UTF-8 BOM的CSV（前字节239,187,191导致header呈\\\"﻿{col}\\\"），需提取指定列{col}为JSON数组且禁止改输入\",\"procedure\":\"检测起始BOM后用utf-8-sig编码读取以剥离BOM并正确识别列名，提取该列值输出JSON数组\",\"verification\":\"独立核对输出JSON数组与列值一致，且输入文件字节未变\"}",
+    "source_count": 4
+  },
+  "adoption_checked": true,
+  "trial_feedback": {
+    "status": "trial_reviewed",
+    "entry_id": "9ab3ce0e0d704e5880ae68183210a380",
+    "verification": "8432b5505e374b08a0ac0926f5521a80"
+  },
+  "negative_feedback": {
+    "status": "trial_reviewed",
+    "entry_id": "9ab3ce0e0d704e5880ae68183210a380",
+    "verification": "c174abeef30a46a0a380e08dd376fe99"
+  },
+  "approval": {
+    "entry_id": "9ab3ce0e0d704e5880ae68183210a380",
+    "status": "active",
+    "review": "78fd806ed8bc464394f77a315836cc8a"
+  },
+  "active_recall": true,
+  "revocation": {
+    "entry_id": "9ab3ce0e0d704e5880ae68183210a380",
+    "status": "archived",
+    "review": "2bfb767728e54dc59ab059fa2cca0a06"
+  },
+  "revoked_recall_empty": true,
+  "passed": true,
+  "elapsed_seconds": 101.39
+}

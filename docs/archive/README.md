@@ -27,3 +27,7 @@
 ## R2.5 入口整理
 
 `89c45b4` 保留本次整理前状态。删除 `builtin_tools.py` 中无人调用的 `create_memory_tools/create_claim_tool`，以及 `test_builtin_tools.py` 中四项旧记忆工具测试、两项旧 claim 工具测试；当前模型记忆工具由 RuntimeMemory 提供，覆盖见 `integration/test_runtime_memory.py`。文件工具及其测试保留。CLI 不再为默认用户常量导入旧 MemoryManager。旧独立存储/进化实验尚未完全替代，暂不批量删除其测试。
+
+## R3 进化实现替换（2026-10-02）
+
+`9e5ec58` 保存替换前的 `lighthermes/evolution.py`（513 行）和 `tests/unit/test_evolution.py`（16 项旧测试）。确认无运行时或 benchmark 消费者后删除；历史质量评分、独立轨迹库和自动技能生成不再维护。新 `experience.py` 复用同一 SQLite 的 entries/events/sources，验证式闭环由 `integration/test_experience.py` 覆盖。冻结的 Active Memory/LoCoMo 实验仍从原锁定提交复现，本轮没有运行或修改其评测。

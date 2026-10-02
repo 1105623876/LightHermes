@@ -10,10 +10,11 @@
 
 ## 结构
 
-- `unit/`：记忆、检索、工具、适配器、压缩、配置、旧进化与 Active Memory。
+- `unit/`：记忆、检索、工具、适配器、压缩、配置、验证式经验与旧 Active Memory。
 - `unit/test_migration.py`：临时新目录转换、源快照不变、幂等、失败不发布、未知字段/表/BLOB 保留。
 - `unit/test_semantic.py`：固定向量验证独立语义候选、增量缓存、模型切换、失效、无关不召回、错误与积压；不代表真实 embedding 质量。
 - `unit/test_store.py`：R2 新存储的保存/重开、scope 隔离、候选、纠正、遗忘、索引重建与事务故障；另有主循环端到端回放。
+- `integration/test_experience.py`：候选/试用/实际采用、宿主验证、认可/撤回、后续失败、原子审计、重复学习不扣费及提炼失败不影响已交付回答。
 - `integration/test_runtime_memory.py`：真实 Agent + SQLite 的保存/重启/纠正/遗忘、用户/项目隔离、流式取消、故障中止、预算、长记录尾部读取和旧库保护。
 - `integration/test_cli.py`：CLI 命令和输入循环。
 - `unit/test_bash.py`、`integration/test_bash_agent.py`：真实本地命令、输出上限、进程组清理、授权、预算、取消与读/改/测闭环。
@@ -26,3 +27,5 @@
 重构前离线基线在 2026-09-22 实测为 226 passed；重构后的成绩与环境记录见 [PROJECT_STATUS](../docs/PROJECT_STATUS.md)。测试通过不能替代真实模型质量或跨场景收益验证。
 
 真实模型验收脚本为 `scripts/r2_acceptance.py --live --output <路径>`，不属于 pytest；只有当用户明确授权真实调用时运行。2026-09-22 的调用次数、失败和定向复验见 [R2 验收记录](../docs/validation/R2_ACCEPTANCE.md)。
+
+R2.5 / R3 受限真实验收分别使用 `scripts/r25_acceptance.py`、`scripts/r3_acceptance.py`，均显式要求 `--live --output <路径>`。R3 只使用预定义、无路径参数的临时 CSV 工具，禁用任意 shell/代码执行；冻结的 LoCoMo 实验未运行。
