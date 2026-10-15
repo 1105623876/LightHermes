@@ -6,6 +6,7 @@ import json
 import math
 import platform
 import random
+import sqlite3
 import statistics
 import sys
 import tempfile
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from lighthermes.runtime_memory import RuntimeMemory, serialized
 from lighthermes.semantic import SemanticIndex
-from lighthermes.store import MemoryStore
+from lighthermes.store import MemoryStore, decode_vector, encode_vector
 from lighthermes.tools import ToolBudgetExceeded
 
 
@@ -152,7 +153,7 @@ def scale_case(root, n, dimensions):
         _,ms=timed(lambda:search(q));full.append(ms)
         _,ms=timed(lambda:store.search(q,scope,50));fts.append(ms)
     rows,read_ms=timed(lambda:store.db.execute('SELECT vector FROM entry_vectors').fetchall())
-    vectors,decode_ms=timed(lambda:[json.loads(r[0]) for r in rows])
+    vectors,decode_ms=timed(lambda:[decode_vector(r[0]) for r in rows])
     q=vector(4204,dimensions)
     _,dot_ms=timed(lambda:[sum(x*y for x,y in zip(q,v)) for v in vectors])
     current=store.read_entry(ids[0],scope)
@@ -181,14 +182,160 @@ def scale_case(root, n, dimensions):
     correctness['injection_within_4000_bytes']=0<=memory.remaining<=4000
     memory.store.close()
     return {'n':n,'dimensions':dimensions,'write_ms':write_ms,'index_ms':index_ms,'first_query_ms':first_ms,
-        'warm_query':stats(full),'fts':stats(fts),'profile_ms':{'sqlite_read':read_ms,'json_decode':decode_ms,'python_dot':dot_ms},
+        'warm_query':stats(full),'fts':stats(fts),'profile_ms':{'sqlite_read':read_ms,'vector_decode':decode_ms,'python_dot':dot_ms},
         'correct_ms':update_ms,'forget_ms':forget_ms,'document_embeddings':document_embeddings,
         'embedding_calls':embed_calls,'max_embedding_batch':max(batch_sizes),
         'semantic_candidate_counts':candidate_counts,'returned_counts':result_counts,'usage':usage,'seed_bytes':len(seed.encode()),'budget_stopped':budget_stopped,'checks':correctness}
 
 
+def vector_digest(store):
+    digest = hashlib.sha256()
+    for row in store.db.execute('SELECT entry_id,model,vector FROM entry_vectors ORDER BY entry_id'):
+        digest.update(row['entry_id'].encode())
+        digest.update(row['model'].encode())
+        digest.update(encode_vector(decode_vector(row['vector'])))
+    return digest.hexdigest()
+
+
+def facts_digest(store):
+    digest = hashlib.sha256()
+    for table in ('events', 'entries', 'sources', 'excluded_sources', 'excluded_turns', 'entry_fts'):
+        for row in store.db.execute(f'SELECT * FROM {table} ORDER BY rowid'):
+            digest.update(json.dumps(tuple(row), ensure_ascii=False).encode())
+    return digest.hexdigest()
+
+
+def storage_case(root, n, dimensions):
+    """Paired production queries with identical IDs, vectors and ranking rules."""
+    root.mkdir()
+    scope = serialized(['project', 'default_user', 'scale'])
+    paths = {name: root / f'{name}.sqlite3' for name in ('json', 'binary64')}
+    with MemoryStore(root / 'base.sqlite3') as base:
+        for i in range(n):
+            text = f'project record item{i:05d} release rule {i}。项目约束。'
+            source = base.append_event(scope, 'seed', str(i), {'content': text})
+            base.remember(scope, 'fact', text, [source], status='active')
+        for path in paths.values():
+            with sqlite3.connect(path) as copy:
+                base.db.backup(copy)
+    with MemoryStore(paths['json']) as legacy:
+        legacy.db.execute('DROP TABLE entry_vectors')
+        legacy.db.execute('CREATE TABLE entry_vectors (entry_id TEXT PRIMARY KEY '
+            'REFERENCES entries(id) ON DELETE CASCADE, model TEXT NOT NULL, vector TEXT NOT NULL)')
+        legacy.db.execute('PRAGMA user_version=4')
+
+    result = {'n': n, 'dimensions': dimensions, 'formats': {}, 'checks': {}}
+    stores, indices, counters, digests, facts = {}, {}, {}, {}, {}
+    try:
+        for name, path in paths.items():
+            counts = {'documents': 0, 'queries': 0, 'batches': []}
+            counters[name] = counts
+            def embed(texts, counts=counts):
+                counts['batches'].append(len(texts))
+                counts['documents' if texts[0].startswith('project record') else 'queries'] += len(texts)
+                return [vector(4204 + int.from_bytes(hashlib.sha256(t.encode()).digest()[:8], 'big'),
+                               dimensions) for t in texts]
+            with MemoryStore(path) as store:
+                index = SemanticIndex(store, model='offline-1024', embed=embed, min_score=.01)
+                start = time.perf_counter()
+                while True:
+                    index.begin()
+                    index.index([scope])
+                    if index.status['pending'] == 0:
+                        break
+                result['formats'][name] = {'index_ms': (time.perf_counter() - start) * 1000,
+                                           'usage': store.usage(), 'query_ms': []}
+            stores[name] = MemoryStore(path)
+            indices[name] = SemanticIndex(stores[name], model='offline-1024', embed=embed, min_score=.01)
+
+        def search(name, query):
+            index = indices[name]
+            index.begin()
+            rows = index.search(query, [scope], stores[name].search(query, scope, 50), 4)
+            assert index.status == {'mode': 'hybrid', 'pending': 0}
+            return [r['id'] for r in rows]
+
+        matches = []
+        for iteration in range(21):
+            query = f'item{(iteration * 997) % n:05d}'
+            outputs = {}
+            order = ('json', 'binary64') if iteration % 2 == 0 else ('binary64', 'json')
+            for name in order:
+                outputs[name], elapsed = timed(lambda: search(name, query))
+                if iteration == 0:
+                    result['formats'][name]['first_query_ms'] = elapsed
+                else:
+                    result['formats'][name]['query_ms'].append(elapsed)
+            matches.append(outputs['json'] == outputs['binary64'])
+        for name, store in stores.items():
+            measurements = result['formats'][name]
+            measurements['warm_query'] = stats(measurements['query_ms'])
+            _, elapsed = timed(lambda: sum(len(decode_vector(row[0])) for row in
+                store.db.execute('SELECT vector FROM entry_vectors')))
+            measurements['sqlite_and_decode_ms'] = elapsed
+            digests[name], facts[name] = vector_digest(store), facts_digest(store)
+            measurements['embedding_counts'] = counters[name]
+        with sqlite3.connect(root / 'converted.sqlite3') as copy:
+            stores['json'].db.backup(copy)
+        # Temporary copy only: allow measured journal headroom, not a larger product default.
+        with MemoryStore(root / 'converted.sqlite3', max_bytes=1024**3) as converted:
+            capacity_check = converted._check_capacity
+            peaks = []
+            def checked():
+                peaks.append(converted._disk_bytes())
+                capacity_check()
+            converted._check_capacity = checked
+            receipt, elapsed = timed(converted.compact_vectors)
+            result['conversion'] = {'ms': elapsed, 'receipt': receipt,
+                'observed_managed_peak_bytes': max(peaks), 'usage': converted.usage(),
+                'free_pages': converted.db.execute('PRAGMA freelist_count').fetchone()[0]}
+            result['checks'].update({
+                'conversion_preserves_vectors': vector_digest(converted) == digests['json'],
+                'conversion_preserves_facts': facts_digest(converted) == facts['json'],
+                'conversion_idempotent': converted.compact_vectors()['converted'] == 0,
+            })
+        result['checks'].update({
+            'every_vector_identical': digests['json'] == digests['binary64'],
+            'facts_identical': facts['json'] == facts['binary64'],
+            'all_21_rankings_identical': all(matches),
+            'documents_embedded_once': all(c['documents'] == n for c in counters.values()),
+            'batches_at_most_16': all(max(c['batches']) <= 16 for c in counters.values()),
+            'binary_payload_exact': result['formats']['binary64']['usage']['embedding_cache_bytes'] == n * dimensions * 8,
+        })
+    finally:
+        for store in stores.values():
+            store.close()
+    return result
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--compare-storage', action='store_true');args=parser.parse_args()
+    if args.output.exists():
+        parser.error('Output already exists; choose a new path')
+    if args.compare_storage:
+        report = {'python': sys.version, 'platform': platform.platform(), 'seed': 4204,
+            'note': 'Offline synthetic vectors, unchanged production scoring. New connection is not OS cold cache. '
+                    'Fresh-format files are measured separately from explicit conversion; conversion does not shrink files.',
+            'samples': []}
+        with tempfile.TemporaryDirectory(prefix='lighthermes-r42-') as root:
+            for n in (100, 1000, 10000):
+                report['samples'].append(storage_case(Path(root) / str(n), n, 1024))
+                print(json.dumps({'storage_done': n}), flush=True)
+        largest = report['samples'][-1]['formats']
+        report['checks'] = {
+            'all_mechanics': all(all(s['checks'].values()) for s in report['samples']),
+            'payload_at_most_40_percent': largest['binary64']['usage']['embedding_cache_bytes'] <=
+                .4 * largest['json']['usage']['embedding_cache_bytes'],
+            'p50_at_most_half': largest['binary64']['warm_query']['p50_ms'] <=
+                .5 * largest['json']['warm_query']['p50_ms'],
+        }
+        report['passed'] = all(report['checks'].values())
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        if not report['passed']:
+            raise SystemExit('Storage comparison failed; inspect the full report')
+        return
     report={'seed':4204,'python':sys.version,'platform':platform.platform(),'machine':platform.machine(),
             'note':'Synthetic local embeddings. First query is a new connection, not OS cold cache. Standard-library VP-tree prototype, not a production ANN comparison.', 'scale':[],'trees':[]}
     def flush(): args.output.write_text(json.dumps(report,ensure_ascii=False,indent=2))

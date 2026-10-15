@@ -7,13 +7,34 @@ No model calls, implicit legacy import or background maintenance.
 
 import json
 import hashlib
+import math
 import re
 import sqlite3
+import struct
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
 from .text import tokenize_text
+
+
+def encode_vector(vector):
+    """Lossless little-endian binary64 storage; do not round or renormalize."""
+    if not isinstance(vector, (list, tuple)) or not 1 <= len(vector) <= 8192 or any(
+        isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
+        for x in vector
+    ) or not 0 < math.hypot(*vector) < math.inf:
+        raise ValueError('Invalid cached embedding vector')
+    return struct.pack(f'<{len(vector)}d', *vector)
+
+
+def decode_vector(value):
+    # Schema 4 remains readable until the host explicitly converts its cache.
+    if isinstance(value, str):
+        return json.loads(value)
+    if not isinstance(value, bytes) or not 8 <= len(value) <= 8192 * 8 or len(value) % 8:
+        raise ValueError('Invalid binary embedding length')
+    return struct.unpack(f'<{len(value) // 8}d', value)
 
 
 def memory_terms(text):
@@ -44,7 +65,7 @@ class MemoryStore:
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.execute("PRAGMA secure_delete=ON")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4):
+            if version not in (0, 1, 2, 3, 4, 5):
                 raise ValueError(f"Unsupported memory schema: {version}")
             tables = self.db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if version == 0 and tables:
@@ -102,10 +123,11 @@ class MemoryStore:
                     self.db.execute('PRAGMA user_version=3')
             if version < 4:
                 with self._write():
-                    self.db.execute("""CREATE TABLE entry_vectors (
+                    vector_type = 'BLOB' if version == 0 else 'TEXT'
+                    self.db.execute(f"""CREATE TABLE entry_vectors (
                         entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
-                        model TEXT NOT NULL, vector TEXT NOT NULL)""")
-                    self.db.execute('PRAGMA user_version=4')
+                        model TEXT NOT NULL, vector {vector_type} NOT NULL)""")
+                    self.db.execute(f'PRAGMA user_version={5 if version == 0 else 4}')
         except BaseException:
             self.db.close()
             raise
@@ -118,6 +140,28 @@ class MemoryStore:
 
     def __exit__(self, *args):
         self.close()
+
+    @property
+    def binary_vectors(self):
+        return self.db.execute('PRAGMA user_version').fetchone()[0] == 5
+
+    def compact_vectors(self):
+        """Host-only, explicit schema-4 cache conversion; no embedding requests.
+
+        Back up and close other users of this database before calling. Invalid
+        vectors or capacity failures roll back the entire conversion. SQLite
+        can reuse freed pages; this does not VACUUM or shrink the existing file.
+        """
+        converted = 0
+        with self._write():
+            if not self.binary_vectors:
+                for row in self.db.execute('SELECT entry_id,vector FROM entry_vectors'):
+                    encoded = encode_vector(decode_vector(row['vector']))
+                    self.db.execute('UPDATE entry_vectors SET vector=? WHERE entry_id=?',
+                                    (encoded, row['entry_id']))
+                    converted += 1
+                self.db.execute('PRAGMA user_version=5')
+        return {'converted': converted, 'schema': 5}
 
     def _disk_bytes(self):
         files = set()

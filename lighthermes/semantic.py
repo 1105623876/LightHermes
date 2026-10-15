@@ -10,6 +10,8 @@ import json
 import math
 import sqlite3
 
+from .store import decode_vector, encode_vector
+
 
 class SemanticIndex:
     def __init__(self, store, *, model, api_key=None, base_url=None, min_score=0.75, embed=None):
@@ -74,9 +76,10 @@ class SemanticIndex:
                 self.status = {'mode': 'lexical', 'pending': count, 'error': type(exc).__name__}
                 return False
             with self.store._write():
+                encode = encode_vector if self.store.binary_vectors else json.dumps
                 for row, vector in zip(rows, vectors):
                     self.store.db.execute('INSERT OR REPLACE INTO entry_vectors VALUES(?,?,?)',
-                                          (row['id'], self.key, json.dumps(vector)))
+                                          (row['id'], self.key, encode(vector)))
         self.status = {'mode': 'partial' if count > len(rows) else 'hybrid', 'pending': count - len(rows)}
         return True
 
@@ -99,10 +102,12 @@ class SemanticIndex:
             vector = self.queries[query]
             def scored():
                 for row in self.store.db.execute(sql, (self.key, *scopes)):
-                    cached = json.loads(row['vector'])
+                    cached = decode_vector(row['vector'])
                     if len(cached) != len(vector):
                         raise ValueError('Cached embedding dimension changed; use a new model identifier')
                     score = sum(a * b for a, b in zip(cached, vector))
+                    if not math.isfinite(score):
+                        raise ValueError('Non-finite cached embedding score')
                     if score >= self.min_score:
                         yield (score, row['id'], row['scope'])
             matches = heapq.nlargest(50, scored())

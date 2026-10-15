@@ -1,11 +1,14 @@
 """Deterministic vectors test mechanics, not real-model semantic quality."""
 import json
+import math
+import sqlite3
+import struct
 
 import pytest
 
 from lighthermes.runtime_memory import RuntimeMemory
 from lighthermes.semantic import SemanticIndex
-from lighthermes.store import MemoryStore
+from lighthermes.store import MemoryStore, decode_vector, encode_vector
 
 
 class Embeddings:
@@ -187,3 +190,84 @@ def test_provider_adapter_uses_effective_endpoint_and_orders_response(tmp_path, 
         assert first.key != second.key
         second.index(['alice'])
         assert len(calls) == 3  # Changed endpoint rebuilds the document vector.
+
+
+def make_legacy_cache(store):
+    """Recreate the actual schema-4 table in a disposable database."""
+    store.db.execute('DROP TABLE entry_vectors')
+    store.db.execute('CREATE TABLE entry_vectors (entry_id TEXT PRIMARY KEY '
+        'REFERENCES entries(id) ON DELETE CASCADE, model TEXT NOT NULL, vector TEXT NOT NULL)')
+    store.db.execute('PRAGMA user_version=4')
+
+
+def test_binary_cache_is_lossless_and_legacy_conversion_is_explicit(tmp_path):
+    path = tmp_path / 'db'
+    values = [0.75, math.sqrt(1 - .75**2), -0.0, 1e-300]
+    assert encode_vector(values) == struct.pack('<4d', *json.loads(json.dumps(values)))
+    assert encode_vector(decode_vector(encode_vector(values))) == encode_vector(values)
+    with MemoryStore(path) as store:
+        assert store.binary_vectors
+        make_legacy_cache(store)
+        first = save(store, 'threshold')
+        second = save(store, 'tie')
+        save(store, 'other', 'bob')
+        calls = []
+        def embed(texts):
+            calls.append(list(texts))
+            return [[1, 0, 0, 0] if t == 'query' else values for t in texts]
+        index = SemanticIndex(store, model='fixture', embed=embed, min_score=.75)
+        before = index.search('query', ['alice'], [], 4)
+        assert {row['id'] for row in before} == {first, second}
+        assert store.db.execute('SELECT DISTINCT typeof(vector) FROM entry_vectors').fetchall()[0][0] == 'text'
+    with MemoryStore(path) as store:
+        assert not store.binary_vectors  # Opening old data must not convert it.
+        original = {table: [tuple(r) for r in store.db.execute(f'SELECT * FROM {table} ORDER BY rowid')]
+                    for table in ('events', 'entries', 'sources')}
+        cached = [tuple(r) for r in store.db.execute('SELECT * FROM entry_vectors ORDER BY entry_id')]
+        assert store.compact_vectors() == {'converted': 2, 'schema': 5}
+        for table, rows in original.items():
+            assert [tuple(r) for r in store.db.execute(f'SELECT * FROM {table} ORDER BY rowid')] == rows
+        for identifier, model, value in cached:
+            row = store.db.execute('SELECT model,vector FROM entry_vectors WHERE entry_id=?', (identifier,)).fetchone()
+            assert row['model'] == model
+            assert list(decode_vector(row['vector'])) == json.loads(value)
+        assert store.compact_vectors() == {'converted': 0, 'schema': 5}
+    with MemoryStore(path) as store:
+        calls.clear()
+        index = SemanticIndex(store, model='fixture', embed=embed, min_score=.75)
+        assert index.search('query', ['alice'], [], 4) == before
+        assert calls == [['query']]  # No document re-embedding after conversion/reopen.
+        assert store.binary_vectors
+
+
+@pytest.mark.parametrize('failure', ['corrupt', 'capacity'])
+def test_cache_conversion_failure_preserves_old_schema_and_every_vector(tmp_path, failure):
+    with MemoryStore(tmp_path / 'db') as store:
+        make_legacy_cache(store)
+        first = save(store, '统一使用 uv')
+        second = save(store, 'another')
+        index = SemanticIndex(store, model='fixture', embed=Embeddings())
+        index.index(['alice'])
+        if failure == 'corrupt':
+            store.db.execute('UPDATE entry_vectors SET vector=? WHERE entry_id=?', ('[NaN, 0]', second))
+        else:
+            store.max_bytes = store.usage()['managed_bytes']  # No headroom for the SQLite journal.
+        before = [tuple(r) for r in store.db.execute('SELECT * FROM entry_vectors ORDER BY entry_id')]
+        with pytest.raises((ValueError, sqlite3.OperationalError)):
+            store.compact_vectors()
+        assert not store.binary_vectors
+        assert [tuple(r) for r in store.db.execute('SELECT * FROM entry_vectors ORDER BY entry_id')] == before
+        assert store.read_entry(first, 'alice')['content'] == '统一使用 uv'
+
+
+@pytest.mark.parametrize('payload', [b'', b'bad', struct.pack('<2d', float('nan'), 0)])
+def test_corrupt_binary_cache_is_reported_not_silently_treated_as_empty(tmp_path, payload):
+    with MemoryStore(tmp_path / 'db') as store:
+        identifier = save(store, '统一使用 uv')
+        index = SemanticIndex(store, model='fixture', embed=Embeddings())
+        index.index(['alice'])
+        store.db.execute('UPDATE entry_vectors SET vector=? WHERE entry_id=?', (payload, identifier))
+        rows = index.search('uv', ['alice'], store.search('uv', 'alice'), 4)
+        assert rows[0]['id'] == identifier
+        assert index.status['mode'] == 'lexical'
+        assert index.status['error'] == 'ValueError'
