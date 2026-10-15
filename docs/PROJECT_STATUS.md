@@ -4,7 +4,7 @@
 
 ## Git 与数据边界
 
-- 分支 `refactor/memory-core-20260922`；本轮起点为 R4.2 提交 `cb27c64`。R4.3 继续本地开发，未推送；远端状态以实际 Git 查询为准。
+- 分支 `refactor/memory-core-20260922`；R4.3 学习证据修复提交为 `3505a1b`。提交与远端同步状态以实际 Git 查询为准。
 - `backup/pre-refactor-20260922`、Git bundle、原冻结提交继续保留。真实记忆、用户本地配置与旧 worktree refs 没有迁移或清理。
 - 真实旧库此前只做了临时预览：7 文件、44,636 字节，3 来源事件、2 candidate、0 active。实际切换仍未执行，不阻塞新目录使用。
 
