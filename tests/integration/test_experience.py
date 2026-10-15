@@ -1,5 +1,9 @@
 """Host-verified learning and reuse with deterministic extraction; no live API."""
 import json
+import os
+import shlex
+import sqlite3
+import sys
 from types import SimpleNamespace as NS
 
 import pytest
@@ -22,7 +26,10 @@ class Model:
         response = next(self.responses)
         if isinstance(response, Exception):
             raise response
-        return NS(choices=[NS(message=NS(content=response, tool_calls=[]), finish_reason='stop')],
+        calls = [NS(id=f'call-{len(self.seen)}-{i}', function=NS(name='bash',
+            arguments=json.dumps({'command': command}))) for i, command in enumerate(response)] if isinstance(response, list) else []
+        return NS(choices=[NS(message=NS(content='' if calls else response, tool_calls=calls),
+                             finish_reason='tool_calls' if calls else 'stop')],
                   usage=NS(total_tokens=10))
 
 
@@ -191,3 +198,132 @@ def test_explicit_disable_overrides_config_and_makes_no_learning_call(tmp_path, 
     with pytest.raises(ValueError, match='evolution.enabled'):
         a.learn('must not request extraction')
     assert len(model.seen) == 1
+
+
+def python_command(code):
+    return f'{shlex.quote(sys.executable)} -c {shlex.quote(code)}'
+
+
+@pytest.mark.parametrize('family', ['bytes', 'transaction'])
+@pytest.mark.skipif(os.name != 'posix', reason='Real bash replay requires POSIX')
+def test_actual_bash_failure_repair_and_trial_keep_actions_as_learning_sources(tmp_path, monkeypatch, family):
+    """Fixed, reviewed commands verify evidence plumbing, not model learning quality."""
+    if family == 'bytes':
+        raw = b'\xef\xbb\xbfkey=old\r\ncount=1\r\n'
+        (tmp_path / 'input').write_bytes(raw)
+        bad = "from pathlib import Path as P; P('output').write_text(P('input').read_text().replace('old','new')); assert P('output').read_bytes()==P('input').read_bytes().replace(b'old',b'new')"
+        fixed = "from pathlib import Path as P; P('output').write_bytes(P('input').read_bytes().replace(b'old',b'new')); print('verified')"
+        second = "from pathlib import Path as P; P('output2').write_bytes(P('input2').read_bytes().replace(b'before',b'after')); print('verified')"
+        candidate = {'applicable_when': '已知字节串替换，要求保留输入其余字节',
+            'procedure': '按字节读取和替换再写出，不用会转换换行的文本读写',
+            'verification': '对照输入，只允许目标字节变化'}
+        method = 'write_bytes'
+    else:
+        for filename, value in [('items.db', 'base'), ('trial.db', 'before')]:
+            connection = sqlite3.connect(tmp_path / filename)
+            connection.execute('CREATE TABLE items(id TEXT UNIQUE)')
+            connection.execute('INSERT INTO items VALUES (?)', (value,))
+            connection.commit(); connection.close()
+        bad = "import sqlite3\nc=sqlite3.connect('items.db',isolation_level=None)\ntry:c.executemany('INSERT INTO items VALUES (?)',[('new',),('base',)])\nexcept sqlite3.IntegrityError:pass\nassert c.execute('SELECT id FROM items').fetchall()==[('base',)]"
+        fixed = "import sqlite3\nc=sqlite3.connect('items.db',isolation_level=None)\nc.execute(\"DELETE FROM items WHERE id='new'\")\nc.execute('SAVEPOINT b')\ntry:c.executemany('INSERT INTO items VALUES (?)',[('new',),('base',)])\nexcept sqlite3.IntegrityError:c.execute('ROLLBACK TO b')\nc.execute('RELEASE b')\nprint('verified')"
+        second = "import sqlite3\nc=sqlite3.connect('trial.db')\nc.execute(\"INSERT INTO items VALUES ('pending')\")\nc.execute('SAVEPOINT b')\ntry:c.executemany('INSERT INTO items VALUES (?)',[('temp',),('before',)])\nexcept sqlite3.IntegrityError:c.execute('ROLLBACK TO b')\nc.execute('RELEASE b')\nassert c.execute('SELECT count(*) FROM items').fetchone()[0]==2\nc.rollback()\nassert c.execute('SELECT id FROM items').fetchall()==[('before',)]\nprint('verified')"
+        candidate = {'applicable_when': 'SQLite批量插入必须失败整体撤销且保留调用者事务',
+            'procedure': '使用SAVEPOINT包围本次批量操作；失败ROLLBACK TO后RELEASE，不提交调用者事务',
+            'verification': '失败后原有数据和调用者待提交更改仍在，调用者仍可自行回滚'}
+        method = 'SAVEPOINT'
+    a, model = agent(tmp_path, monkeypatch, [[python_command(bad)], [python_command(fixed)],
+        '已修复', json.dumps(candidate, ensure_ascii=False), [python_command(second)], '独立试用完成'])
+    a.bash.authorized = True
+    try:
+        a.run(candidate['applicable_when'])
+        tools = [json.loads(m['content']) for m in a.last_turn['messages'] if m['role'] == 'tool']
+        assert [r['status'] for r in tools] == ['failed', 'completed']
+        if family == 'bytes':
+            assert (tmp_path / 'input').read_bytes() == raw
+            assert (tmp_path / 'output').read_bytes() == raw.replace(b'old', b'new')
+        else:
+            with sqlite3.connect(tmp_path / 'items.db') as db:
+                assert db.execute('SELECT id FROM items').fetchall() == [('base',)]
+        receipt = a.learn('宿主独立核验产物和原始数据；失败已修复，固定目标检查通过', outcome='verified_success')
+        evidence = json.loads(model.seen[-1][1]['content'])['observations']
+        assert len(evidence) == 2
+        assert method in json.dumps(evidence), 'Learning must see the verified method, not just its exit output'
+        assert all(not item['action_missing'] for item in evidence)
+        assert method in evidence[1]['action']
+        assert 'failed' in evidence[0]['observation']
+        entry = a.memory.store.read_entry(receipt['entry_id'], a.memory.scope, include_history=True)
+        assert entry['status'] == 'candidate'
+        for item in evidence:
+            assert item['id'] in entry['source_refs'] and item['action_source'] in entry['source_refs']
+            source = Experience.decode(a.memory.store.read_event(item['action_source'], a.memory.scope))
+            assert source['role'] == 'assistant' and source['tool_calls']
+        if family == 'bytes':
+            (tmp_path / 'input2').write_bytes(b'key=before\r\nend\r\n')
+        a.run('用独立输入试用该适用方法', session_id='independent', trial_experience=entry['id'])
+        if family == 'bytes':
+            assert (tmp_path / 'output2').read_bytes() == b'key=after\r\nend\r\n'
+            assert (tmp_path / 'input2').read_bytes() == b'key=before\r\nend\r\n'
+        else:
+            with sqlite3.connect(tmp_path / 'trial.db') as db:
+                assert db.execute('SELECT id FROM items').fetchall() == [('before',)]
+        calls = len(model.seen)
+        assert a.learn('宿主核对实际方法采用且独立目标检查通过', outcome='verified_success', adopted=True)['status'] == 'trial_reviewed'
+        assert len(model.seen) == calls
+        assert a.review_experience(entry['id'], action='approve', reason='仅认可本次已核验适用范围')['status'] == 'active'
+    finally:
+        a.memory.store.close()
+
+
+def intent(identifier, command):
+    return {'role': 'assistant', 'tool_calls': [{'id': identifier, 'function': {
+        'name': 'bash', 'arguments': json.dumps({'command': command}, ensure_ascii=False)}}]}
+
+
+def test_learning_pairs_same_batch_and_never_borrows_other_turn_or_excluded_action(tmp_path, monkeypatch):
+    a, model = agent(tmp_path, monkeypatch, ['done', CANDIDATE])
+    a.run('current task')
+    m = a.memory
+    m.store.append_event(m.scope, m.session_id, 'other-turn', intent('missing', 'OTHER_TURN'))
+    m.store.append_event('other-scope', m.session_id, m.turn_id, intent('missing', 'OTHER_SCOPE'))
+    m.record({'role': 'tool', 'tool_call_id': 'missing', 'content': 'orphan result'})
+    first = m.record(intent('same', 'FIRST_COMMAND'))
+    m.record({'role': 'tool', 'tool_call_id': 'same', 'content': 'first result'})
+    excluded = m.record(intent('same', 'EXCLUDED_COMMAND'))
+    m.store.db.execute('INSERT INTO excluded_sources VALUES(?)', (excluded,))
+    m.record({'role': 'tool', 'tool_call_id': 'same', 'content': 'second result'})
+    receipt = a.learn('宿主反馈：证据存在缺口，不能认定已验证', outcome='unknown')
+    observations = json.loads(model.seen[-1][1]['content'])['observations']
+    assert [r['action_missing'] for r in observations] == [True, False, True]
+    assert observations[1]['action_source'] == first
+    assert all('OTHER_' not in r['action'] and 'EXCLUDED' not in r['action'] for r in observations)
+    entry = m.store.read_entry(receipt['entry_id'], m.scope, include_history=True)
+    assert excluded not in entry['source_refs'] and first in entry['source_refs']
+    m.store.close()
+
+
+def test_learning_action_output_budget_and_lookback_are_bounded(tmp_path, monkeypatch):
+    a, model = agent(tmp_path, monkeypatch, ['done', 'null'])
+    a.run('current task')
+    for i in range(20):
+        a.memory.record(intent(str(i), f'command{i} ' + '界' * 2000))
+        a.memory.record({'role': 'tool', 'tool_call_id': str(i), 'content': f'output{i} ' + '文' * 2000})
+    a.learn('宿主尚未验证，不允许按截断内容猜测', outcome='unknown')
+    observations = json.loads(model.seen[-1][1]['content'])['observations']
+    assert len(observations) == 6
+    for i, item in enumerate(observations, 14):
+        assert f'command{i} ' in item['action'] and f'output{i} ' in item['observation']
+        assert len(item['action'].encode()) + len(item['observation'].encode()) <= 1000
+        assert item['truncated'] and not item['action_missing']
+    a.memory.store.close()
+
+
+def test_learning_uses_redacted_persisted_arguments(tmp_path, monkeypatch):
+    a, model = agent(tmp_path, monkeypatch, ['done', 'null'])
+    a.run('current task')
+    secret = 'sk-fixtureSecret123456'
+    a.memory.record(intent('one', f'echo {secret}'))  # Record only; never execute this command.
+    a.memory.record({'role': 'tool', 'tool_call_id': 'one', 'content': 'done'})
+    a.learn('宿主尚未验证', outcome='unknown')
+    request = model.seen[-1][1]['content']
+    assert secret not in request and '[REDACTED]' in request
+    a.memory.store.close()

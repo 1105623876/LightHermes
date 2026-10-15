@@ -119,6 +119,8 @@ agent.review_experience(experience_id, action="revoke", reason="具体原因…�
 
 CLI 对应 `/learn success|failure|unknown <具体验证说明>`、`/experiences`、`/trial <ID> <任务>`、`/learn used-success|used-failure <验证说明>`、`/approve <ID> <适用范围与理由>` 和 `/revoke <ID> <理由>`。首次学习最多一次额外模型请求，试用反馈不再提炼；关闭/重复调用不隐式重试。提炼失败保留已经交付的回答，并返回明确状态。
 
+学习时会从当前回合的已保存事件中配对工具命令/参数与输出，向候选保留两边的来源。最多提供6组有界片段，缺失或截断会标记，并提示模型不要据此补编方法；“命令执行成功”不能直接当作任务已验证。
+
 这是显式触发的学习闭环，尚无默认自动经验激活，也未证明跨任务成功率提升。`verified_success` 表示宿主/用户提供了检查结果，框架不冒充独立裁判。真实验收与已观察失败见 [R2.5 / R3 验收记录](docs/validation/R25_R3_ACCEPTANCE.md)；规模、树索引和三配置收益对照见 [R4 验收记录](docs/validation/R4_ACCEPTANCE.md)。
 
 ## 配置变化

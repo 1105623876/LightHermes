@@ -14,7 +14,7 @@
 - `unit/test_migration.py`：临时新目录转换、源快照不变、幂等、失败不发布、未知字段/表/BLOB 保留。
 - `unit/test_semantic.py`：固定向量验证独立语义候选、增量缓存、模型切换、失效、无关不召回、错误与积压；另检查 binary64 数值/阈值/同分排名、旧库显式转换、容量或损坏时回滚。不代表真实 embedding 质量。
 - `unit/test_store.py`：R2 新存储的保存/重开、scope 隔离、候选、纠正、遗忘、索引重建与事务故障；另有主循环端到端回放。
-- `integration/test_experience.py`：候选/试用/实际采用、宿主验证、认可/撤回、后续失败、原子审计、重复学习不扣费及提炼失败不影响已交付回答。
+- `integration/test_experience.py`：候选/试用/实际采用、宿主验证、认可/撤回、后续失败、原子审计、重复学习不扣费及提炼失败不影响已交付回答；另用固定真实bash命令验证失败/修复的操作与输出配对，检查来源隔离、脱敏、缺失与截断预算。
 - `integration/test_runtime_memory.py`：真实 Agent + SQLite 的保存/重启/纠正/遗忘、用户/项目隔离、流式取消、故障中止、预算、长记录尾部读取和旧库保护。
 - `integration/test_cli.py`：CLI 命令和输入循环。
 - `unit/test_bash.py`、`integration/test_bash_agent.py`：真实本地命令、输出上限、进程组清理、授权、预算、取消与读/改/测闭环。
@@ -35,3 +35,5 @@ R4 的固定协议、原始结果与边界见 [R4 验收](../docs/validation/R4_
 R4.1 读取策略比较由 `scripts/r41_reading.py --live --output <新路径>` 执行，协议见 [R41_PROTOCOL](../docs/validation/R41_PROTOCOL.md)。策略替换仅在验收进程内生效，产品默认值不变；两项开发检查、九项评测均跨三组，使用同一临时合成记忆与固定工具。`unit/test_r41_reading.py` 验证线索不泄漏方法、read 从正文起点开始、按需组不做自动查询，以及答案与产物判据。需要真实模型授权，不属于普通 pytest。
 
 R4.2 复用规模脚本：`scripts/r4_scale.py --compare-storage --output <新路径>`。在临时库离线比较相同数据的 JSON 与 binary64，包含完整生产检索、数值与排名一致性、转换成本和日志峰值；不请求模型或打开用户库。结果见 [R4.2验收](../docs/validation/R42_ACCEPTANCE.md)。旧 R4 的 JSON 原始结果保留；再次运行规模脚本会测当前代码，解码剖析字段改为与格式无关的 `vector_decode`。
+
+R4.3 的操作取证修复直接由 `integration/test_experience.py` 回归，沿用离线入口。文本字节与SQLite事务案例执行已审查的固定命令；候选与模型响应为测试替身，不计作真实学习收益。缺口、验证和下一步边界见 [R4.3取证记录](../docs/validation/R43_EVIDENCE.md)。
