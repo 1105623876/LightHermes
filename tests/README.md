@@ -37,3 +37,5 @@ R4.1 读取策略比较由 `scripts/r41_reading.py --live --output <新路径>` 
 R4.2 复用规模脚本：`scripts/r4_scale.py --compare-storage --output <新路径>`。在临时库离线比较相同数据的 JSON 与 binary64，包含完整生产检索、数值与排名一致性、转换成本和日志峰值；不请求模型或打开用户库。结果见 [R4.2验收](../docs/validation/R42_ACCEPTANCE.md)。旧 R4 的 JSON 原始结果保留；再次运行规模脚本会测当前代码，解码剖析字段改为与格式无关的 `vector_decode`。
 
 R4.3 的操作取证修复直接由 `integration/test_experience.py` 回归，沿用离线入口。文本字节与SQLite事务案例执行已审查的固定命令；候选与模型响应为测试替身，不计作真实学习收益。缺口、验证和下一步边界见 [R4.3取证记录](../docs/validation/R43_EVIDENCE.md)。
+
+R4.3 真实失败诊断使用 `scripts/r43_discovery.py --live --output <新路径>`，需要macOS隔离执行与当轮模型授权；不传 `--live` 只做临时隔离探针。普通pytest不运行此入口。`unit/test_r43_discovery.py` 以固定正确/错误产物检查字节保留、事务原子性与调用者控制权，并防止宿主读取模型创建的目录外符号链接。实际任务、预算及包含接口超时的结果见 [诊断记录](../docs/validation/R43_DISCOVERY.md)。
