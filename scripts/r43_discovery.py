@@ -1,6 +1,6 @@
 """Bounded R4.3 failure discovery; macOS Seatbelt is only an acceptance fixture.
 
-Two synthetic tasks, at most 12 chat calls, no retries or automatic learning.
+Two synthetic tasks (or one selected case), six chat calls per task, no retries.
 Model commands run inside a checked filesystem/network policy. The coordinator
 alone holds API credentials, memory, reports and independent verification code.
 """
@@ -171,7 +171,8 @@ def verify(family, workspace, execute):
 
 
 def discover(root, report, flush):
-    for family, task in TASKS.items():
+    for family in report['selected_cases']:
+        task = TASKS[family]
         workspace = root / family
         workspace.mkdir()
         if family == 'bytes':
@@ -194,7 +195,7 @@ def discover(root, report, flush):
         create = agent.adapter.create
 
         def bounded(**kwargs):
-            if item['chat_calls'] >= 6 or report['chat_calls'] >= 12:
+            if item['chat_calls'] >= 6 or report['chat_calls'] >= report['limits']['chat_calls']:
                 raise RuntimeError('Discovery request budget exhausted')
             item['chat_calls'] += 1
             report['chat_calls'] += 1
@@ -249,11 +250,14 @@ def discover(root, report, flush):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', help='Explicitly permit the bounded model requests')
+    parser.add_argument('--case', choices=tuple(TASKS), help='Run only this task; otherwise run both')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if sys.platform != 'darwin':
         parser.error('This acceptance fixture requires macOS sandbox-exec')
-    report = {'limits': {'chat_calls': 12, 'calls_per_task': 6, 'tool_calls_per_task': 6,
+    selected = [args.case] if args.case else list(TASKS)
+    report = {'selected_cases': selected,
+              'limits': {'chat_calls': 6 * len(selected), 'calls_per_task': 6, 'tool_calls_per_task': 6,
                          'max_output_tokens': 1800, 'request_timeout': 45, 'retries': 0},
               'python': platform.python_version(), 'platform': platform.platform(),
               'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
