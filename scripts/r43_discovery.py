@@ -187,7 +187,7 @@ def discover(root, report, flush):
             config={'context_compression': {'enabled': False},
                     'tools': {'builtin': {'enabled': True, 'file_read': False, 'file_write': False, 'file_search': False}}})
         agent.logger.disabled = True
-        agent.adapter.client = agent.adapter.client.with_options(timeout=45, max_retries=0)
+        agent.adapter.client = agent.adapter.client.with_options(timeout=report['limits']['request_timeout'], max_retries=0)
         report['model'] = agent.model
         report['provider'] = agent.provider
         report['endpoint_host'] = urlsplit(str(agent.adapter.client.base_url)).hostname
@@ -203,6 +203,7 @@ def discover(root, report, flush):
             request = {'index': item['chat_calls']}
             item['requests'].append(request)
             flush()
+            request_started = time.monotonic()
             try:
                 response = create(**kwargs)
                 request['finish_reason'] = response.choices[0].finish_reason
@@ -210,6 +211,9 @@ def discover(root, report, flush):
             except Exception as exc:
                 request['error'] = type(exc).__name__
                 raise
+            finally:
+                request['elapsed_seconds'] = round(time.monotonic() - request_started, 3)
+                flush()
 
         def tracked(command, cwd=None, timeout=30):
             result = execute(command, cwd, timeout)
@@ -251,14 +255,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', help='Explicitly permit the bounded model requests')
     parser.add_argument('--case', choices=tuple(TASKS), help='Run only this task; otherwise run both')
+    parser.add_argument('--request-timeout', type=int, choices=(45, 120), default=45,
+                        help='120 seconds is a separately reported service-timeout diagnostic')
+    parser.add_argument('--max-calls', type=int, help='Reduce the total request budget for a targeted diagnostic')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if sys.platform != 'darwin':
         parser.error('This acceptance fixture requires macOS sandbox-exec')
     selected = [args.case] if args.case else list(TASKS)
+    call_limit = 6 * len(selected) if args.max_calls is None else args.max_calls
+    if not 1 <= call_limit <= 6 * len(selected):
+        parser.error('--max-calls must be between 1 and six times the selected task count')
     report = {'selected_cases': selected,
-              'limits': {'chat_calls': 6 * len(selected), 'calls_per_task': 6, 'tool_calls_per_task': 6,
-                         'max_output_tokens': 1800, 'request_timeout': 45, 'retries': 0},
+              'limits': {'chat_calls': call_limit, 'calls_per_task': 6, 'tool_calls_per_task': 6,
+                         'max_output_tokens': 1800, 'request_timeout': args.request_timeout, 'retries': 0},
               'python': platform.python_version(), 'platform': platform.platform(),
               'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'chat_calls': 0, 'tokens': 0, 'cases': []}

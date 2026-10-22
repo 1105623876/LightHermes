@@ -38,4 +38,4 @@ R4.2 复用规模脚本：`scripts/r4_scale.py --compare-storage --output <新�
 
 R4.3 的操作取证修复直接由 `integration/test_experience.py` 回归，沿用离线入口。文本字节与SQLite事务案例执行已审查的固定命令；候选与模型响应为测试替身，不计作真实学习收益。缺口、验证和下一步边界见 [R4.3取证记录](../docs/validation/R43_EVIDENCE.md)。
 
-R4.3 真实失败诊断使用 `scripts/r43_discovery.py --live --output <新路径>`，需要macOS隔离执行与当轮模型授权；不传 `--live` 只做临时隔离探针。普通pytest不运行此入口。`unit/test_r43_discovery.py` 以固定正确/错误产物检查字节保留、事务原子性与调用者控制权，并防止宿主读取模型创建的目录外符号链接。实际任务、预算及包含接口超时的结果见 [诊断记录](../docs/validation/R43_DISCOVERY.md)。
+R4.3 真实失败诊断使用 `scripts/r43_discovery.py --live --output <新路径>`，需要macOS隔离执行与当轮模型授权；不传 `--live` 只做临时隔离探针。`--case transaction` 可单独复验事务任务；`--request-timeout 120 --max-calls 4` 用于另行记录的时限诊断，默认仍为45秒，请求额度只能缩小。普通pytest不运行此入口。`unit/test_r43_discovery.py` 以固定正确/错误产物检查字节保留、事务原子性与调用者控制权，并防止宿主读取模型创建的目录外符号链接。实际任务、预算及包含接口超时、产物通过但回合额度耗尽的结果见 [诊断记录](../docs/validation/R43_DISCOVERY.md)。
